@@ -22,7 +22,7 @@ pub const Timestamp = struct {
     timezone: ?[]const u8,
 };
 
-pub const DataType = union(enum) {
+pub const ArrayType = union(enum) {
     null,
     i8,
     i16,
@@ -38,13 +38,13 @@ pub const DataType = union(enum) {
     binary,
     utf8,
     bool,
-    decimal128: DecimalParams,
-    decimal256: DecimalParams,
-    date32: DateUnit,
-    date64: DateUnit,
-    time32: TimeUnit,
-    time64: TimeUnit,
-    timestamp: Timestamp,
+    decimal128,
+    decimal256,
+    date32,
+    date64,
+    time32,
+    time64,
+    timestamp,
     interval_year_month,
     interval_day_time,
     interval_month_day_nano,
@@ -52,10 +52,10 @@ pub const DataType = union(enum) {
     struct_,
     dense_union,
     sparse_union,
-    fixed_size_binary: i32,
-    fixed_size_list: i32,
+    fixed_size_binary,
+    fixed_size_list,
     map,
-    duration: TimeUnit,
+    duration,
     large_binary,
     large_utf8,
     large_list,
@@ -68,8 +68,8 @@ pub const DataType = union(enum) {
 };
 
 pub const Array = struct {
-    data_type: DataType,
     arr: *const anyopaque,
+    type_: ArrayType,
 };
 
 const ALIGNMENT = 64;
@@ -82,55 +82,13 @@ pub const BoolArray = struct {
 
     pub fn as_array(self: *const BoolArray) Array {
         return .{
-            .data_type = .bool,
-            .arr = self,
-        };
-    }
-};
-
-pub fn FixedSizeBinaryArray(comptime ByteWidth: comptime_int) type {
-    return struct {
-        const Self = @This();
-
-        data: []align(ALIGNMENT) const [ByteWidth]u8,
-        validity: ?[]align(ALIGNMENT) const u8,
-        len: i64,
-        offset: i64,
-
-        pub fn as_array(self: *const Self) Array {
-            const data_type = comptime .{
-                .fixed_size_binary = ByteWidth,
-            };
-
-            return .{
-                .arr = self,
-                .data_type = data_type,
-            };
-        }
-    };
-}
-
-pub const FixedSizeListArray = struct {
-    inner: Array,
-    validity: ?[]align(ALIGNMENT) const u8,
-    len: i64,
-    offset: i64,
-    item_width: i32,
-
-    pub fn as_array(self: *const FixedSizeListArray) Array {
-        return .{
-            .data_type = .{ .fixed_size_list = self.item_width },
+            .type_ = .bool,
             .arr = self,
         };
     }
 };
 
 fn PrimitiveArray(comptime T: type) type {
-    comptime switch (T) {
-        u8 or u16 or u32 or u64 or i8 or i16 or i32 or i64 or i128 or i256 or f16 or f32 or f64 => {},
-        else => @compileError("unsupported primitive type"),
-    };
-
     return struct {
         const Self = @This();
 
@@ -140,7 +98,7 @@ fn PrimitiveArray(comptime T: type) type {
         offset: i64,
 
         pub fn as_array(self: *const Self) Array {
-            const data_type: DataType = comptime switch (T) {
+            const type_: ArrayType = comptime switch (T) {
                 u8 => .u8,
                 u16 => .u16,
                 u32 => .u32,
@@ -149,13 +107,31 @@ fn PrimitiveArray(comptime T: type) type {
                 i16 => .i16,
                 i32 => .i32,
                 i64 => .i64,
-                i128 or i256 => @compileError("can't call to_array on inner primitive array of decimal"),
+                f16 => .f16,
+                f32 => .f32,
+                f64 => .f64,
                 else => @compileError("unsupported primitive type"),
             };
 
             return .{
                 .arr = self,
-                .data_type = data_type,
+                .type_ = type_,
+            };
+        }
+    };
+}
+
+pub fn FixedSizeBinaryArray(comptime ByteWidth: comptime_int) type {
+    return struct {
+        const Self = @This();
+
+        inner: PrimitiveArray([ByteWidth]u8),
+        byte_width: i32,
+
+        pub fn as_array(self: *const Self) Array {
+            return .{
+                .arr = self,
+                .type_ = .fixed_size_binary,
             };
         }
     };
@@ -186,14 +162,14 @@ fn DecimalArr(comptime T: type) type {
         params: DecimalParams,
 
         pub fn as_array(self: *const Self) Array {
-            const data_type: DataType = switch (T) {
+            const type_: ArrayType = switch (T) {
                 i128 => .{ .decimal128 = self.params },
                 i256 => .{ .decimal256 = self.params },
                 else => @compileError("unsupported index type"),
             };
 
             return .{
-                .data_type = data_type,
+                .type_ = type_,
                 .arr = self,
             };
         }
@@ -206,12 +182,14 @@ pub const Decimal256Array = DecimalArr(i256);
 pub const DictArray = struct {
     keys: Array,
     values: Array,
-    ordered: bool,
+    is_ordered: bool,
+    len: i64,
+    offset: i64,
 
     pub fn as_array(self: *const DictArray) Array {
         return .{
             .arr = self,
-            .data_type = .dict,
+            .type_ = .dict,
         };
     }
 };
@@ -219,11 +197,13 @@ pub const DictArray = struct {
 pub const RunEndArray = struct {
     run_ends: Array,
     values: Array,
+    len: i64,
+    offset: i64,
 
     pub fn as_array(self: *const RunEndArray) Array {
         return .{
             .arr = self,
-            .data_type = .run_end_encoded,
+            .type_ = .run_end_encoded,
         };
     }
 };
@@ -244,14 +224,14 @@ fn BinaryArr(comptime IndexT: type) type {
         offset: i64,
 
         pub fn as_array(self: *const Self) Array {
-            const data_type: DataType = comptime switch (IndexT) {
+            const type_: ArrayType = comptime switch (IndexT) {
                 i32 => .binary,
                 i64 => .large_binary,
                 else => @compileError("unsupported index type"),
             };
 
             return .{
-                .data_type = data_type,
+                .type_ = type_,
                 .arr = self,
             };
         }
@@ -273,14 +253,14 @@ fn Utf8Arr(comptime IndexT: type) type {
         inner: BinaryArr(IndexT),
 
         pub fn as_array(self: *const Self) Array {
-            const data_type: DataType = comptime switch (IndexT) {
+            const type_: ArrayType = comptime switch (IndexT) {
                 i32 => .utf8,
                 i64 => .large_utf8,
                 else => @compileError("unsupported index type"),
             };
 
             return .{
-                .data_type = data_type,
+                .data_type = type_,
                 .arr = self,
             };
         }
@@ -299,7 +279,22 @@ pub const StructArray = struct {
 
     pub fn as_array(self: *const StructArray) Array {
         return .{
-            .data_type = .struct_,
+            .type_ = .struct_,
+            .arr = self,
+        };
+    }
+};
+
+pub const FixedSizeListArray = struct {
+    inner: Array,
+    validity: ?[]align(ALIGNMENT) const u8,
+    len: i64,
+    offset: i64,
+    item_width: i32,
+
+    pub fn as_array(self: *const FixedSizeListArray) Array {
+        return .{
+            .type_ = .fixed_size_list,
             .arr = self,
         };
     }
@@ -321,14 +316,14 @@ fn ListArr(comptime IndexT: type) type {
         offset: i64,
 
         pub fn as_array(self: *const Self) Array {
-            const data_type: DataType = comptime switch (IndexT) {
+            const type_: ArrayType = comptime switch (IndexT) {
                 i32 => .list,
                 i64 => .large_list,
                 else => @compileError("unsupported index type"),
             };
 
             return .{
-                .data_type = data_type,
+                .type_ = type_,
                 .arr = self,
             };
         }
@@ -343,10 +338,12 @@ pub const DenseUnionArray = struct {
     types: []align(ALIGNMENT) const i8,
     offsets: []align(ALIGNMENT) const i32,
     children: []const Array,
+    len: i64,
+    offset: i64,
 
     pub fn as_array(self: *const DenseUnionArray) Array {
         return .{
-            .data_type = .dense_union,
+            .type_ = .dense_union,
             .arr = self,
         };
     }
@@ -356,10 +353,12 @@ pub const SparseUnionArray = struct {
     type_set: []align(ALIGNMENT) const i8,
     types: []align(ALIGNMENT) const i8,
     children: []const Array,
+    len: i64,
+    offset: i64,
 
     pub fn as_array(self: *const SparseUnionArray) Array {
         return .{
-            .data_type = .sparse_union,
+            .type_ = .sparse_union,
             .arr = self,
         };
     }
@@ -378,13 +377,13 @@ fn DateArr(comptime T: type) type {
         unit: DateUnit,
 
         pub fn as_array(self: *const Self) Array {
-            const data_type: DataType = comptime switch (T) {
-                i32 => .{ .date32 = self.unit },
-                i64 => .{ .date64 = self.unit },
+            const type_: ArrayType = comptime switch (T) {
+                i32 => .date32,
+                i64 => .date64,
             };
 
             return .{
-                .data_type = data_type,
+                .type_ = type_,
                 .arr = self,
             };
         }
@@ -407,13 +406,13 @@ fn TimeArr(comptime T: type) type {
         unit: TimeUnit,
 
         pub fn as_array(self: *const Self) Array {
-            const data_type: DataType = comptime switch (T) {
-                i32 => .{ .time32 = self.unit },
-                i64 => .{ .time64 = self.unit },
+            const type_: ArrayType = comptime switch (T) {
+                i32 => .time32,
+                i64 => .time64,
             };
 
             return .{
-                .data_type = data_type,
+                .type_ = type_,
                 .arr = self,
             };
         }
@@ -425,25 +424,22 @@ pub const Time64Array = TimeArr(i64);
 
 pub const TimestampArray = struct {
     inner: Int64Array,
-    dt: Timestamp,
+    ts: Timestamp,
 
     pub fn as_array(self: *const TimestampArray) Array {
         return .{
-            .data_type = .{ .timestamp = self.dt },
+            .type_ = .timestamp,
             .arr = self,
         };
     }
 };
 
 pub const IntervalDayTimeArray = struct {
-    values: []align(ALIGNMENT) const [2]i32,
-    validity: ?[]align(ALIGNMENT) const u8,
-    len: i64,
-    offset: i64,
+    inner: PrimitiveArray([2]i32),
 
     pub fn as_array(self: *const IntervalDayTimeArray) Array {
         return .{
-            .data_type = .interval_day_time,
+            .type_ = .interval_day_time,
             .arr = self,
         };
     }
@@ -456,14 +452,11 @@ pub const MonthDayNano = extern struct {
 };
 
 pub const IntervalMonthDayNanoArray = struct {
-    values: []align(ALIGNMENT) const MonthDayNano,
-    validity: ?[]align(ALIGNMENT) const u8,
-    len: i64,
-    offset: i64,
+    inner: PrimitiveArray(MonthDayNano),
 
     pub fn as_array(self: *const IntervalDayTimeArray) Array {
         return .{
-            .data_type = .interval_month_day_nano,
+            .type_ = .interval_month_day_nano,
             .arr = self,
         };
     }
@@ -474,7 +467,7 @@ pub const IntervalYearMonthArray = struct {
 
     pub fn as_array(self: *const IntervalDayTimeArray) Array {
         return .{
-            .data_type = .interval_year_month,
+            .type_ = .interval_year_month,
             .arr = self,
         };
     }
@@ -486,7 +479,7 @@ pub const DurationArray = struct {
 
     pub fn as_array(self: *const DurationArray) Array {
         return .{
-            .data_type = .{ .duration = self.unit },
+            .type_ = .{ .duration = self.unit },
             .arr = self,
         };
     }
@@ -498,15 +491,77 @@ pub const NullArray = struct {
 
     pub fn as_array(self: *const NullArray) Array {
         return .{
-            .data_type = .null,
+            .type_ = .null,
             .arr = self,
         };
     }
 };
 
-pub const BinaryViewArray = struct {};
-pub const Utf8ViewArray = struct {};
-pub const ListViewArray = struct {};
-pub const LargeListViewArray = struct {};
+pub const BinaryView = extern struct {
+    length: u32,
+    prefix: u32,
+    buffer_idx: u32,
+    offset: u32,
+};
+
+pub const BinaryViewArray = struct {
+    views: []align(ALIGNMENT) const BinaryView,
+    buffers: []const []align(ALIGNMENT) const u8,
+    validity: ?[]align(ALIGNMENT) const u8,
+    len: i64,
+    offset: i64,
+
+    pub fn as_array(self: *const BinaryViewArray) Array {
+        return .{
+            .type_ = .binary_view,
+            .arr = self,
+        };
+    }
+};
+
+pub const Utf8ViewArray = struct {
+    inner: BinaryViewArray,
+
+    pub fn as_array(self: *const Utf8ViewArray) Array {
+        return .{
+            .type_ = .utf8_view,
+            .arr = self,
+        };
+    }
+};
+
+pub fn ListViewArr(comptime IndexT: type) type {
+    comptime switch (IndexT) {
+        i32 or i64 => {},
+        else => @compileError("unsupported index type"),
+    };
+
+    return struct {
+        const Self = @This();
+
+        inner: Array,
+        offsets: []align(ALIGNMENT) const IndexT,
+        sizes: []align(ALIGNMENT) const IndexT,
+        validity: ?[]align(ALIGNMENT) const u8,
+        len: i64,
+        offset: i64,
+
+        pub fn as_array(self: *const Self) Array {
+            const type_: ArrayType = comptime switch (IndexT) {
+                i32 => .list_view,
+                i64 => .large_list_view,
+                else => @compileError("unsupported index type"),
+            };
+
+            return .{
+                .type_ = type_,
+                .arr = self,
+            };
+        }
+    };
+}
+
+pub const ListViewArray = ListViewArr(i32);
+pub const LargeListViewArray = ListViewArr(i64);
 
 pub const MapArray = struct {};
