@@ -3,7 +3,7 @@ const Allocator = std.mem.Allocator;
 
 const arr = @import("./array.zig");
 
-pub const Schema = extern struct {
+pub const ArrowSchema = extern struct {
     format: [*:0]const u8,
     name: ?[*:0]const u8,
     metadata: ?[*:0]const u8,
@@ -20,7 +20,7 @@ pub const Schema = extern struct {
     private_data: ?*anyopaque,
 };
 
-pub const Array = extern struct {
+pub const ArrowArray = extern struct {
     length: i64,
     null_count: i64,
     offset: i64,
@@ -34,8 +34,8 @@ pub const Array = extern struct {
 };
 
 pub const FFI_Array = struct {
-    schema: Schema,
-    array: Array,
+    schema: ArrowSchema,
+    array: ArrowArray,
 
     fn release(self: FFI_Array) void {
         self.schema.release(&self.schema);
