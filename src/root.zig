@@ -564,4 +564,17 @@ pub fn ListViewArr(comptime IndexT: type) type {
 pub const ListViewArray = ListViewArr(i32);
 pub const LargeListViewArray = ListViewArr(i64);
 
-pub const MapArray = struct {};
+pub const MapArray = struct {
+    entries: StructArray,
+    offsets: []align(ALIGNMENT) const i32,
+    len: i64,
+    offset: i64,
+    keys_are_sorted: bool,
+
+    pub fn as_array(self: *const MapArray) Array {
+        return .{
+            .type_ = .map,
+            .arr = self,
+        };
+    }
+};
