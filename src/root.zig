@@ -22,12 +22,6 @@ pub const Timestamp = struct {
     timezone: ?[]const u8,
 };
 
-pub const IntervalUnit = enum {
-    year_month,
-    day_time,
-    month_day_nano,
-};
-
 pub const DataType = union(enum) {
     null,
     i8,
@@ -51,7 +45,9 @@ pub const DataType = union(enum) {
     time32: TimeUnit,
     time64: TimeUnit,
     timestamp: Timestamp,
-    interval: IntervalUnit,
+    interval_year_month,
+    interval_day_time,
+    interval_month_day_nano,
     list,
     struct_,
     dense_union,
@@ -114,27 +110,20 @@ pub fn FixedSizeBinaryArray(comptime ByteWidth: comptime_int) type {
     };
 }
 
-pub fn FixedSizeListArray(comptime ByteWidth: comptime_int) type {
-    return struct {
-        const Self = @This();
+pub const FixedSizeListArray = struct {
+    inner: Array,
+    validity: ?[]align(ALIGNMENT) const u8,
+    len: i64,
+    offset: i64,
+    item_width: i32,
 
-        inner: Array,
-        validity: ?[]align(ALIGNMENT) const u8,
-        len: i64,
-        offset: i64,
-
-        pub fn as_array(self: *const Self) Array {
-            const data_type = comptime .{
-                .fixed_size_list = ByteWidth,
-            };
-
-            return .{
-                .arr = self,
-                .data_type = data_type,
-            };
-        }
-    };
-}
+    pub fn as_array(self: *const FixedSizeListArray) Array {
+        return .{
+            .data_type = .{ .fixed_size_list = self.item_width },
+            .arr = self,
+        };
+    }
+};
 
 fn PrimitiveArray(comptime T: type) type {
     comptime switch (T) {
@@ -217,6 +206,7 @@ pub const Decimal256Array = DecimalArr(i256);
 pub const DictArray = struct {
     keys: Array,
     values: Array,
+    ordered: bool,
 
     pub fn as_array(self: *const DictArray) Array {
         return .{
@@ -348,18 +338,175 @@ fn ListArr(comptime IndexT: type) type {
 pub const ListArray = ListArr(i32);
 pub const LargeListArray = ListArr(i64);
 
-pub const DenseUnionArray = struct {};
-pub const SparseUnionArray = struct {};
+pub const DenseUnionArray = struct {
+    type_set: []align(ALIGNMENT) const i8,
+    types: []align(ALIGNMENT) const i8,
+    offsets: []align(ALIGNMENT) const i32,
+    children: []const Array,
 
-pub const MapArray = struct {};
+    pub fn as_array(self: *const DenseUnionArray) Array {
+        return .{
+            .data_type = .dense_union,
+            .arr = self,
+        };
+    }
+};
+
+pub const SparseUnionArray = struct {
+    type_set: []align(ALIGNMENT) const i8,
+    types: []align(ALIGNMENT) const i8,
+    children: []const Array,
+
+    pub fn as_array(self: *const SparseUnionArray) Array {
+        return .{
+            .data_type = .sparse_union,
+            .arr = self,
+        };
+    }
+};
+
+fn DateArr(comptime T: type) type {
+    comptime switch (T) {
+        i32 or i64 => {},
+        else => @compileError("unsupported index type"),
+    };
+
+    return struct {
+        const Self = @This();
+
+        inner: PrimitiveArray(T),
+        unit: DateUnit,
+
+        pub fn as_array(self: *const Self) Array {
+            const data_type: DataType = comptime switch (T) {
+                i32 => .{ .date32 = self.unit },
+                i64 => .{ .date64 = self.unit },
+            };
+
+            return .{
+                .data_type = data_type,
+                .arr = self,
+            };
+        }
+    };
+}
+
+pub const Date32Array = DateArr(i32);
+pub const Date64Array = DateArr(i64);
+
+fn TimeArr(comptime T: type) type {
+    comptime switch (T) {
+        i32 or i64 => {},
+        else => @compileError("unsupported index type"),
+    };
+
+    return struct {
+        const Self = @This();
+
+        inner: PrimitiveArray(T),
+        unit: TimeUnit,
+
+        pub fn as_array(self: *const Self) Array {
+            const data_type: DataType = comptime switch (T) {
+                i32 => .{ .time32 = self.unit },
+                i64 => .{ .time64 = self.unit },
+            };
+
+            return .{
+                .data_type = data_type,
+                .arr = self,
+            };
+        }
+    };
+}
+
+pub const Time32Array = TimeArr(i32);
+pub const Time64Array = TimeArr(i64);
+
+pub const TimestampArray = struct {
+    inner: Int64Array,
+    dt: Timestamp,
+
+    pub fn as_array(self: *const TimestampArray) Array {
+        return .{
+            .data_type = .{ .timestamp = self.dt },
+            .arr = self,
+        };
+    }
+};
+
+pub const IntervalDayTimeArray = struct {
+    values: []align(ALIGNMENT) const [2]i32,
+    validity: ?[]align(ALIGNMENT) const u8,
+    len: i64,
+    offset: i64,
+
+    pub fn as_array(self: *const IntervalDayTimeArray) Array {
+        return .{
+            .data_type = .interval_day_time,
+            .arr = self,
+        };
+    }
+};
+
+pub const MonthDayNano = extern struct {
+    months: i32,
+    days: i32,
+    nanoseconds: i64,
+};
+
+pub const IntervalMonthDayNanoArray = struct {
+    values: []align(ALIGNMENT) const MonthDayNano,
+    validity: ?[]align(ALIGNMENT) const u8,
+    len: i64,
+    offset: i64,
+
+    pub fn as_array(self: *const IntervalDayTimeArray) Array {
+        return .{
+            .data_type = .interval_month_day_nano,
+            .arr = self,
+        };
+    }
+};
+
+pub const IntervalYearMonthArray = struct {
+    inner: Int32Array,
+
+    pub fn as_array(self: *const IntervalDayTimeArray) Array {
+        return .{
+            .data_type = .interval_year_month,
+            .arr = self,
+        };
+    }
+};
+
+pub const DurationArray = struct {
+    inner: Int64Array,
+    unit: TimeUnit,
+
+    pub fn as_array(self: *const DurationArray) Array {
+        return .{
+            .data_type = .{ .duration = self.unit },
+            .arr = self,
+        };
+    }
+};
+
+pub const NullArray = struct {
+    len: i64,
+    offset: i64,
+
+    pub fn as_array(self: *const NullArray) Array {
+        return .{
+            .data_type = .null,
+            .arr = self,
+        };
+    }
+};
 
 pub const BinaryViewArray = struct {};
 pub const Utf8ViewArray = struct {};
 pub const ListViewArray = struct {};
 pub const LargeListViewArray = struct {};
 
-pub const DateArray = struct {};
-pub const TimeArray = struct {};
-pub const TimestampArray = struct {};
-pub const IntervalArray = struct {};
-pub const DurationArray = struct {};
+pub const MapArray = struct {};
