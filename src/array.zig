@@ -145,8 +145,8 @@ pub const Array = struct {
 pub const BoolArray = struct {
     values: []const u8,
     validity: ?[]const u8,
-    len: i64,
-    offset: i64,
+    len: u32,
+    offset: u32,
 };
 
 fn PrimitiveArray(comptime T: type) type {
@@ -155,16 +155,17 @@ fn PrimitiveArray(comptime T: type) type {
 
         values: []const T,
         validity: ?[]const u8,
-        len: i64,
-        offset: i64,
+        len: u32,
+        offset: u32,
     };
 }
 
 pub const FixedSizeBinaryArray = struct {
     data: []const u8,
+    validity: ?[]const u8,
     byte_width: i32,
-    len: i64,
-    offset: i64,
+    len: u32,
+    offset: u32,
 };
 
 pub const UInt8Array = PrimitiveArray(u8);
@@ -181,7 +182,7 @@ pub const Float64Array = PrimitiveArray(f64);
 
 fn DecimalArr(comptime T: type) type {
     comptime switch (T) {
-        i128 or i256 => {},
+        i128, i256 => {},
         else => @compileError("unsupported decimal impl type"),
     };
 
@@ -200,20 +201,20 @@ pub const DictArray = struct {
     keys: Array,
     values: Array,
     is_ordered: bool,
-    len: i64,
-    offset: i64,
+    len: u32,
+    offset: u32,
 };
 
 pub const RunEndArray = struct {
     run_ends: Array,
     values: Array,
-    len: i64,
-    offset: i64,
+    len: u32,
+    offset: u32,
 };
 
 fn BinaryArr(comptime IndexT: type) type {
     comptime switch (IndexT) {
-        i32 or i64 => {},
+        i32, i64 => {},
         else => @compileError("unsupported index type"),
     };
 
@@ -223,8 +224,8 @@ fn BinaryArr(comptime IndexT: type) type {
         data: []const u8,
         offsets: []const IndexT,
         validity: ?[]const u8,
-        len: i64,
-        offset: i64,
+        len: u32,
+        offset: u32,
     };
 }
 
@@ -233,7 +234,7 @@ pub const LargeBinaryArray = BinaryArr(i64);
 
 fn Utf8Arr(comptime IndexT: type) type {
     comptime switch (IndexT) {
-        i32 or i64 => {},
+        i32, i64 => {},
         else => @compileError("unsupported index type"),
     };
 
@@ -251,21 +252,21 @@ pub const StructArray = struct {
     field_names: BinaryArray,
     field_values: []const Array,
     validity: ?[]const u8,
-    len: i64,
-    offset: i64,
+    len: u32,
+    offset: u32,
 };
 
 pub const FixedSizeListArray = struct {
     inner: Array,
     validity: ?[]const u8,
-    len: i64,
-    offset: i64,
+    len: u32,
+    offset: u32,
     item_width: i32,
 };
 
 fn ListArr(comptime IndexT: type) type {
     comptime switch (IndexT) {
-        i32 or i64 => {},
+        i32, i64 => {},
         else => @compileError("unsupported index type"),
     };
 
@@ -275,8 +276,8 @@ fn ListArr(comptime IndexT: type) type {
         inner: Array,
         offsets: []const IndexT,
         validity: ?[]const u8,
-        len: i64,
-        offset: i64,
+        len: u32,
+        offset: u32,
     };
 }
 
@@ -288,21 +289,21 @@ pub const DenseUnionArray = struct {
     types: []const i8,
     offsets: []const i32,
     children: []const Array,
-    len: i64,
-    offset: i64,
+    len: u32,
+    offset: u32,
 };
 
 pub const SparseUnionArray = struct {
     type_set: []const i8,
     types: []const i8,
     children: []const Array,
-    len: i64,
-    offset: i64,
+    len: u32,
+    offset: u32,
 };
 
 fn DateArr(comptime T: type) type {
     comptime switch (T) {
-        i32 or i64 => {},
+        i32, i64 => {},
         else => @compileError("unsupported index type"),
     };
 
@@ -319,7 +320,7 @@ pub const Date64Array = DateArr(i64);
 
 fn TimeArr(comptime T: type) type {
     comptime switch (T) {
-        i32 or i64 => {},
+        i32, i64 => {},
         else => @compileError("unsupported index type"),
     };
 
@@ -363,8 +364,8 @@ pub const DurationArray = struct {
 };
 
 pub const NullArray = struct {
-    len: i64,
-    offset: i64,
+    len: u32,
+    offset: u32,
 };
 
 pub const BinaryView = extern struct {
@@ -378,8 +379,8 @@ pub const BinaryViewArray = struct {
     views: []const BinaryView,
     buffers: []const []const u8,
     validity: ?[]const u8,
-    len: i64,
-    offset: i64,
+    len: u32,
+    offset: u32,
 };
 
 pub const Utf8ViewArray = struct {
@@ -388,7 +389,7 @@ pub const Utf8ViewArray = struct {
 
 fn ListViewArr(comptime IndexT: type) type {
     comptime switch (IndexT) {
-        i32 or i64 => {},
+        i32, i64 => {},
         else => @compileError("unsupported index type"),
     };
 
@@ -399,8 +400,8 @@ fn ListViewArr(comptime IndexT: type) type {
         offsets: []const IndexT,
         sizes: []const IndexT,
         validity: ?[]const u8,
-        len: i64,
-        offset: i64,
+        len: u32,
+        offset: u32,
     };
 }
 
@@ -410,8 +411,8 @@ pub const LargeListViewArray = ListViewArr(i64);
 pub const MapArray = struct {
     entries: StructArray,
     offsets: []const i32,
-    len: i64,
-    offset: i64,
+    len: u32,
+    offset: u32,
     keys_are_sorted: bool,
 };
 
