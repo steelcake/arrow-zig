@@ -530,7 +530,7 @@ pub const Utf8ViewArray = struct {
     }
 };
 
-pub fn ListViewArr(comptime IndexT: type) type {
+fn ListViewArr(comptime IndexT: type) type {
     comptime switch (IndexT) {
         i32 or i64 => {},
         else => @compileError("unsupported index type"),
