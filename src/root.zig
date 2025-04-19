@@ -1,4 +1,5 @@
 const std = @import("std");
+const testing = std.testing;
 
 pub const DecimalParams = struct {
     precision: u8,
@@ -22,7 +23,7 @@ pub const Timestamp = struct {
     timezone: ?[]const u8,
 };
 
-pub const ArrayType = union(enum) {
+pub const ArrayType = enum {
     null,
     i8,
     i16,
@@ -67,9 +68,64 @@ pub const ArrayType = union(enum) {
     dict,
 };
 
+fn array_type(comptime ArrayT: ArrayType) type {
+    return switch (ArrayT) {
+        .null => NullArray,
+        .i8 => Int8Array,
+        .i16 => Int16Array,
+        .i32 => Int32Array,
+        .i64 => Int64Array,
+        .u8 => UInt8Array,
+        .u16 => UInt16Array,
+        .u32 => UInt32Array,
+        .u64 => UInt64Array,
+        .f16 => Float16Array,
+        .f32 => Float32Array,
+        .f64 => Float64Array,
+        .binary => BinaryArray,
+        .utf8 => Utf8Array,
+        .bool => BoolArray,
+        .decimal128 => Decimal128Array,
+        .decimal256 => Decimal256Array,
+        .date32 => Date32Array,
+        .date64 => Date64Array,
+        .time32 => Time32Array,
+        .time64 => Time64Array,
+        .timestamp => TimestampArray,
+        .interval_year_month => IntervalYearMonthArray,
+        .interval_day_time => IntervalDayTimeArray,
+        .interval_month_day_nano => IntervalMonthDayNanoArray,
+        .list => ListArray,
+        .struct_ => StructArray,
+        .dense_union => DenseUnionArray,
+        .sparse_union => SparseUnionArray,
+        .fixed_size_binary => FixedSizeBinaryArray,
+        .fixed_size_list => FixedSizeListArray,
+        .map => MapArray,
+        .duration => DurationArray,
+        .large_binary => LargeBinaryArray,
+        .large_utf8 => LargeUtf8Array,
+        .large_list => LargeListArray,
+        .run_end_encoded => RunEndArray,
+        .binary_view => BinaryViewArray,
+        .utf8_view => Utf8ViewArray,
+        .list_view => ListViewArray,
+        .large_list_view => LargeListViewArray,
+        .dict => DictArray,
+    };
+}
+
 pub const Array = struct {
     arr: *const anyopaque,
     type_: ArrayType,
+
+    fn as(self: Array, comptime ArrayT: ArrayType) *const array_type(ArrayT) {
+        if (ArrayT != self.type_) {
+            unreachable;
+        }
+
+        return @ptrCast(@alignCast(self.arr));
+    }
 };
 
 const ALIGNMENT = 64;
@@ -121,21 +177,19 @@ fn PrimitiveArray(comptime T: type) type {
     };
 }
 
-pub fn FixedSizeBinaryArray(comptime ByteWidth: comptime_int) type {
-    return struct {
-        const Self = @This();
+pub const FixedSizeBinaryArray = struct {
+    data: []align(ALIGNMENT) const u8,
+    byte_width: i32,
+    len: i64,
+    offset: i64,
 
-        inner: PrimitiveArray([ByteWidth]u8),
-        byte_width: i32,
-
-        pub fn as_array(self: *const Self) Array {
-            return .{
-                .arr = self,
-                .type_ = .fixed_size_binary,
-            };
-        }
-    };
-}
+    pub fn as_array(self: *const FixedSizeBinaryArray) Array {
+        return .{
+            .arr = self,
+            .type_ = .fixed_size_binary,
+        };
+    }
+};
 
 pub const UInt8Array = PrimitiveArray(u8);
 pub const UInt16Array = PrimitiveArray(u16);
@@ -578,3 +632,18 @@ pub const MapArray = struct {
         };
     }
 };
+
+test "array casting" {
+    const typed_arr: Int32Array = .{
+        .validity = null,
+        .len = 0,
+        .offset = 0,
+        .values = &.{},
+    };
+
+    const arr = typed_arr.as_array();
+
+    const re_typed_arr = arr.as(.i32);
+
+    try testing.expectEqual(&typed_arr, re_typed_arr);
+}
