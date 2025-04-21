@@ -1,8 +1,9 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
+const ArenaAllocator = std.heap.ArenaAllocator;
 
 const arr = @import("./array.zig");
-const abi = @cImport(@cInclude("arrow_abi.h"));
+pub const abi = @cImport(@cInclude("arrow_abi.h"));
 
 pub const FFI_Array = struct {
     schema: abi.ArrowSchema,
@@ -128,17 +129,37 @@ pub fn import_(array: FFI_Array, allocator: Allocator) !arr.Array {
     }
 }
 
-fn export_primitive(comptime ArrT: arr.ArrayType) FFI_Array {
-
+fn release_array(array: *abi.ArrowArray) callconv(.C) void {
+    const arena: *ArenaAllocator = @ptrCast(array.private_data);
+    const backing_alloc = arena.child_allocator;
+    arena.deinit();
+    backing_alloc.destroy(arena);
 }
 
-pub fn export_(array: arr.Array, _: Allocator) FFI_Array {
+fn release_schema(schema: *abi.ArrowSchema) callconv(.C) void {
+    const arena: *ArenaAllocator = @ptrCast(schema.private_data);
+    const backing_alloc = arena.child_allocator;
+    arena.deinit();
+    backing_alloc.destroy(arena);
+}
+
+/// calling arena.deinit should free all memory relating to this array
+///
+/// arena should be allocated using arena.child_allocator
+///
+/// arena.child_allocator should be alive whenever the consumer of FFI_Array decides to call release functions on abi array or schema
+///
+/// Generally arena should be allocated inside a global allocator like std.heap.GeneralPurposeAlloc and it should have that global alloc as it's child alloc.
+/// and array should be allocated using this arena.
+pub fn export_(array: arr.Array, arena: *ArenaAllocator) !FFI_Array {
     switch (array.type_) {
         .null => {
             const a = array.to(.null);
 
             return .{
-                .schema = .{},
+                .schema = .{
+                    .format = "b",
+                },
                 .array = .{
                     .length = a.len,
                     .offset = a.offset,
@@ -146,47 +167,89 @@ pub fn export_(array: arr.Array, _: Allocator) FFI_Array {
             };
         },
         .i8 => {
-
+            return export_primitive(arr.Int8Array, array, arena);
         },
-        i16,
-        i32,
-        i64,
-        u8,
-        u16,
-        u32,
-        u64,
-        f16,
-        f32,
-        f64,
-        binary,
-        utf8,
-        bool,
+        .i16 => {
+            return export_primitive(arr.Int16Array, array, arena);
+        },
+        .i32 => {
+            return export_primitive(arr.Int32Array, array, arena);
+        },
+        .i64 => {
+            return export_primitive(arr.Int64Array, array, arena);
+        },
+        .u8 => {
+            return export_primitive(arr.UInt8Array, array, arena);
+        },
+        .u16 => {
+            return export_primitive(arr.UInt16Array, array, arena);
+        },
+        .u32 => {
+            return export_primitive(arr.UInt32Array, array, arena);
+        },
+        .u64 => {
+            return export_primitive(arr.UInt64Array, array, arena);
+        },
+        .f16 => {
+            return export_primitive(arr.Float16Array, array, arena);
+        },
+        .f32 => {
+            return export_primitive(arr.Float32Array, array, arena);
+        },
+        .f64 => {
+            return export_primitive(arr.Float64Array, array, arena);
+        },
+        // binary,
+        // utf8,
+        // bool,
         else => unreachable,
     }
 }
 
+fn export_primitive(comptime _: type, _: arr.Array, _: *ArenaAllocator) !FFI_Array {
+    return .{
+        .array = .{},
+        .schema = .{},
+    };
+}
+
 test "roundtrip" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    var arena = ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const allocator = arena.allocator();
 
-    const values = [_]i32{ 3, 2, 1, 4, 5, 6 };
+    const original_data = [_]i32{ 3, 2, 1, 4, 5, 6 };
 
-    const typed = arr.Int32Array{
+    const export_arena = std.testing.allocator.create(std.heap.ArenaAllocator) catch unreachable;
+    export_arena.* = ArenaAllocator.init(std.testing.allocator);
+    const export_alloc = export_arena.allocator();
+    const typed = export_alloc.create(arr.Int32Array) catch unreachable;
+    const values = export_alloc.alloc(i32, 6) catch unreachable;
+    @memcpy(values, &original_data);
+
+    typed.* = .{
         .len = 5,
         .offset = 1,
         .validity = null,
-        .values = &values,
+        .values = values,
     };
 
-    const array = arr.Array.from(&typed);
+    const array = arr.Array.from(typed);
 
-    var ffi_array = export_(array, allocator);
-    defer ffi_array.release(); 
+    // use 'catch unreachable' up to here beacuse we don't want everything to leak
+    // and just using defer isn't feasible because all of that ownership is handed to the consumer
+    // of FFI_Array
+    //
+    // would have to handle this in a more complete way in a real application.
+    var ffi_array = export_(array, export_arena) catch unreachable;
+    defer ffi_array.release();
 
     const roundtrip_array = try import_(ffi_array, allocator);
 
     const roundtrip_typed = roundtrip_array.to(.i32);
 
-    try std.testing.expectEqualDeep(roundtrip_typed, &typed);
+    try std.testing.expectEqualDeep(
+        original_data[1..],
+        roundtrip_typed.values[roundtrip_typed.offset .. roundtrip_typed.offset + roundtrip_typed.len],
+    );
 }
