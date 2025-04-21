@@ -39,6 +39,7 @@ fn import_primitive(comptime T: type, comptime ArrT: type, array: *const FFI_Arr
     const offset: u32 = @intCast(array.array.offset);
     const size: u32 = len + offset;
     const byte_size = validity_size(size);
+    const null_count: u32 = @intCast(array.array.null_count);
 
     const validity = if (buffers[0]) |b| import_buffer(u8, b, byte_size) else null;
 
@@ -48,6 +49,7 @@ fn import_primitive(comptime T: type, comptime ArrT: type, array: *const FFI_Arr
         .validity = validity,
         .len = len,
         .offset = offset,
+        .null_count = null_count,
     };
 
     return arr.Array.from(arr_ptr);
@@ -62,6 +64,7 @@ pub fn import_(array: FFI_Array, allocator: Allocator) !arr.Array {
     const len: u32 = @intCast(array.array.length);
     const offset: u32 = @intCast(array.array.offset);
     const size: u32 = len + offset;
+    const null_count: u32 = @intCast(array.array.null_count);
 
     switch (format[0]) {
         'n' => {
@@ -69,6 +72,7 @@ pub fn import_(array: FFI_Array, allocator: Allocator) !arr.Array {
             null_arr.* = arr.NullArray{
                 .len = len,
                 .offset = offset,
+                .null_count = null_count,
             };
 
             return arr.Array.from(null_arr);
@@ -88,6 +92,7 @@ pub fn import_(array: FFI_Array, allocator: Allocator) !arr.Array {
                 .validity = validity,
                 .len = len,
                 .offset = offset,
+                .null_count = null_count,
             };
 
             return arr.Array.from(bool_arr);
@@ -203,7 +208,9 @@ pub fn export_(array: arr.Array, arena: *ArenaAllocator) !FFI_Array {
         },
         // binary,
         // utf8,
-        // bool,
+        // .bool => {
+        //
+        // },
         else => unreachable,
     }
 }
@@ -235,7 +242,7 @@ fn export_primitive(array: anytype, arena: *ArenaAllocator) !FFI_Array {
             .buffers = buffers.ptr,
             .offset = array.offset,
             .length = array.len,
-            .null_count = 0,
+            .null_count = array.null_count,
             .private_data = arena,
             .release = release_array,
         },
@@ -262,6 +269,7 @@ test "roundtrip" {
         .offset = 1,
         .validity = null,
         .values = values,
+        .null_count = 0,
     };
 
     const array = arr.Array.from(typed);

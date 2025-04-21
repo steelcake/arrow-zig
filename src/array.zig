@@ -147,6 +147,7 @@ pub const BoolArray = struct {
     validity: ?[]const u8,
     len: u32,
     offset: u32,
+    null_count: u32,
 };
 
 fn PrimitiveArray(comptime T: type) type {
@@ -157,6 +158,7 @@ fn PrimitiveArray(comptime T: type) type {
         validity: ?[]const u8,
         len: u32,
         offset: u32,
+        null_count: u32,
     };
 }
 
@@ -166,6 +168,7 @@ pub const FixedSizeBinaryArray = struct {
     byte_width: i32,
     len: u32,
     offset: u32,
+    null_count: u32,
 };
 
 pub const UInt8Array = PrimitiveArray(u8);
@@ -203,6 +206,7 @@ pub const DictArray = struct {
     is_ordered: bool,
     len: u32,
     offset: u32,
+    null_count: u32,
 };
 
 pub const RunEndArray = struct {
@@ -210,6 +214,7 @@ pub const RunEndArray = struct {
     values: Array,
     len: u32,
     offset: u32,
+    null_count: u32,
 };
 
 fn BinaryArr(comptime IndexT: type) type {
@@ -226,6 +231,7 @@ fn BinaryArr(comptime IndexT: type) type {
         validity: ?[]const u8,
         len: u32,
         offset: u32,
+        null_count: u32,
     };
 }
 
@@ -254,6 +260,7 @@ pub const StructArray = struct {
     validity: ?[]const u8,
     len: u32,
     offset: u32,
+    null_count: u32,
 };
 
 pub const FixedSizeListArray = struct {
@@ -261,6 +268,7 @@ pub const FixedSizeListArray = struct {
     validity: ?[]const u8,
     len: u32,
     offset: u32,
+    null_count: u32,
     item_width: i32,
 };
 
@@ -278,6 +286,7 @@ fn ListArr(comptime IndexT: type) type {
         validity: ?[]const u8,
         len: u32,
         offset: u32,
+        null_count: u32,
     };
 }
 
@@ -291,6 +300,7 @@ pub const DenseUnionArray = struct {
     children: []const Array,
     len: u32,
     offset: u32,
+    null_count: u32,
 };
 
 pub const SparseUnionArray = struct {
@@ -299,6 +309,7 @@ pub const SparseUnionArray = struct {
     children: []const Array,
     len: u32,
     offset: u32,
+    null_count: u32,
 };
 
 fn DateArr(comptime T: type) type {
@@ -366,6 +377,7 @@ pub const DurationArray = struct {
 pub const NullArray = struct {
     len: u32,
     offset: u32,
+    null_count: u32,
 };
 
 pub const BinaryView = extern struct {
@@ -373,6 +385,7 @@ pub const BinaryView = extern struct {
     prefix: u32,
     buffer_idx: u32,
     offset: u32,
+    null_count: u32,
 };
 
 pub const BinaryViewArray = struct {
@@ -381,6 +394,7 @@ pub const BinaryViewArray = struct {
     validity: ?[]const u8,
     len: u32,
     offset: u32,
+    null_count: u32,
 };
 
 pub const Utf8ViewArray = struct {
@@ -402,6 +416,7 @@ fn ListViewArr(comptime IndexT: type) type {
         validity: ?[]const u8,
         len: u32,
         offset: u32,
+        null_count: u32,
     };
 }
 
@@ -413,6 +428,7 @@ pub const MapArray = struct {
     offsets: []const i32,
     len: u32,
     offset: u32,
+    null_count: u32,
     keys_are_sorted: bool,
 };
 
@@ -422,6 +438,7 @@ test "array casting" {
         .len = 0,
         .offset = 0,
         .values = &.{},
+        .null_count = 0,
     };
 
     const arr = Array.from(&typed_arr);
