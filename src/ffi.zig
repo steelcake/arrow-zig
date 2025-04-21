@@ -306,6 +306,31 @@ fn import_time(comptime ArrT: type, unit: arr.TimeUnit, array: *const FFI_Array,
     return arr.Array.from(arr_ptr);
 }
 
+fn import_timestamp(format: []const u8, unit: arr.TimeUnit, array: *const FFI_Array, allocator: Allocator) !arr.Array {
+    if (format[3] != ':') {
+        return error.InvalidFormatStr;
+    }
+
+    const timezone = if (format.len >= 4)
+        format[4..]
+    else
+        null;
+
+    const inner = try import_primitive_impl(i64, arr.Int64Array, array);
+
+    const arr_ptr = try allocator.create(arr.TimestampArray);
+
+    arr_ptr.* = arr.TimestampArray{
+        .inner = inner,
+        .ts = arr.Timestamp{
+            .unit = unit,
+            .timezone = timezone,
+        },
+    };
+
+    return arr.Array.from(arr_ptr);
+}
+
 pub fn import_array(array: *const FFI_Array, allocator: Allocator) !arr.Array {
     const format_str = array.schema.format orelse return error.InvalidFFIArray;
     const format: []const u8 = std.mem.span(format_str);
@@ -418,6 +443,13 @@ pub fn import_array(array: *const FFI_Array, allocator: Allocator) !arr.Array {
                     'm' => import_time(arr.Time32Array, .millisecond, array, allocator),
                     'u' => import_time(arr.Time64Array, .microsecond, array, allocator),
                     'n' => import_time(arr.Time64Array, .nanosecond, array, allocator),
+                    else => error.InvalidFormatStr,
+                },
+                's' => switch (format[2]) {
+                    's' => import_timestamp(format, .second, array, allocator),
+                    'm' => import_timestamp(format, .millisecond, array, allocator),
+                    'u' => import_timestamp(format, .microsecond, array, allocator),
+                    'n' => import_timestamp(format, .nanosecond, array, allocator),
                     else => error.InvalidFormatStr,
                 },
                 else => error.InvalidFormatStr,
@@ -547,8 +579,35 @@ pub fn export_array(array: arr.Array, arena: *ArenaAllocator) !FFI_Array {
         .time64 => {
             return export_time(array.to(.time64), arena);
         },
+        .timestamp => {
+            return export_timestamp(array.to(.timestamp), arena);
+        },
         else => unreachable,
     }
+}
+
+fn export_timestamp(timestamp_array: *const arr.TimestampArray, arena: *ArenaAllocator) !FFI_Array {
+    const allocator = arena.allocator();
+
+    const format_base = switch (timestamp_array.ts.unit) {
+        .second => "tss:",
+        .millisecond => "tsm:",
+        .microsecond => "tsu:",
+        .nanosecond => "tsn:",
+    };
+
+    const format = if (timestamp_array.ts.timezone) |tz|
+        try std.fmt.allocPrintZ(allocator, "{s}{s}", .{ format_base, tz })
+    else
+        format_base;
+
+    errdefer if (timestamp_array.ts.timezone != null) {
+        allocator.free(format);
+    };
+
+    const out = try export_primitive_impl(format, &timestamp_array.inner, arena);
+
+    return out;
 }
 
 fn export_time(time_array: anytype, arena: *ArenaAllocator) !FFI_Array {
