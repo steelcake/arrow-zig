@@ -344,6 +344,33 @@ fn import_duration(unit: arr.TimestampUnit, array: *const FFI_Array, allocator: 
     return arr.Array.from(arr_ptr);
 }
 
+fn import_interval(comptime ArrT: type, comptime T: type, array: *const FFI_Array, allocator: Allocator) !arr.Array {
+    const buffers = array.array.buffers.?;
+    if (array.array.n_buffers != 2) {
+        return error.InvalidFFIArray;
+    }
+
+    const len: u32 = @intCast(array.array.length);
+    const offset: u32 = @intCast(array.array.offset);
+    const size: u32 = len + offset;
+    const byte_size = validity_size(size);
+    const null_count: u32 = @intCast(array.array.null_count);
+
+    const validity = if (buffers[0]) |b| import_buffer(u8, b, byte_size) else null;
+
+    const arr_ptr = try allocator.create(ArrT);
+
+    arr_ptr.* = .{ .inner = .{
+        .values = import_buffer(T, buffers[1], size),
+        .validity = validity,
+        .len = len,
+        .offset = offset,
+        .null_count = null_count,
+    } };
+
+    return arr.Array.from(arr_ptr);
+}
+
 pub fn import_array(array: *const FFI_Array, allocator: Allocator) !arr.Array {
     const format_str = array.schema.format orelse return error.InvalidFFIArray;
     const format: []const u8 = std.mem.span(format_str);
@@ -470,6 +497,12 @@ pub fn import_array(array: *const FFI_Array, allocator: Allocator) !arr.Array {
                     'm' => import_duration(.millisecond, array, allocator),
                     'u' => import_duration(.microsecond, array, allocator),
                     'n' => import_duration(.nanosecond, array, allocator),
+                    else => error.InvalidFormatStr,
+                },
+                'i' => switch (format[2]) {
+                    'M' => import_interval(arr.IntervalYearMonthArray, i32, array, allocator),
+                    'D' => import_interval(arr.IntervalDayTimeArray, [2]i32, array, allocator),
+                    'n' => import_interval(arr.IntervalMonthDayNanoArray, arr.MonthDayNano, array, allocator),
                     else => error.InvalidFormatStr,
                 },
                 else => error.InvalidFormatStr,
@@ -605,8 +638,21 @@ pub fn export_array(array: arr.Array, arena: *ArenaAllocator) !FFI_Array {
         .duration => {
             return export_duration(array.to(.duration), arena);
         },
+        .interval_year_month => {
+            return export_interval("tiM", array.to(.interval_year_month), arena);
+        },
+        .interval_day_time => {
+            return export_interval("tiD", array.to(.interval_day_time), arena);
+        },
+        .interval_month_day_nano => {
+            return export_interval("tin", array.to(.interval_month_day_nano), arena);
+        },
         else => unreachable,
     }
+}
+
+fn export_interval(format: [:0]const u8, array: anytype, arena: *ArenaAllocator) !FFI_Array {
+    return export_primitive_impl(format, &array.inner, arena);
 }
 
 fn export_duration(dur_array: *const arr.DurationArray, arena: *ArenaAllocator) !FFI_Array {
