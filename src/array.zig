@@ -13,11 +13,6 @@ pub const TimeUnit = enum {
     nanosecond,
 };
 
-pub const DateUnit = enum {
-    day,
-    millisecond,
-};
-
 pub const Timestamp = struct {
     unit: TimeUnit,
     timezone: ?[]const u8,

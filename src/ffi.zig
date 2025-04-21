@@ -257,6 +257,30 @@ fn import_fixed_size_binary(format: []const u8, array: *const FFI_Array, allocat
     return arr.Array.from(arr_ptr);
 }
 
+fn import_date(comptime ArrT: type, array: *const FFI_Array, allocator: Allocator) !arr.Array {
+    const T = comptime switch (ArrT) {
+        arr.Date32Array => i32,
+        arr.Date64Array => i64,
+        else => @compileError("unknown array type"),
+    };
+
+    const InnerT = comptime switch (ArrT) {
+        arr.Date32Array => arr.Int32Array,
+        arr.Date64Array => arr.Int64Array,
+        else => @compileError("unknown array type"),
+    };
+
+    const inner = try import_primitive_impl(T, InnerT, array);
+
+    const arr_ptr = try allocator.create(ArrT);
+
+    arr_ptr.* = ArrT{
+        .inner = inner,
+    };
+
+    return arr.Array.from(arr_ptr);
+}
+
 pub fn import_array(array: *const FFI_Array, allocator: Allocator) !arr.Array {
     const format_str = array.schema.format orelse return error.InvalidFFIArray;
     const format: []const u8 = std.mem.span(format_str);
@@ -356,6 +380,16 @@ pub fn import_array(array: *const FFI_Array, allocator: Allocator) !arr.Array {
         },
         'w' => {
             return import_fixed_size_binary(format, array, allocator);
+        },
+        't' => {
+            return switch (format[1]) {
+                'd' => switch (format[2]) {
+                    'D' => import_date(arr.Date32Array, array, allocator),
+                    'm' => import_date(arr.Date64Array, array, allocator),
+                    else => error.InvalidFormatStr,
+                },
+                else => error.InvalidFormatStr,
+            };
         },
         else => return error.InvalidFormatStr,
     }
