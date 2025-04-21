@@ -211,6 +211,8 @@ fn import_decimal(format: []const u8, array: *const FFI_Array, allocator: Alloca
                 return import_decimal_impl(i128, arr.Decimal128Array, params, array, allocator);
             } else if (std.mem.eql(u8, s, "256")) {
                 return import_decimal_impl(i256, arr.Decimal256Array, params, array, allocator);
+            } else {
+                return error.UnsupportedDecimalWidth;
             }
         }
     }
@@ -1317,6 +1319,7 @@ pub const FFIError = error{
     OutOfMemory,
     InvalidCharacter,
     Overflow,
+    UnsupportedDecimalWidth,
 };
 
 test "roundtrip" {
