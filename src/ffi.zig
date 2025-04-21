@@ -149,6 +149,77 @@ fn import_binary_view(comptime ArrT: type, array: *const FFI_Array, allocator: A
     return arr.Array.from(arr_ptr);
 }
 
+fn import_decimal_impl(comptime T: type, comptime ArrT: type, params: arr.DecimalParams, array: *const FFI_Array, allocator: Allocator) !arr.Array {
+    const buffers = array.array.buffers.?;
+    if (array.array.n_buffers != 2) {
+        return error.InvalidFFIArray;
+    }
+
+    const len: u32 = @intCast(array.array.length);
+    const offset: u32 = @intCast(array.array.offset);
+    const size: u32 = len + offset;
+    const byte_size = validity_size(size);
+    const null_count: u32 = @intCast(array.array.null_count);
+
+    const validity = if (buffers[0]) |b| import_buffer(u8, b, byte_size) else null;
+
+    const arr_ptr = try allocator.create(ArrT);
+    arr_ptr.* = ArrT{
+        .inner = .{
+            .values = import_buffer(T, buffers[1], size),
+            .validity = validity,
+            .len = len,
+            .offset = offset,
+            .null_count = null_count,
+        },
+        .params = params,
+    };
+
+    return arr.Array.from(arr_ptr);
+}
+
+fn import_decimal(format: []const u8, array: *const FFI_Array, allocator: Allocator) !arr.Array {
+    if (format[1] != ':') {
+        return error.InvalidFormatStr;
+    }
+
+    var precision: ?u8 = null;
+    var scale: ?i8 = null;
+
+    var it = std.mem.splitSequence(u8, format[2..], ",");
+    while (it.next()) |s| {
+        if (precision == null) {
+            precision = try std.fmt.parseInt(u8, s, 10);
+        } else if (scale == null) {
+            scale = try std.fmt.parseInt(i8, s, 10);
+        } else {
+            if (it.next() != null) {
+                return error.InvalidFormatStr;
+            }
+
+            const params = arr.DecimalParams{
+                .precision = precision.?,
+                .scale = scale.?,
+            };
+
+            if (std.mem.eql(u8, s, "32")) {
+                return import_decimal_impl(i32, arr.Decimal32Array, params, array, allocator);
+            } else if (std.mem.eql(u8, s, "64")) {
+                return import_decimal_impl(i64, arr.Decimal64Array, params, array, allocator);
+            } else if (std.mem.eql(u8, s, "128")) {
+                return import_decimal_impl(i128, arr.Decimal128Array, params, array, allocator);
+            } else if (std.mem.eql(u8, s, "256")) {
+                return import_decimal_impl(i256, arr.Decimal256Array, params, array, allocator);
+            }
+        }
+    }
+
+    return import_decimal_impl(i128, arr.Decimal128Array, .{
+        .precision = precision.?,
+        .scale = scale.?,
+    }, array, allocator);
+}
+
 pub fn import_array(array: FFI_Array, allocator: Allocator) !arr.Array {
     const format_str = array.schema.format orelse return error.InvalidFFIArray;
     const format = std.mem.span(format_str);
@@ -165,8 +236,6 @@ pub fn import_array(array: FFI_Array, allocator: Allocator) !arr.Array {
             const null_arr = try allocator.create(arr.NullArray);
             null_arr.* = arr.NullArray{
                 .len = len,
-                .offset = offset,
-                .null_count = null_count,
             };
 
             return arr.Array.from(null_arr);
@@ -245,7 +314,10 @@ pub fn import_array(array: FFI_Array, allocator: Allocator) !arr.Array {
                 },
             };
         },
-        else => return error.UnexpectedFormatStr,
+        'd' => {
+            return import_decimal(format, &array, allocator);
+        },
+        else => return error.InvalidFormatStr,
     }
 }
 
@@ -282,7 +354,7 @@ pub fn export_array(array: arr.Array, arena: *ArenaAllocator) !FFI_Array {
                 },
                 .array = .{
                     .length = a.len,
-                    .offset = a.offset,
+                    .offset = 0,
                     .private_data = arena,
                     .release = release_array,
                 },
@@ -341,6 +413,12 @@ pub fn export_array(array: arr.Array, arena: *ArenaAllocator) !FFI_Array {
         },
         .utf8_view => {
             return export_binary_view(&array.to(.utf8_view).inner, arena, "vu");
+        },
+        .decimal32 => {
+            return export_decimal(array.to(.decimal32), arena);
+        },
+        .decimal64 => {
+            return export_decimal(array.to(.decimal64), arena);
         },
         .decimal128 => {
             return export_decimal(array.to(.decimal128), arena);

@@ -368,8 +368,6 @@ pub const DurationArray = struct {
 
 pub const NullArray = struct {
     len: u32,
-    offset: u32,
-    null_count: u32,
 };
 
 pub const BinaryView = extern struct {
