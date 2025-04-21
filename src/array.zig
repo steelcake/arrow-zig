@@ -167,7 +167,7 @@ fn PrimitiveArray(comptime T: type) type {
 pub const FixedSizeBinaryArray = struct {
     data: []const u8,
     validity: ?[]const u8,
-    byte_width: i32,
+    byte_width: u32,
     len: u32,
     offset: u32,
     null_count: u32,

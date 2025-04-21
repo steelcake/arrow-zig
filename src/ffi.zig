@@ -220,7 +220,40 @@ fn import_decimal(format: []const u8, array: *const FFI_Array, allocator: Alloca
     }, array, allocator);
 }
 
-pub fn import_array(array: FFI_Array, allocator: Allocator) !arr.Array {
+fn import_fixed_size_binary(format: []const u8, array: *const FFI_Array, allocator: Allocator) !arr.Array {
+    if (format[1] != ':') {
+        return error.InvalidFormatStr;
+    }
+
+    const byte_width = try std.fmt.parseInt(u32, format[2..], 10);
+
+    const buffers = array.array.buffers.?;
+    if (array.array.n_buffers != 2) {
+        return error.InvalidFFIArray;
+    }
+
+    const len: u32 = @intCast(array.array.length);
+    const offset: u32 = @intCast(array.array.offset);
+    const size: u32 = len + offset;
+    const byte_size = validity_size(size);
+    const null_count: u32 = @intCast(array.array.null_count);
+
+    const validity = if (buffers[0]) |b| import_buffer(u8, b, byte_size) else null;
+
+    const arr_ptr = try allocator.create(arr.FixedSizeBinaryArray);
+    arr_ptr.* = .{
+        .data = import_buffer(u8, buffers[1], size * byte_width),
+        .validity = validity,
+        .len = len,
+        .offset = offset,
+        .null_count = null_count,
+        .byte_width = byte_width,
+    };
+
+    return arr.Array.from(arr_ptr);
+}
+
+pub fn import_array(array: *const FFI_Array, allocator: Allocator) !arr.Array {
     const format_str = array.schema.format orelse return error.InvalidFFIArray;
     const format = std.mem.span(format_str);
     if (format.len == 0) {
@@ -261,61 +294,64 @@ pub fn import_array(array: FFI_Array, allocator: Allocator) !arr.Array {
             return arr.Array.from(bool_arr);
         },
         'c' => {
-            return import_primitive(i8, arr.Int8Array, &array, allocator);
+            return import_primitive(i8, arr.Int8Array, array, allocator);
         },
         'C' => {
-            return import_primitive(u8, arr.UInt8Array, &array, allocator);
+            return import_primitive(u8, arr.UInt8Array, array, allocator);
         },
         's' => {
-            return import_primitive(i16, arr.Int16Array, &array, allocator);
+            return import_primitive(i16, arr.Int16Array, array, allocator);
         },
         'S' => {
-            return import_primitive(u16, arr.UInt16Array, &array, allocator);
+            return import_primitive(u16, arr.UInt16Array, array, allocator);
         },
         'i' => {
-            return import_primitive(i32, arr.Int32Array, &array, allocator);
+            return import_primitive(i32, arr.Int32Array, array, allocator);
         },
         'I' => {
-            return import_primitive(u32, arr.UInt32Array, &array, allocator);
+            return import_primitive(u32, arr.UInt32Array, array, allocator);
         },
         'l' => {
-            return import_primitive(i64, arr.Int64Array, &array, allocator);
+            return import_primitive(i64, arr.Int64Array, array, allocator);
         },
         'L' => {
-            return import_primitive(u64, arr.UInt64Array, &array, allocator);
+            return import_primitive(u64, arr.UInt64Array, array, allocator);
         },
         'e' => {
-            return import_primitive(f16, arr.Float16Array, &array, allocator);
+            return import_primitive(f16, arr.Float16Array, array, allocator);
         },
         'f' => {
-            return import_primitive(f32, arr.Float32Array, &array, allocator);
+            return import_primitive(f32, arr.Float32Array, array, allocator);
         },
         'g' => {
-            return import_primitive(f64, arr.Float64Array, &array, allocator);
+            return import_primitive(f64, arr.Float64Array, array, allocator);
         },
         'z' => {
-            return import_binary(i32, arr.BinaryArray, &array, allocator);
+            return import_binary(i32, arr.BinaryArray, array, allocator);
         },
         'Z' => {
-            return import_binary(i64, arr.LargeBinaryArray, &array, allocator);
+            return import_binary(i64, arr.LargeBinaryArray, array, allocator);
         },
         'u' => {
-            return import_binary(i32, arr.Utf8Array, &array, allocator);
+            return import_binary(i32, arr.Utf8Array, array, allocator);
         },
         'U' => {
-            return import_binary(i64, arr.LargeUtf8Array, &array, allocator);
+            return import_binary(i64, arr.LargeUtf8Array, array, allocator);
         },
         'v' => {
             return switch (format[1]) {
-                'z' => import_binary_view(arr.BinaryViewArray, &array, allocator),
-                'u' => import_binary_view(arr.Utf8ViewArray, &array, allocator),
+                'z' => import_binary_view(arr.BinaryViewArray, array, allocator),
+                'u' => import_binary_view(arr.Utf8ViewArray, array, allocator),
                 else => {
                     return error.InvalidFFIArray;
                 },
             };
         },
         'd' => {
-            return import_decimal(format, &array, allocator);
+            return import_decimal(format, array, allocator);
+        },
+        'w' => {
+            return import_fixed_size_binary(format, array, allocator);
         },
         else => return error.InvalidFormatStr,
     }
@@ -426,8 +462,41 @@ pub fn export_array(array: arr.Array, arena: *ArenaAllocator) !FFI_Array {
         .decimal256 => {
             return export_decimal(array.to(.decimal256), arena);
         },
+        .fixed_size_binary => {
+            return export_fixed_size_binary(array.to(.fixed_size_binary), arena);
+        },
         else => unreachable,
     }
+}
+
+fn export_fixed_size_binary(array: *const arr.FixedSizeBinaryArray, arena: *ArenaAllocator) !FFI_Array {
+    const allocator = arena.allocator();
+
+    const format = try std.fmt.allocPrintZ(allocator, "w:{}", .{array.byte_width});
+    errdefer allocator.free(format);
+
+    const buffers = try allocator.alloc(?*const anyopaque, 2);
+    errdefer allocator.free(buffers);
+
+    buffers[0] = if (array.validity) |v| v.ptr else null;
+    buffers[1] = array.data.ptr;
+
+    return .{
+        .array = .{
+            .n_buffers = 2,
+            .buffers = buffers.ptr,
+            .offset = array.offset,
+            .length = array.len,
+            .null_count = array.null_count,
+            .private_data = arena,
+            .release = release_array,
+        },
+        .schema = .{
+            .format = format,
+            .private_data = arena,
+            .release = release_schema,
+        },
+    };
 }
 
 fn export_decimal(dec_array: anytype, arena: *ArenaAllocator) !FFI_Array {
@@ -596,7 +665,7 @@ test "roundtrip" {
     var arena = ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const allocator = arena.allocator();
-    const roundtrip_array = try import_array(ffi_array, allocator);
+    const roundtrip_array = try import_array(&ffi_array, allocator);
 
     const roundtrip_typed = roundtrip_array.to(.i32);
 
