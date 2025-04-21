@@ -27,7 +27,7 @@ fn import_buffer(comptime T: type, buf: ?*const anyopaque, size: u32) []const T 
     return ptr[0..size];
 }
 
-fn import_primitive(comptime T: type, comptime ArrT: type, array: *const FFI_Array, allocator: Allocator) !arr.Array {
+fn import_primitive_impl(comptime T: type, comptime ArrT: type, array: *const FFI_Array) !ArrT {
     const buffers = array.array.buffers.?;
     if (array.array.n_buffers != 2) {
         return error.InvalidFFIArray;
@@ -41,15 +41,19 @@ fn import_primitive(comptime T: type, comptime ArrT: type, array: *const FFI_Arr
 
     const validity = if (buffers[0]) |b| import_buffer(u8, b, byte_size) else null;
 
-    const arr_ptr = try allocator.create(ArrT);
-    arr_ptr.* = ArrT{
+    return .{
         .values = import_buffer(T, buffers[1], size),
         .validity = validity,
         .len = len,
         .offset = offset,
         .null_count = null_count,
     };
+}
 
+fn import_primitive(comptime T: type, comptime ArrT: type, array: *const FFI_Array, allocator: Allocator) !arr.Array {
+    const arr_ptr = try allocator.create(ArrT);
+    errdefer allocator.destroy(arr_ptr);
+    arr_ptr.* = try import_primitive_impl(T, ArrT, array);
     return arr.Array.from(arr_ptr);
 }
 
@@ -255,7 +259,7 @@ fn import_fixed_size_binary(format: []const u8, array: *const FFI_Array, allocat
 
 pub fn import_array(array: *const FFI_Array, allocator: Allocator) !arr.Array {
     const format_str = array.schema.format orelse return error.InvalidFFIArray;
-    const format = std.mem.span(format_str);
+    const format: []const u8 = std.mem.span(format_str);
     if (format.len == 0) {
         return error.InvalidFFIArray;
     }
@@ -465,8 +469,49 @@ pub fn export_array(array: arr.Array, arena: *ArenaAllocator) !FFI_Array {
         .fixed_size_binary => {
             return export_fixed_size_binary(array.to(.fixed_size_binary), arena);
         },
+        .date32 => {
+            return export_date(array.to(.date32), arena);
+        },
+        .date64 => {
+            return export_date(array.to(.date64), arena);
+        },
         else => unreachable,
     }
+}
+
+fn export_date(date_array: anytype, arena: *ArenaAllocator) !FFI_Array {
+    const format = switch (@TypeOf(date_array)) {
+        *const arr.Date32Array => "tdD",
+        *const arr.Date64Array => "tdm",
+        else => @compileError("unexpected array type"),
+    };
+
+    const allocator = arena.allocator();
+
+    const array = &date_array.inner;
+
+    const buffers = try allocator.alloc(?*const anyopaque, 2);
+    errdefer allocator.free(buffers);
+
+    buffers[0] = if (array.validity) |v| v.ptr else null;
+    buffers[1] = array.values.ptr;
+
+    return .{
+        .array = .{
+            .n_buffers = 2,
+            .buffers = buffers.ptr,
+            .offset = array.offset,
+            .length = array.len,
+            .null_count = array.null_count,
+            .private_data = arena,
+            .release = release_array,
+        },
+        .schema = .{
+            .format = format,
+            .private_data = arena,
+            .release = release_schema,
+        },
+    };
 }
 
 fn export_fixed_size_binary(array: *const arr.FixedSizeBinaryArray, arena: *ArenaAllocator) !FFI_Array {

@@ -316,7 +316,6 @@ fn DateArr(comptime T: type) type {
 
     return struct {
         inner: PrimitiveArray(T),
-        unit: DateUnit,
     };
 }
 
