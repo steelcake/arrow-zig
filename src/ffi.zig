@@ -406,6 +406,45 @@ fn import_list(comptime ArrT: type, comptime IndexT: type, array: *const FFI_Arr
     return arr.Array.from(arr_ptr);
 }
 
+fn import_list_view(comptime ArrT: type, comptime IndexT: type, array: *const FFI_Array, allocator: Allocator) !arr.Array {
+    const buffers = array.array.buffers.?;
+    if (array.array.n_buffers != 3) {
+        return error.InvalidFFIArray;
+    }
+
+    if (array.array.n_children != 1 or array.schema.n_children != 1) {
+        return error.InvalidFFIArray;
+    }
+
+    const len: u32 = @intCast(array.array.length);
+    const offset: u32 = @intCast(array.array.offset);
+    const size: u32 = len + offset;
+    const byte_size = validity_size(size);
+    const null_count: u32 = @intCast(array.array.null_count);
+
+    const validity = if (buffers[0]) |b| import_buffer(u8, b, byte_size) else null;
+
+    const child = FFI_Array{
+        .array = array.array.children[0].*,
+        .schema = array.schema.children[0].*,
+    };
+
+    const inner = try import_array(&child, allocator);
+
+    const arr_ptr = try allocator.create(ArrT);
+    arr_ptr.* = .{
+        .inner = inner,
+        .offsets = import_buffer(IndexT, buffers[1], size),
+        .sizes = import_buffer(IndexT, buffers[2], size),
+        .validity = validity,
+        .len = len,
+        .offset = offset,
+        .null_count = null_count,
+    };
+
+    return arr.Array.from(arr_ptr);
+}
+
 pub fn import_array(array: *const FFI_Array, allocator: Allocator) FFIError!arr.Array {
     const format_str = array.schema.format orelse return error.InvalidFFIArray;
     const format: []const u8 = std.mem.span(format_str);
@@ -547,7 +586,11 @@ pub fn import_array(array: *const FFI_Array, allocator: Allocator) FFIError!arr.
             return switch (format[1]) {
                 'l' => import_list(arr.ListArray, i32, array, allocator),
                 'L' => import_list(arr.LargeListArray, i64, array, allocator),
-                // 'v' => {},
+                'v' => switch (format[2]) {
+                    'l' => import_list_view(arr.ListViewArray, i32, array, allocator),
+                    'L' => import_list_view(arr.LargeListViewArray, i64, array, allocator),
+                    else => return error.InvalidFormatStr,
+                },
                 // 'w' => {},
                 // 's' => {},
                 // 'm' => {},
@@ -701,8 +744,58 @@ pub fn export_array(array: arr.Array, arena: *ArenaAllocator) FFIError!FFI_Array
         .large_list => {
             return export_list(array.to(.large_list), arena);
         },
+        .list_view => {
+            return export_list_view(array.to(.list_view), arena);
+        },
+        .large_list_view => {
+            return export_list_view(array.to(.large_list_view), arena);
+        },
         else => unreachable,
     }
+}
+
+fn export_list_view(array: anytype, arena: *ArenaAllocator) !FFI_Array {
+    const format = comptime switch (@TypeOf(array)) {
+        *const arr.ListViewArray => "+vl",
+        *const arr.LargeListViewArray => "+vL",
+        else => @compileError("unexpected array type"),
+    };
+
+    const allocator = arena.allocator();
+    const buffers = try allocator.alloc(?*const anyopaque, 3);
+    buffers[0] = if (array.validity) |v| v.ptr else null;
+    buffers[1] = array.offsets.ptr;
+    buffers[2] = array.sizes.ptr;
+
+    const child = try allocator.create(FFI_Array);
+    child.* = try export_array(array.inner, arena);
+
+    const array_children = try allocator.alloc([*c]abi.ArrowArray, 1);
+    array_children[0] = &child.array;
+
+    const schema_children = try allocator.alloc([*c]abi.ArrowSchema, 1);
+    schema_children[0] = &child.schema;
+
+    return .{
+        .array = .{
+            .n_children = 1,
+            .children = array_children.ptr,
+            .n_buffers = 2,
+            .buffers = buffers.ptr,
+            .offset = array.offset,
+            .length = array.len,
+            .null_count = array.null_count,
+            .private_data = arena,
+            .release = release_array,
+        },
+        .schema = .{
+            .n_children = 1,
+            .children = schema_children.ptr,
+            .format = format,
+            .private_data = arena,
+            .release = release_schema,
+        },
+    };
 }
 
 fn export_list(array: anytype, arena: *ArenaAllocator) !FFI_Array {
