@@ -681,10 +681,6 @@ fn export_timestamp(timestamp_array: *const arr.TimestampArray, arena: *ArenaAll
     else
         format_base;
 
-    errdefer if (timestamp_array.ts.timezone != null) {
-        allocator.free(format);
-    };
-
     const out = try export_primitive_impl(format, &timestamp_array.inner, arena);
 
     return out;
@@ -720,10 +716,8 @@ fn export_fixed_size_binary(array: *const arr.FixedSizeBinaryArray, arena: *Aren
     const allocator = arena.allocator();
 
     const format = try std.fmt.allocPrintZ(allocator, "w:{}", .{array.byte_width});
-    errdefer allocator.free(format);
 
     const buffers = try allocator.alloc(?*const anyopaque, 2);
-    errdefer allocator.free(buffers);
 
     buffers[0] = if (array.validity) |v| v.ptr else null;
     buffers[1] = array.data.ptr;
@@ -758,7 +752,6 @@ fn export_decimal(dec_array: anytype, arena: *ArenaAllocator) !FFI_Array {
     const allocator = arena.allocator();
 
     const format = try std.fmt.allocPrintZ(allocator, "d:{},{},{s}", .{ dec_array.params.precision, dec_array.params.scale, width });
-    errdefer allocator.free(format);
 
     const out = try export_primitive_impl(format, &dec_array.inner, arena);
 
