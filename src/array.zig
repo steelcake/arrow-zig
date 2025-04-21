@@ -152,8 +152,6 @@ pub const BoolArray = struct {
 
 fn PrimitiveArray(comptime T: type) type {
     return struct {
-        const Self = @This();
-
         values: []const T,
         validity: ?[]const u8,
         len: u32,
@@ -190,8 +188,6 @@ fn DecimalArr(comptime T: type) type {
     };
 
     return struct {
-        const Self = @This();
-
         inner: PrimitiveArray(T),
         params: DecimalParams,
     };
@@ -224,8 +220,6 @@ fn BinaryArr(comptime IndexT: type) type {
     };
 
     return struct {
-        const Self = @This();
-
         data: []const u8,
         offsets: []const IndexT,
         validity: ?[]const u8,
@@ -245,8 +239,6 @@ fn Utf8Arr(comptime IndexT: type) type {
     };
 
     return struct {
-        const Self = @This();
-
         inner: BinaryArr(IndexT),
     };
 }
@@ -279,8 +271,6 @@ fn ListArr(comptime IndexT: type) type {
     };
 
     return struct {
-        const Self = @This();
-
         inner: Array,
         offsets: []const IndexT,
         validity: ?[]const u8,
@@ -319,8 +309,6 @@ fn DateArr(comptime T: type) type {
     };
 
     return struct {
-        const Self = @This();
-
         inner: PrimitiveArray(T),
         unit: DateUnit,
     };
@@ -336,8 +324,6 @@ fn TimeArr(comptime T: type) type {
     };
 
     return struct {
-        const Self = @This();
-
         inner: PrimitiveArray(T),
         unit: TimeUnit,
     };
@@ -390,7 +376,7 @@ pub const BinaryView = extern struct {
 
 pub const BinaryViewArray = struct {
     views: []const BinaryView,
-    buffers: []const []const u8,
+    buffers: []const [*]const u8,
     validity: ?[]const u8,
     len: u32,
     offset: u32,
@@ -408,8 +394,6 @@ fn ListViewArr(comptime IndexT: type) type {
     };
 
     return struct {
-        const Self = @This();
-
         inner: Array,
         offsets: []const IndexT,
         sizes: []const IndexT,

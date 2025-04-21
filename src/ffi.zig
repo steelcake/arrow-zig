@@ -69,27 +69,29 @@ fn import_binary(comptime IndexT: type, comptime ArrT: type, array: *const FFI_A
 
     const arr_ptr = try allocator.create(ArrT);
 
+    const DataT = comptime switch (ArrT) {
+        arr.BinaryArray, arr.LargeBinaryArray => ArrT,
+        arr.Utf8Array => arr.BinaryArray,
+        arr.LargeUtf8Array => arr.LargeBinaryArray,
+        else => @compileError("unexpected array type"),
+    };
+
+    const data = DataT{
+        .data = import_buffer(u8, buffers[2], size),
+        .offsets = import_buffer(IndexT, buffers[1], size + 1),
+        .validity = validity,
+        .len = len,
+        .offset = offset,
+        .null_count = null_count,
+    };
+
     switch (ArrT) {
         arr.BinaryArray, arr.LargeBinaryArray => {
-            arr_ptr.* = .{
-                .data = import_buffer(u8, buffers[2], size),
-                .offsets = import_buffer(IndexT, buffers[1], size + 1),
-                .validity = validity,
-                .len = len,
-                .offset = offset,
-                .null_count = null_count,
-            };
+            arr_ptr.* = data;
         },
         arr.Utf8Array, arr.LargeUtf8Array => {
             arr_ptr.* = .{
-                .inner = .{
-                    .data = import_buffer(u8, buffers[2], size),
-                    .offsets = import_buffer(IndexT, buffers[1], size + 1),
-                    .validity = validity,
-                    .len = len,
-                    .offset = offset,
-                    .null_count = null_count,
-                },
+                .inner = data,
             };
         },
         else => @compileError("unexpected array type"),
@@ -98,7 +100,56 @@ fn import_binary(comptime IndexT: type, comptime ArrT: type, array: *const FFI_A
     return arr.Array.from(arr_ptr);
 }
 
-pub fn import_(array: FFI_Array, allocator: Allocator) !arr.Array {
+fn import_binary_view(comptime ArrT: type, array: *const FFI_Array, allocator: Allocator) !arr.Array {
+    const buffers = array.array.buffers.?;
+    if (array.array.n_buffers <= 2) {
+        return error.InvalidFFIArray;
+    }
+
+    const len: u32 = @intCast(array.array.length);
+    const offset: u32 = @intCast(array.array.offset);
+    const size: u32 = len + offset;
+    const byte_size = validity_size(size);
+    const null_count: u32 = @intCast(array.array.null_count);
+
+    const validity = if (buffers[0]) |b| import_buffer(u8, b, byte_size) else null;
+
+    const arr_ptr = try allocator.create(ArrT);
+    errdefer allocator.destroy(arr_ptr);
+
+    const num_data_buffers: u32 = @intCast(array.array.n_buffers - 2);
+    const data_buffers = try allocator.alloc([*]const u8, num_data_buffers);
+    errdefer allocator.free(data_buffers);
+
+    for (0..num_data_buffers) |i| {
+        data_buffers[i] = @ptrCast(array.array.buffers[i + 2].?);
+    }
+
+    const data = arr.BinaryViewArray{
+        .views = import_buffer(arr.BinaryView, buffers[1], size),
+        .buffers = data_buffers,
+        .validity = validity,
+        .len = len,
+        .offset = offset,
+        .null_count = null_count,
+    };
+
+    switch (ArrT) {
+        arr.BinaryViewArray => {
+            arr_ptr.* = data;
+        },
+        arr.Utf8ViewArray => {
+            arr_ptr.* = .{
+                .inner = data,
+            };
+        },
+        else => @compileError("unexpected array type"),
+    }
+
+    return arr.Array.from(arr_ptr);
+}
+
+pub fn import_array(array: FFI_Array, allocator: Allocator) !arr.Array {
     const format_str = array.schema.format orelse return error.InvalidFFIArray;
     const format = std.mem.span(format_str);
     if (format.len == 0) {
@@ -185,6 +236,15 @@ pub fn import_(array: FFI_Array, allocator: Allocator) !arr.Array {
         'U' => {
             return import_binary(i64, arr.LargeUtf8Array, &array, allocator);
         },
+        'v' => {
+            return switch (format[1]) {
+                'z' => import_binary_view(arr.BinaryViewArray, &array, allocator),
+                'u' => import_binary_view(arr.Utf8ViewArray, &array, allocator),
+                else => {
+                    return error.InvalidFFIArray;
+                },
+            };
+        },
         else => return error.UnexpectedFormatStr,
     }
 }
@@ -209,7 +269,7 @@ fn release_schema(_: [*c]abi.ArrowSchema) callconv(.C) void {}
 ///
 /// Generally arena should be allocated inside a global allocator like std.heap.GeneralPurposeAlloc and it should have that global alloc as it's child alloc.
 /// and array should be allocated using this arena.
-pub fn export_(array: arr.Array, arena: *ArenaAllocator) !FFI_Array {
+pub fn export_array(array: arr.Array, arena: *ArenaAllocator) !FFI_Array {
     switch (array.type_) {
         .null => {
             const a = array.to(.null);
@@ -276,8 +336,44 @@ pub fn export_(array: arr.Array, arena: *ArenaAllocator) !FFI_Array {
         .bool => {
             return export_primitive(array.to(.bool), arena);
         },
+        .binary_view => {
+            return export_binary_view(array.to(.binary_view), arena, "vz");
+        },
+        .utf8_view => {
+            return export_binary_view(&array.to(.utf8_view).inner, arena, "vu");
+        },
         else => unreachable,
     }
+}
+
+fn export_binary_view(array: *const arr.BinaryViewArray, arena: *ArenaAllocator, format: [:0]const u8) !FFI_Array {
+    const n_buffers = array.buffers.len + 2;
+
+    const allocator = arena.allocator();
+    const buffers = try allocator.alloc(?*const anyopaque, n_buffers);
+    buffers[0] = if (array.validity) |v| v.ptr else null;
+    buffers[1] = array.views.ptr;
+
+    for (array.buffers, 0..) |b, i| {
+        buffers[i + 2] = b;
+    }
+
+    return .{
+        .array = .{
+            .n_buffers = @as(i64, @intCast(n_buffers)),
+            .buffers = buffers.ptr,
+            .offset = array.offset,
+            .length = array.len,
+            .null_count = array.null_count,
+            .private_data = arena,
+            .release = release_array,
+        },
+        .schema = .{
+            .format = format,
+            .private_data = arena,
+            .release = release_schema,
+        },
+    };
 }
 
 fn export_binary(array: anytype, arena: *ArenaAllocator, format: [:0]const u8) !FFI_Array {
@@ -370,13 +466,13 @@ test "roundtrip" {
     // of FFI_Array
     //
     // would have to handle this in a more complete way in a real application.
-    var ffi_array = export_(array, export_arena) catch unreachable;
+    var ffi_array = export_array(array, export_arena) catch unreachable;
     defer ffi_array.release();
 
     var arena = ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const allocator = arena.allocator();
-    const roundtrip_array = try import_(ffi_array, allocator);
+    const roundtrip_array = try import_array(ffi_array, allocator);
 
     const roundtrip_typed = roundtrip_array.to(.i32);
 
