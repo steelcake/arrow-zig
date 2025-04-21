@@ -10,12 +10,10 @@ pub const FFI_Array = struct {
     array: abi.ArrowArray,
 
     fn release(self: *FFI_Array) void {
-        if (self.schema.release) |rel| {
-            rel(&self.schema);
-        }
-        if (self.array.release) |rel| {
-            rel(&self.array);
-        }
+        const schema_release = self.schema.release orelse unreachable;
+        const array_release = self.array.release orelse unreachable;
+        schema_release(&self.schema);
+        array_release(&self.array);
     }
 };
 
@@ -51,6 +49,51 @@ fn import_primitive(comptime T: type, comptime ArrT: type, array: *const FFI_Arr
         .offset = offset,
         .null_count = null_count,
     };
+
+    return arr.Array.from(arr_ptr);
+}
+
+fn import_binary(comptime IndexT: type, comptime ArrT: type, array: *const FFI_Array, allocator: Allocator) !arr.Array {
+    const buffers = array.array.buffers.?;
+    if (array.array.n_buffers != 3) {
+        return error.InvalidFFIArray;
+    }
+
+    const len: u32 = @intCast(array.array.length);
+    const offset: u32 = @intCast(array.array.offset);
+    const size: u32 = len + offset;
+    const byte_size = validity_size(size);
+    const null_count: u32 = @intCast(array.array.null_count);
+
+    const validity = if (buffers[0]) |b| import_buffer(u8, b, byte_size) else null;
+
+    const arr_ptr = try allocator.create(ArrT);
+
+    switch (ArrT) {
+        arr.BinaryArray, arr.LargeBinaryArray => {
+            arr_ptr.* = .{
+                .data = import_buffer(u8, buffers[2], size),
+                .offsets = import_buffer(IndexT, buffers[1], size + 1),
+                .validity = validity,
+                .len = len,
+                .offset = offset,
+                .null_count = null_count,
+            };
+        },
+        arr.Utf8Array, arr.LargeUtf8Array => {
+            arr_ptr.* = .{
+                .inner = .{
+                    .data = import_buffer(u8, buffers[2], size),
+                    .offsets = import_buffer(IndexT, buffers[1], size + 1),
+                    .validity = validity,
+                    .len = len,
+                    .offset = offset,
+                    .null_count = null_count,
+                },
+            };
+        },
+        else => @compileError("unexpected array type"),
+    }
 
     return arr.Array.from(arr_ptr);
 }
@@ -130,6 +173,18 @@ pub fn import_(array: FFI_Array, allocator: Allocator) !arr.Array {
         'g' => {
             return import_primitive(f64, arr.Float64Array, &array, allocator);
         },
+        'z' => {
+            return import_binary(i32, arr.BinaryArray, &array, allocator);
+        },
+        'Z' => {
+            return import_binary(i64, arr.LargeBinaryArray, &array, allocator);
+        },
+        'u' => {
+            return import_binary(i32, arr.Utf8Array, &array, allocator);
+        },
+        'U' => {
+            return import_binary(i64, arr.LargeUtf8Array, &array, allocator);
+        },
         else => return error.UnexpectedFormatStr,
     }
 }
@@ -206,13 +261,48 @@ pub fn export_(array: arr.Array, arena: *ArenaAllocator) !FFI_Array {
         .f64 => {
             return export_primitive(array.to(.f64), arena);
         },
-        // binary,
-        // utf8,
+        .binary => {
+            return export_binary(array.to(.binary), arena, "z");
+        },
+        .large_binary => {
+            return export_binary(array.to(.large_binary), arena, "Z");
+        },
+        .utf8 => {
+            return export_binary(&array.to(.utf8).inner, arena, "u");
+        },
+        .large_utf8 => {
+            return export_binary(&array.to(.large_utf8).inner, arena, "U");
+        },
         .bool => {
             return export_primitive(array.to(.bool), arena);
         },
         else => unreachable,
     }
+}
+
+fn export_binary(array: anytype, arena: *ArenaAllocator, format: [:0]const u8) !FFI_Array {
+    const allocator = arena.allocator();
+    const buffers = try allocator.alloc(?*const anyopaque, 3);
+    buffers[0] = if (array.validity) |v| v.ptr else null;
+    buffers[1] = array.offsets.ptr;
+    buffers[2] = array.data.ptr;
+
+    return .{
+        .array = .{
+            .n_buffers = 3,
+            .buffers = buffers.ptr,
+            .offset = array.offset,
+            .length = array.len,
+            .null_count = array.null_count,
+            .private_data = arena,
+            .release = release_array,
+        },
+        .schema = .{
+            .format = format,
+            .private_data = arena,
+            .release = release_schema,
+        },
+    };
 }
 
 fn export_primitive(array: anytype, arena: *ArenaAllocator) !FFI_Array {
