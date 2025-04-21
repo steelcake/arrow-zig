@@ -129,19 +129,17 @@ pub fn import_(array: FFI_Array, allocator: Allocator) !arr.Array {
     }
 }
 
-fn release_array(array: *abi.ArrowArray) callconv(.C) void {
-    const arena: *ArenaAllocator = @ptrCast(array.private_data);
-    const backing_alloc = arena.child_allocator;
+fn release_array(array: [*c]abi.ArrowArray) callconv(.C) void {
+    const ptr = array orelse unreachable;
+    const arena: *ArenaAllocator = @ptrCast(@alignCast(ptr.*.private_data));
+    const backing_alloc = arena.*;
     arena.deinit();
-    backing_alloc.destroy(arena);
+    backing_alloc.child_allocator.destroy(arena);
 }
 
-fn release_schema(schema: *abi.ArrowSchema) callconv(.C) void {
-    const arena: *ArenaAllocator = @ptrCast(schema.private_data);
-    const backing_alloc = arena.child_allocator;
-    arena.deinit();
-    backing_alloc.destroy(arena);
-}
+// This is no-op because actual releasing of memory happens
+// when release_array is called
+fn release_schema(_: [*c]abi.ArrowSchema) callconv(.C) void {}
 
 /// calling arena.deinit should free all memory relating to this array
 ///
@@ -158,46 +156,50 @@ pub fn export_(array: arr.Array, arena: *ArenaAllocator) !FFI_Array {
 
             return .{
                 .schema = .{
-                    .format = "b",
+                    .format = "n",
+                    .private_data = arena,
+                    .release = release_schema,
                 },
                 .array = .{
                     .length = a.len,
                     .offset = a.offset,
+                    .private_data = arena,
+                    .release = release_array,
                 },
             };
         },
         .i8 => {
-            return export_primitive(arr.Int8Array, "i", array, arena);
+            return export_primitive(array.to(.i8), arena);
         },
         .i16 => {
-            return export_primitive(arr.Int16Array, array, arena);
+            return export_primitive(array.to(.i16), arena);
         },
         .i32 => {
-            return export_primitive(arr.Int32Array, array, arena);
+            return export_primitive(array.to(.i32), arena);
         },
         .i64 => {
-            return export_primitive(arr.Int64Array, array, arena);
+            return export_primitive(array.to(.i64), arena);
         },
         .u8 => {
-            return export_primitive(arr.UInt8Array, array, arena);
+            return export_primitive(array.to(.u8), arena);
         },
         .u16 => {
-            return export_primitive(arr.UInt16Array, array, arena);
+            return export_primitive(array.to(.u16), arena);
         },
         .u32 => {
-            return export_primitive(arr.UInt32Array, array, arena);
+            return export_primitive(array.to(.u32), arena);
         },
         .u64 => {
-            return export_primitive(arr.UInt64Array, array, arena);
+            return export_primitive(array.to(.u64), arena);
         },
         .f16 => {
-            return export_primitive(arr.Float16Array, array, arena);
+            return export_primitive(array.to(.f16), arena);
         },
         .f32 => {
-            return export_primitive(arr.Float32Array, array, arena);
+            return export_primitive(array.to(.f32), arena);
         },
         .f64 => {
-            return export_primitive(arr.Float64Array, array, arena);
+            return export_primitive(array.to(.f64), arena);
         },
         // binary,
         // utf8,
@@ -206,23 +208,36 @@ pub fn export_(array: arr.Array, arena: *ArenaAllocator) !FFI_Array {
     }
 }
 
-fn export_primitive(comptime ArrT: arr.ArrayType, format: [:0]const u8, g_array: arr.Array, arena: *ArenaAllocator) !FFI_Array {
-    const array = g_array.arr.to(ArrT);
+fn export_primitive(array: anytype, arena: *ArenaAllocator) !FFI_Array {
+    const format = comptime switch (@TypeOf(array)) {
+        *const arr.Int8Array => "c",
+        *const arr.UInt8Array => "C",
+        *const arr.Int16Array => "s",
+        *const arr.UInt16Array => "S",
+        *const arr.Int32Array => "i",
+        *const arr.UInt32Array => "I",
+        *const arr.Int64Array => "l",
+        *const arr.UInt64Array => "L",
+        *const arr.Float16Array => "e",
+        *const arr.Float32Array => "f",
+        *const arr.Float64Array => "g",
+        else => @compileError("unexpected array type"),
+    };
 
     const allocator = arena.allocator();
-    const buffers = try allocator.alloc(?[*]const anyopaque, 2);
+    const buffers = try allocator.alloc(?*const anyopaque, 2);
     buffers[0] = if (array.validity) |v| v.ptr else null;
     buffers[1] = array.values.ptr;
 
     return .{
         .array = .{
             .n_buffers = 2,
-            .buffers = buffers,
+            .buffers = buffers.ptr,
             .offset = array.offset,
             .length = array.len,
             .null_count = 0,
             .private_data = arena,
-            .release = release_schema,
+            .release = release_array,
         },
         .schema = .{
             .format = format,
@@ -233,10 +248,6 @@ fn export_primitive(comptime ArrT: arr.ArrayType, format: [:0]const u8, g_array:
 }
 
 test "roundtrip" {
-    var arena = ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-    const allocator = arena.allocator();
-
     const original_data = [_]i32{ 3, 2, 1, 4, 5, 6 };
 
     const export_arena = std.testing.allocator.create(std.heap.ArenaAllocator) catch unreachable;
@@ -263,6 +274,9 @@ test "roundtrip" {
     var ffi_array = export_(array, export_arena) catch unreachable;
     defer ffi_array.release();
 
+    var arena = ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
     const roundtrip_array = try import_(ffi_array, allocator);
 
     const roundtrip_typed = roundtrip_array.to(.i32);
