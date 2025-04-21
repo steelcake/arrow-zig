@@ -208,9 +208,9 @@ pub fn export_(array: arr.Array, arena: *ArenaAllocator) !FFI_Array {
         },
         // binary,
         // utf8,
-        // .bool => {
-        //
-        // },
+        .bool => {
+            return export_primitive(array.to(.bool), arena);
+        },
         else => unreachable,
     }
 }
@@ -228,6 +228,7 @@ fn export_primitive(array: anytype, arena: *ArenaAllocator) !FFI_Array {
         *const arr.Float16Array => "e",
         *const arr.Float32Array => "f",
         *const arr.Float64Array => "g",
+        *const arr.BoolArray => "b",
         else => @compileError("unexpected array type"),
     };
 
