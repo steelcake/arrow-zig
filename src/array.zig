@@ -258,7 +258,7 @@ pub const Utf8Array = Utf8Arr(i32);
 pub const LargeUtf8Array = Utf8Arr(i64);
 
 pub const StructArray = struct {
-    field_names: BinaryArray,
+    field_names: []const [:0]const u8,
     field_values: []const Array,
     validity: ?[]const u8,
     len: u32,

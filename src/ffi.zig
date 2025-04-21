@@ -490,6 +490,51 @@ fn import_fixed_size_list(format: []const u8, array: *const FFI_Array, allocator
     return arr.Array.from(arr_ptr);
 }
 
+fn import_struct(array: *const FFI_Array, allocator: Allocator) !arr.Array {
+    const buffers = array.array.buffers.?;
+
+    if (array.array.n_children != array.schema.n_children) {
+        return error.InvalidFFIArray;
+    }
+
+    const len: u32 = @intCast(array.array.length);
+    const offset: u32 = @intCast(array.array.offset);
+    const size: u32 = len + offset;
+    const byte_size = validity_size(size);
+    const null_count: u32 = @intCast(array.array.null_count);
+
+    const validity = if (buffers[0]) |b| import_buffer(u8, b, byte_size) else null;
+
+    const n_fields: u32 = @intCast(array.array.n_children);
+
+    const field_names = try allocator.alloc([:0]const u8, n_fields);
+    for (0..n_fields) |i| {
+        field_names[i] = std.mem.span(array.schema.children[i].*.name);
+    }
+
+    const field_values = try allocator.alloc(arr.Array, n_fields);
+    for (0..n_fields) |i| {
+        const child = FFI_Array{
+            .array = array.array.children[i].*,
+            .schema = array.schema.children[i].*,
+        };
+        field_values[i] = try import_array(&child, allocator);
+    }
+
+    const arr_ptr = try allocator.create(arr.StructArray);
+
+    arr_ptr.* = .{
+        .field_values = field_values,
+        .field_names = field_names,
+        .validity = validity,
+        .len = len,
+        .offset = offset,
+        .null_count = null_count,
+    };
+
+    return arr.Array.from(arr_ptr);
+}
+
 pub fn import_array(array: *const FFI_Array, allocator: Allocator) FFIError!arr.Array {
     const format_str = array.schema.format orelse return error.InvalidFFIArray;
     const format: []const u8 = std.mem.span(format_str);
@@ -637,7 +682,7 @@ pub fn import_array(array: *const FFI_Array, allocator: Allocator) FFIError!arr.
                     else => return error.InvalidFormatStr,
                 },
                 'w' => import_fixed_size_list(format, array, allocator),
-                // 's' => {},
+                's' => import_struct(array, allocator),
                 // 'm' => {},
                 // 'u' => {},
                 // 'r' => {},
@@ -798,8 +843,58 @@ pub fn export_array(array: arr.Array, arena: *ArenaAllocator) FFIError!FFI_Array
         .fixed_size_list => {
             return export_fixed_size_list(array.to(.fixed_size_list), arena);
         },
+        .struct_ => {
+            return export_struct(array.to(.struct_), arena);
+        },
         else => unreachable,
     }
+}
+
+fn export_struct(array: *const arr.StructArray, arena: *ArenaAllocator) !FFI_Array {
+    const n_fields = array.field_values.len;
+
+    const allocator = arena.allocator();
+
+    const buffers = try allocator.alloc(?*const anyopaque, 1);
+    buffers[0] = if (array.validity) |v| v.ptr else null;
+
+    const children = try allocator.alloc(FFI_Array, n_fields);
+    for (0..n_fields) |i| {
+        var out = try export_array(array.field_values[i], arena);
+        out.schema.name = array.field_names[i].ptr;
+        children[i] = out;
+    }
+
+    const array_children = try allocator.alloc([*c]abi.ArrowArray, n_fields);
+    for (0..n_fields) |i| {
+        array_children[i] = &children[i].array;
+    }
+
+    const schema_children = try allocator.alloc([*c]abi.ArrowSchema, n_fields);
+    for (0..n_fields) |i| {
+        schema_children[i] = &children[i].schema;
+    }
+
+    return .{
+        .array = .{
+            .n_children = @as(i64, @intCast(n_fields)),
+            .children = array_children.ptr,
+            .n_buffers = 1,
+            .buffers = buffers.ptr,
+            .offset = array.offset,
+            .length = array.len,
+            .null_count = array.null_count,
+            .private_data = arena,
+            .release = release_array,
+        },
+        .schema = .{
+            .n_children = @as(i64, @intCast(n_fields)),
+            .children = schema_children.ptr,
+            .format = "+s",
+            .private_data = arena,
+            .release = release_schema,
+        },
+    };
 }
 
 fn export_fixed_size_list(array: *const arr.FixedSizeListArray, arena: *ArenaAllocator) !FFI_Array {
