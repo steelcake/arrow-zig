@@ -419,6 +419,7 @@ pub const LargeListViewArray = ListViewArr(i64);
 pub const MapArray = struct {
     entries: StructArray,
     offsets: []const i32,
+    validity: ?[]const u8,
     len: u32,
     offset: u32,
     null_count: u32,

@@ -535,6 +535,45 @@ fn import_struct(array: *const FFI_Array, allocator: Allocator) !arr.Array {
     return arr.Array.from(arr_ptr);
 }
 
+fn import_map(array: *const FFI_Array, allocator: Allocator) !arr.Array {
+    const buffers = array.array.buffers.?;
+    if (array.array.n_buffers != 2) {
+        return error.InvalidFFIArray;
+    }
+
+    if (array.array.n_children != 1 or array.schema.n_children != 1) {
+        return error.InvalidFFIArray;
+    }
+
+    const len: u32 = @intCast(array.array.length);
+    const offset: u32 = @intCast(array.array.offset);
+    const size: u32 = len + offset;
+    const byte_size = validity_size(size);
+    const null_count: u32 = @intCast(array.array.null_count);
+
+    const validity = if (buffers[0]) |b| import_buffer(u8, b, byte_size) else null;
+
+    const child = FFI_Array{
+        .array = array.array.children[0].*,
+        .schema = array.schema.children[0].*,
+    };
+
+    const entries = try import_array(&child, allocator);
+
+    const arr_ptr = try allocator.create(arr.MapArray);
+    arr_ptr.* = .{
+        .entries = entries.to(.struct_).*,
+        .validity = validity,
+        .offsets = import_buffer(i32, buffers[1], size + 1),
+        .len = len,
+        .offset = offset,
+        .null_count = null_count,
+        .keys_are_sorted = (array.schema.flags & abi.ARROW_FLAG_MAP_KEYS_SORTED) != 0,
+    };
+
+    return arr.Array.from(arr_ptr);
+}
+
 pub fn import_array(array: *const FFI_Array, allocator: Allocator) FFIError!arr.Array {
     const format_str = array.schema.format orelse return error.InvalidFFIArray;
     const format: []const u8 = std.mem.span(format_str);
@@ -683,7 +722,7 @@ pub fn import_array(array: *const FFI_Array, allocator: Allocator) FFIError!arr.
                 },
                 'w' => import_fixed_size_list(format, array, allocator),
                 's' => import_struct(array, allocator),
-                // 'm' => {},
+                'm' => import_map(array, allocator),
                 // 'u' => {},
                 // 'r' => {},
                 else => return error.InvalidFormatStr,
@@ -846,8 +885,51 @@ pub fn export_array(array: arr.Array, arena: *ArenaAllocator) FFIError!FFI_Array
         .struct_ => {
             return export_struct(array.to(.struct_), arena);
         },
+        .map => {
+            return export_map(array.to(.map), arena);
+        },
         else => unreachable,
     }
+}
+
+fn export_map(array: *const arr.MapArray, arena: *ArenaAllocator) !FFI_Array {
+    const allocator = arena.allocator();
+
+    const buffers = try allocator.alloc(?*const anyopaque, 2);
+    buffers[0] = if (array.validity) |v| v.ptr else null;
+    buffers[1] = array.offsets.ptr;
+
+    const child = try allocator.create(FFI_Array);
+    child.* = try export_array(arr.Array.from(&array.entries), arena);
+    child.schema.name = "entries";
+
+    const array_children = try allocator.alloc([*c]abi.ArrowArray, 1);
+    array_children[0] = &child.array;
+
+    const schema_children = try allocator.alloc([*c]abi.ArrowSchema, 1);
+    schema_children[0] = &child.schema;
+
+    return .{
+        .array = .{
+            .n_children = 1,
+            .children = array_children.ptr,
+            .n_buffers = 2,
+            .buffers = buffers.ptr,
+            .offset = array.offset,
+            .length = array.len,
+            .null_count = array.null_count,
+            .private_data = arena,
+            .release = release_array,
+        },
+        .schema = .{
+            .n_children = 1,
+            .children = schema_children.ptr,
+            .format = "+m",
+            .private_data = arena,
+            .flags = if (array.keys_are_sorted) abi.ARROW_FLAG_MAP_KEYS_SORTED else 0,
+            .release = release_schema,
+        },
+    };
 }
 
 fn export_struct(array: *const arr.StructArray, arena: *ArenaAllocator) !FFI_Array {
