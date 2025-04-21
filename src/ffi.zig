@@ -167,7 +167,7 @@ pub fn export_(array: arr.Array, arena: *ArenaAllocator) !FFI_Array {
             };
         },
         .i8 => {
-            return export_primitive(arr.Int8Array, array, arena);
+            return export_primitive(arr.Int8Array, "i", array, arena);
         },
         .i16 => {
             return export_primitive(arr.Int16Array, array, arena);
@@ -206,10 +206,29 @@ pub fn export_(array: arr.Array, arena: *ArenaAllocator) !FFI_Array {
     }
 }
 
-fn export_primitive(comptime _: type, _: arr.Array, _: *ArenaAllocator) !FFI_Array {
+fn export_primitive(comptime ArrT: arr.ArrayType, format: [:0]const u8, g_array: arr.Array, arena: *ArenaAllocator) !FFI_Array {
+    const array = g_array.arr.to(ArrT);
+
+    const allocator = arena.allocator();
+    const buffers = try allocator.alloc(?[*]const anyopaque, 2);
+    buffers[0] = if (array.validity) |v| v.ptr else null;
+    buffers[1] = array.values.ptr;
+
     return .{
-        .array = .{},
-        .schema = .{},
+        .array = .{
+            .n_buffers = 2,
+            .buffers = buffers,
+            .offset = array.offset,
+            .length = array.len,
+            .null_count = 0,
+            .private_data = arena,
+            .release = release_schema,
+        },
+        .schema = .{
+            .format = format,
+            .private_data = arena,
+            .release = release_schema,
+        },
     };
 }
 
