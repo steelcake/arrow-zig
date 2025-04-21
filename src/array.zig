@@ -39,6 +39,8 @@ pub const ArrayType = enum {
     binary,
     utf8,
     bool,
+    decimal32,
+    decimal64,
     decimal128,
     decimal256,
     date32,
@@ -85,6 +87,8 @@ fn array_type(comptime ArrayT: ArrayType) type {
         .binary => BinaryArray,
         .utf8 => Utf8Array,
         .bool => BoolArray,
+        .decimal32 => Decimal32Array,
+        .decimal64 => Decimal64Array,
         .decimal128 => Decimal128Array,
         .decimal256 => Decimal256Array,
         .date32 => Date32Array,
@@ -183,7 +187,7 @@ pub const Float64Array = PrimitiveArray(f64);
 
 fn DecimalArr(comptime T: type) type {
     comptime switch (T) {
-        i128, i256 => {},
+        i32, i64, i128, i256 => {},
         else => @compileError("unsupported decimal impl type"),
     };
 
@@ -193,6 +197,8 @@ fn DecimalArr(comptime T: type) type {
     };
 }
 
+pub const Decimal32Array = DecimalArr(i32);
+pub const Decimal64Array = DecimalArr(i64);
 pub const Decimal128Array = DecimalArr(i128);
 pub const Decimal256Array = DecimalArr(i256);
 

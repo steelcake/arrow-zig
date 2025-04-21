@@ -354,6 +354,8 @@ pub fn export_array(array: arr.Array, arena: *ArenaAllocator) !FFI_Array {
 
 fn export_decimal(dec_array: anytype, arena: *ArenaAllocator) !FFI_Array {
     const width = switch (@TypeOf(dec_array)) {
+        *const arr.Decimal32Array => "32",
+        *const arr.Decimal64Array => "64",
         *const arr.Decimal128Array => "128",
         *const arr.Decimal256Array => "256",
         else => @compileError("unexpected array type"),
