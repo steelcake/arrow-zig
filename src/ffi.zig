@@ -281,7 +281,7 @@ fn import_date(comptime ArrT: type, array: *const FFI_Array, allocator: Allocato
     return arr.Array.from(arr_ptr);
 }
 
-fn import_time(comptime ArrT: type, unit: arr.TimeUnit, array: *const FFI_Array, allocator: Allocator) !arr.Array {
+fn import_time(comptime ArrT: type, unit: anytype, array: *const FFI_Array, allocator: Allocator) !arr.Array {
     const T = comptime switch (ArrT) {
         arr.Time32Array => i32,
         arr.Time64Array => i64,
@@ -306,7 +306,7 @@ fn import_time(comptime ArrT: type, unit: arr.TimeUnit, array: *const FFI_Array,
     return arr.Array.from(arr_ptr);
 }
 
-fn import_timestamp(format: []const u8, unit: arr.TimeUnit, array: *const FFI_Array, allocator: Allocator) !arr.Array {
+fn import_timestamp(format: []const u8, unit: arr.TimestampUnit, array: *const FFI_Array, allocator: Allocator) !arr.Array {
     if (format[3] != ':') {
         return error.InvalidFormatStr;
     }
@@ -326,6 +326,19 @@ fn import_timestamp(format: []const u8, unit: arr.TimeUnit, array: *const FFI_Ar
             .unit = unit,
             .timezone = timezone,
         },
+    };
+
+    return arr.Array.from(arr_ptr);
+}
+
+fn import_duration(unit: arr.TimestampUnit, array: *const FFI_Array, allocator: Allocator) !arr.Array {
+    const inner = try import_primitive_impl(i64, arr.Int64Array, array);
+
+    const arr_ptr = try allocator.create(arr.DurationArray);
+
+    arr_ptr.* = arr.DurationArray{
+        .inner = inner,
+        .unit = unit,
     };
 
     return arr.Array.from(arr_ptr);
@@ -450,6 +463,13 @@ pub fn import_array(array: *const FFI_Array, allocator: Allocator) !arr.Array {
                     'm' => import_timestamp(format, .millisecond, array, allocator),
                     'u' => import_timestamp(format, .microsecond, array, allocator),
                     'n' => import_timestamp(format, .nanosecond, array, allocator),
+                    else => error.InvalidFormatStr,
+                },
+                'D' => switch (format[2]) {
+                    's' => import_duration(.second, array, allocator),
+                    'm' => import_duration(.millisecond, array, allocator),
+                    'u' => import_duration(.microsecond, array, allocator),
+                    'n' => import_duration(.nanosecond, array, allocator),
                     else => error.InvalidFormatStr,
                 },
                 else => error.InvalidFormatStr,
@@ -582,8 +602,22 @@ pub fn export_array(array: arr.Array, arena: *ArenaAllocator) !FFI_Array {
         .timestamp => {
             return export_timestamp(array.to(.timestamp), arena);
         },
+        .duration => {
+            return export_duration(array.to(.duration), arena);
+        },
         else => unreachable,
     }
+}
+
+fn export_duration(dur_array: *const arr.DurationArray, arena: *ArenaAllocator) !FFI_Array {
+    const format = switch (dur_array.unit) {
+        .second => "tDs",
+        .millisecond => "tDm",
+        .microsecond => "tDu",
+        .nanosecond => "tDn",
+    };
+
+    return export_primitive_impl(format, &dur_array.inner, arena);
 }
 
 fn export_timestamp(timestamp_array: *const arr.TimestampArray, arena: *ArenaAllocator) !FFI_Array {
@@ -615,12 +649,10 @@ fn export_time(time_array: anytype, arena: *ArenaAllocator) !FFI_Array {
         *const arr.Time32Array => switch (time_array.unit) {
             .second => "tts",
             .millisecond => "ttm",
-            else => return error.InvalidUnit,
         },
         *const arr.Time64Array => switch (time_array.unit) {
             .microsecond => "ttu",
             .nanosecond => "ttn",
-            else => return error.InvalidUnit,
         },
         else => @compileError("unexpected array type"),
     };

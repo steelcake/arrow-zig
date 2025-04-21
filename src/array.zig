@@ -6,15 +6,25 @@ pub const DecimalParams = struct {
     scale: i8,
 };
 
-pub const TimeUnit = enum {
+pub const TimestampUnit = enum {
     second,
     millisecond,
     microsecond,
     nanosecond,
 };
 
+pub const Time32Unit = enum {
+    second,
+    millisecond,
+};
+
+pub const Time64Unit = enum {
+    microsecond,
+    nanosecond,
+};
+
 pub const Timestamp = struct {
-    unit: TimeUnit,
+    unit: TimestampUnit,
     timezone: ?[]const u8,
 };
 
@@ -318,14 +328,15 @@ pub const Date32Array = DateArr(i32);
 pub const Date64Array = DateArr(i64);
 
 fn TimeArr(comptime T: type) type {
-    comptime switch (T) {
-        i32, i64 => {},
+    const UnitT = comptime switch (T) {
+        i32 => Time32Unit,
+        i64 => Time64Unit,
         else => @compileError("unsupported index type"),
     };
 
     return struct {
         inner: PrimitiveArray(T),
-        unit: TimeUnit,
+        unit: UnitT,
     };
 }
 
@@ -357,7 +368,7 @@ pub const IntervalYearMonthArray = struct {
 
 pub const DurationArray = struct {
     inner: Int64Array,
-    unit: TimeUnit,
+    unit: TimestampUnit,
 };
 
 pub const NullArray = struct {
