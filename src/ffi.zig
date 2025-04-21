@@ -342,8 +342,52 @@ pub fn export_array(array: arr.Array, arena: *ArenaAllocator) !FFI_Array {
         .utf8_view => {
             return export_binary_view(&array.to(.utf8_view).inner, arena, "vu");
         },
+        .decimal128 => {
+            return export_decimal(array.to(.decimal128), arena);
+        },
+        .decimal256 => {
+            return export_decimal(array.to(.decimal256), arena);
+        },
         else => unreachable,
     }
+}
+
+fn export_decimal(dec_array: anytype, arena: *ArenaAllocator) !FFI_Array {
+    const width = switch (@TypeOf(dec_array)) {
+        *const arr.Decimal128Array => "128",
+        *const arr.Decimal256Array => "256",
+        else => @compileError("unexpected array type"),
+    };
+
+    const allocator = arena.allocator();
+
+    const format = try std.fmt.allocPrintZ(allocator, "d:{},{},{s}", .{ dec_array.params.precision, dec_array.params.scale, width });
+    errdefer allocator.free(format);
+
+    const array = &dec_array.inner;
+
+    const buffers = try allocator.alloc(?*const anyopaque, 2);
+    errdefer allocator.free(buffers);
+
+    buffers[0] = if (array.validity) |v| v.ptr else null;
+    buffers[1] = array.values.ptr;
+
+    return .{
+        .array = .{
+            .n_buffers = 2,
+            .buffers = buffers.ptr,
+            .offset = array.offset,
+            .length = array.len,
+            .null_count = array.null_count,
+            .private_data = arena,
+            .release = release_array,
+        },
+        .schema = .{
+            .format = format,
+            .private_data = arena,
+            .release = release_schema,
+        },
+    };
 }
 
 fn export_binary_view(array: *const arr.BinaryViewArray, arena: *ArenaAllocator, format: [:0]const u8) !FFI_Array {
