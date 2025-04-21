@@ -52,7 +52,6 @@ fn import_primitive_impl(comptime T: type, comptime ArrT: type, array: *const FF
 
 fn import_primitive(comptime T: type, comptime ArrT: type, array: *const FFI_Array, allocator: Allocator) !arr.Array {
     const arr_ptr = try allocator.create(ArrT);
-    errdefer allocator.destroy(arr_ptr);
     arr_ptr.* = try import_primitive_impl(T, ArrT, array);
     return arr.Array.from(arr_ptr);
 }
@@ -119,11 +118,9 @@ fn import_binary_view(comptime ArrT: type, array: *const FFI_Array, allocator: A
     const validity = if (buffers[0]) |b| import_buffer(u8, b, byte_size) else null;
 
     const arr_ptr = try allocator.create(ArrT);
-    errdefer allocator.destroy(arr_ptr);
 
     const num_data_buffers: u32 = @intCast(array.array.n_buffers - 2);
     const data_buffers = try allocator.alloc([*]const u8, num_data_buffers);
-    errdefer allocator.free(data_buffers);
 
     for (0..num_data_buffers) |i| {
         data_buffers[i] = @ptrCast(array.array.buffers[i + 2].?);
@@ -371,7 +368,45 @@ fn import_interval(comptime ArrT: type, comptime T: type, array: *const FFI_Arra
     return arr.Array.from(arr_ptr);
 }
 
-pub fn import_array(array: *const FFI_Array, allocator: Allocator) !arr.Array {
+fn import_list(comptime ArrT: type, comptime IndexT: type, array: *const FFI_Array, allocator: Allocator) !arr.Array {
+    const buffers = array.array.buffers.?;
+    if (array.array.n_buffers != 2) {
+        return error.InvalidFFIArray;
+    }
+
+    if (array.array.n_children != 1 or array.schema.n_children != 1) {
+        return error.InvalidFFIArray;
+    }
+
+    const len: u32 = @intCast(array.array.length);
+    const offset: u32 = @intCast(array.array.offset);
+    const size: u32 = len + offset;
+    const byte_size = validity_size(size);
+    const null_count: u32 = @intCast(array.array.null_count);
+
+    const validity = if (buffers[0]) |b| import_buffer(u8, b, byte_size) else null;
+
+    const child = FFI_Array{
+        .array = array.array.children[0].*,
+        .schema = array.schema.children[0].*,
+    };
+
+    const inner = try import_array(&child, allocator);
+
+    const arr_ptr = try allocator.create(ArrT);
+    arr_ptr.* = .{
+        .inner = inner,
+        .offsets = import_buffer(IndexT, buffers[1], size + 1),
+        .validity = validity,
+        .len = len,
+        .offset = offset,
+        .null_count = null_count,
+    };
+
+    return arr.Array.from(arr_ptr);
+}
+
+pub fn import_array(array: *const FFI_Array, allocator: Allocator) FFIError!arr.Array {
     const format_str = array.schema.format orelse return error.InvalidFFIArray;
     const format: []const u8 = std.mem.span(format_str);
     if (format.len == 0) {
@@ -508,6 +543,19 @@ pub fn import_array(array: *const FFI_Array, allocator: Allocator) !arr.Array {
                 else => error.InvalidFormatStr,
             };
         },
+        '+' => {
+            return switch (format[1]) {
+                'l' => import_list(arr.ListArray, i32, array, allocator),
+                'L' => import_list(arr.LargeListArray, i64, array, allocator),
+                // 'v' => {},
+                // 'w' => {},
+                // 's' => {},
+                // 'm' => {},
+                // 'u' => {},
+                // 'r' => {},
+                else => return error.InvalidFormatStr,
+            };
+        },
         else => return error.InvalidFormatStr,
     }
 }
@@ -532,7 +580,7 @@ fn release_schema(_: [*c]abi.ArrowSchema) callconv(.C) void {}
 ///
 /// Generally arena should be allocated inside a global allocator like std.heap.GeneralPurposeAlloc and it should have that global alloc as it's child alloc.
 /// and array should be allocated using this arena.
-pub fn export_array(array: arr.Array, arena: *ArenaAllocator) !FFI_Array {
+pub fn export_array(array: arr.Array, arena: *ArenaAllocator) FFIError!FFI_Array {
     switch (array.type_) {
         .null => {
             const a = array.to(.null);
@@ -647,8 +695,57 @@ pub fn export_array(array: arr.Array, arena: *ArenaAllocator) !FFI_Array {
         .interval_month_day_nano => {
             return export_interval("tin", array.to(.interval_month_day_nano), arena);
         },
+        .list => {
+            return export_list(array.to(.list), arena);
+        },
+        .large_list => {
+            return export_list(array.to(.large_list), arena);
+        },
         else => unreachable,
     }
+}
+
+fn export_list(array: anytype, arena: *ArenaAllocator) !FFI_Array {
+    const format = comptime switch (@TypeOf(array)) {
+        *const arr.ListArray => "+l",
+        *const arr.LargeListArray => "+L",
+        else => @compileError("unexpected array type"),
+    };
+
+    const allocator = arena.allocator();
+    const buffers = try allocator.alloc(?*const anyopaque, 2);
+    buffers[0] = if (array.validity) |v| v.ptr else null;
+    buffers[1] = array.offsets.ptr;
+
+    const child = try allocator.create(FFI_Array);
+    child.* = try export_array(array.inner, arena);
+
+    const array_children = try allocator.alloc([*c]abi.ArrowArray, 1);
+    array_children[0] = &child.array;
+
+    const schema_children = try allocator.alloc([*c]abi.ArrowSchema, 1);
+    schema_children[0] = &child.schema;
+
+    return .{
+        .array = .{
+            .n_children = 1,
+            .children = array_children.ptr,
+            .n_buffers = 2,
+            .buffers = buffers.ptr,
+            .offset = array.offset,
+            .length = array.len,
+            .null_count = array.null_count,
+            .private_data = arena,
+            .release = release_array,
+        },
+        .schema = .{
+            .n_children = 1,
+            .children = schema_children.ptr,
+            .format = format,
+            .private_data = arena,
+            .release = release_schema,
+        },
+    };
 }
 
 fn export_interval(format: [:0]const u8, array: anytype, arena: *ArenaAllocator) !FFI_Array {
@@ -856,6 +953,14 @@ fn export_primitive(array: anytype, arena: *ArenaAllocator) !FFI_Array {
 
     return export_primitive_impl(format, array, arena);
 }
+
+pub const FFIError = error{
+    InvalidFFIArray,
+    InvalidFormatStr,
+    OutOfMemory,
+    InvalidCharacter,
+    Overflow,
+};
 
 test "roundtrip" {
     const original_data = [_]i32{ 3, 2, 1, 4, 5, 6 };
