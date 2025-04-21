@@ -132,9 +132,9 @@ pub fn import_(array: FFI_Array, allocator: Allocator) !arr.Array {
 fn release_array(array: [*c]abi.ArrowArray) callconv(.C) void {
     const ptr = array orelse unreachable;
     const arena: *ArenaAllocator = @ptrCast(@alignCast(ptr.*.private_data));
-    const backing_alloc = arena.*;
+    const backing_alloc = arena.*.child_allocator;
     arena.deinit();
-    backing_alloc.child_allocator.destroy(arena);
+    backing_alloc.destroy(arena);
 }
 
 // This is no-op because actual releasing of memory happens
