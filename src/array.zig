@@ -210,7 +210,7 @@ pub const Decimal256Array = DecimalArr(i256);
 pub const DictArray = struct {
     keys: Array,
     values: Array,
-    is_ordered: bool,
+    values_are_ordered: bool,
     len: u32,
     offset: u32,
     null_count: u32,

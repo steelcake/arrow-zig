@@ -27,17 +27,21 @@ fn import_buffer(comptime T: type, buf: ?*const anyopaque, size: u32) []const T 
     return ptr[0..size];
 }
 
-fn import_validity(flags: i64, buf: ?*const anyopaque, size: u32) ?[]const u8 {
+fn import_validity(flags: i64, buf: ?*const anyopaque, size: u32, allocator: Allocator) !?[]const u8 {
     if (flags & abi.ARROW_FLAG_NULLABLE == 0) {
         return null;
     }
-    return if (buf) |b|
-        import_buffer(u8, b, validity_size(size))
-    else
-        null;
+    const byte_size = validity_size(size);
+    if (buf) |b| {
+        return import_buffer(u8, b, byte_size);
+    } else {
+        const b = try allocator.alloc(u8, byte_size);
+        @memset(b, 0);
+        return b;
+    }
 }
 
-fn import_primitive_impl(comptime T: type, comptime ArrT: type, array: *const FFI_Array) !ArrT {
+fn import_primitive_impl(comptime T: type, comptime ArrT: type, array: *const FFI_Array, allocator: Allocator) !ArrT {
     const buffers = array.array.buffers.?;
     if (array.array.n_buffers != 2) {
         return error.InvalidFFIArray;
@@ -48,7 +52,7 @@ fn import_primitive_impl(comptime T: type, comptime ArrT: type, array: *const FF
     const size: u32 = len + offset;
     const null_count: u32 = @intCast(array.array.null_count);
 
-    const validity = import_validity(array.schema.flags, buffers[0], size);
+    const validity = try import_validity(array.schema.flags, buffers[0], size, allocator);
 
     return .{
         .values = import_buffer(T, buffers[1], size),
@@ -61,7 +65,7 @@ fn import_primitive_impl(comptime T: type, comptime ArrT: type, array: *const FF
 
 fn import_primitive(comptime T: type, comptime ArrT: type, array: *const FFI_Array, allocator: Allocator) !arr.Array {
     const arr_ptr = try allocator.create(ArrT);
-    arr_ptr.* = try import_primitive_impl(T, ArrT, array);
+    arr_ptr.* = try import_primitive_impl(T, ArrT, array, allocator);
     return arr.Array.from(arr_ptr);
 }
 
@@ -76,7 +80,7 @@ fn import_binary(comptime IndexT: type, comptime ArrT: type, array: *const FFI_A
     const size: u32 = len + offset;
     const null_count: u32 = @intCast(array.array.null_count);
 
-    const validity = import_validity(array.schema.flags, buffers[0], size);
+    const validity = try import_validity(array.schema.flags, buffers[0], size, allocator);
 
     const arr_ptr = try allocator.create(ArrT);
 
@@ -122,7 +126,7 @@ fn import_binary_view(comptime ArrT: type, array: *const FFI_Array, allocator: A
     const size: u32 = len + offset;
     const null_count: u32 = @intCast(array.array.null_count);
 
-    const validity = import_validity(array.schema.flags, buffers[0], size);
+    const validity = try import_validity(array.schema.flags, buffers[0], size, allocator);
 
     const arr_ptr = try allocator.create(ArrT);
 
@@ -168,7 +172,7 @@ fn import_decimal_impl(comptime T: type, comptime ArrT: type, params: arr.Decima
     const size: u32 = len + offset;
     const null_count: u32 = @intCast(array.array.null_count);
 
-    const validity = import_validity(array.schema.flags, buffers[0], size);
+    const validity = try import_validity(array.schema.flags, buffers[0], size, allocator);
 
     const arr_ptr = try allocator.create(ArrT);
     arr_ptr.* = ArrT{
@@ -246,7 +250,7 @@ fn import_fixed_size_binary(format: []const u8, array: *const FFI_Array, allocat
     const size: u32 = len + offset;
     const null_count: u32 = @intCast(array.array.null_count);
 
-    const validity = import_validity(array.schema.flags, buffers[0], size);
+    const validity = try import_validity(array.schema.flags, buffers[0], size, allocator);
 
     const arr_ptr = try allocator.create(arr.FixedSizeBinaryArray);
     arr_ptr.* = .{
@@ -274,7 +278,7 @@ fn import_date(comptime ArrT: type, array: *const FFI_Array, allocator: Allocato
         else => @compileError("unknown array type"),
     };
 
-    const inner = try import_primitive_impl(T, InnerT, array);
+    const inner = try import_primitive_impl(T, InnerT, array, allocator);
 
     const arr_ptr = try allocator.create(ArrT);
 
@@ -298,7 +302,7 @@ fn import_time(comptime ArrT: type, unit: anytype, array: *const FFI_Array, allo
         else => @compileError("unknown array type"),
     };
 
-    const inner = try import_primitive_impl(T, InnerT, array);
+    const inner = try import_primitive_impl(T, InnerT, array, allocator);
 
     const arr_ptr = try allocator.create(ArrT);
 
@@ -320,7 +324,7 @@ fn import_timestamp(format: []const u8, unit: arr.TimestampUnit, array: *const F
     else
         null;
 
-    const inner = try import_primitive_impl(i64, arr.Int64Array, array);
+    const inner = try import_primitive_impl(i64, arr.Int64Array, array, allocator);
 
     const arr_ptr = try allocator.create(arr.TimestampArray);
 
@@ -336,7 +340,7 @@ fn import_timestamp(format: []const u8, unit: arr.TimestampUnit, array: *const F
 }
 
 fn import_duration(unit: arr.TimestampUnit, array: *const FFI_Array, allocator: Allocator) !arr.Array {
-    const inner = try import_primitive_impl(i64, arr.Int64Array, array);
+    const inner = try import_primitive_impl(i64, arr.Int64Array, array, allocator);
 
     const arr_ptr = try allocator.create(arr.DurationArray);
 
@@ -359,7 +363,7 @@ fn import_interval(comptime ArrT: type, comptime T: type, array: *const FFI_Arra
     const size: u32 = len + offset;
     const null_count: u32 = @intCast(array.array.null_count);
 
-    const validity = import_validity(array.schema.flags, buffers[0], size);
+    const validity = try import_validity(array.schema.flags, buffers[0], size, allocator);
 
     const arr_ptr = try allocator.create(ArrT);
 
@@ -389,7 +393,7 @@ fn import_list(comptime ArrT: type, comptime IndexT: type, array: *const FFI_Arr
     const size: u32 = len + offset;
     const null_count: u32 = @intCast(array.array.null_count);
 
-    const validity = import_validity(array.schema.flags, buffers[0], size);
+    const validity = try import_validity(array.schema.flags, buffers[0], size, allocator);
 
     const child = FFI_Array{
         .array = array.array.children[0].*,
@@ -426,7 +430,7 @@ fn import_list_view(comptime ArrT: type, comptime IndexT: type, array: *const FF
     const size: u32 = len + offset;
     const null_count: u32 = @intCast(array.array.null_count);
 
-    const validity = import_validity(array.schema.flags, buffers[0], size);
+    const validity = try import_validity(array.schema.flags, buffers[0], size, allocator);
 
     const child = FFI_Array{
         .array = array.array.children[0].*,
@@ -471,7 +475,7 @@ fn import_fixed_size_list(format: []const u8, array: *const FFI_Array, allocator
     const size: u32 = len + offset;
     const null_count: u32 = @intCast(array.array.null_count);
 
-    const validity = import_validity(array.schema.flags, buffers[0], size);
+    const validity = try import_validity(array.schema.flags, buffers[0], size, allocator);
 
     const child = FFI_Array{
         .array = array.array.children[0].*,
@@ -508,7 +512,7 @@ fn import_struct(array: *const FFI_Array, allocator: Allocator) !arr.Array {
     const size: u32 = len + offset;
     const null_count: u32 = @intCast(array.array.null_count);
 
-    const validity = import_validity(array.schema.flags, buffers[0], size);
+    const validity = try import_validity(array.schema.flags, buffers[0], size, allocator);
 
     const n_fields: u32 = @intCast(array.array.n_children);
 
@@ -555,7 +559,7 @@ fn import_map(array: *const FFI_Array, allocator: Allocator) !arr.Array {
     const size: u32 = len + offset;
     const null_count: u32 = @intCast(array.array.null_count);
 
-    const validity = import_validity(array.schema.flags, buffers[0], size);
+    const validity = try import_validity(array.schema.flags, buffers[0], size, allocator);
 
     const child = FFI_Array{
         .array = array.array.children[0].*,
@@ -677,6 +681,36 @@ pub fn import_run_end(array: *const FFI_Array, allocator: Allocator) !arr.Array 
 }
 
 pub fn import_array(array: *const FFI_Array, allocator: Allocator) FFIError!arr.Array {
+    if (array.array.dictionary != null) {
+        const keys = try import_array(array, allocator);
+
+        const dict_ffi = FFI_Array{
+            .array = array.array.dictionary.?.*,
+            .schema = array.schema.dictionary.?.*,
+        };
+
+        const values = try import_array(&dict_ffi, allocator);
+
+        const values_are_ordered = array.schema.flags & abi.ARROW_FLAG_DICTIONARY_ORDERED != 0;
+
+        const dict_ptr = try allocator.create(arr.DictArray);
+
+        const len: u32 = @intCast(array.array.length);
+        const offset: u32 = @intCast(array.array.offset);
+        const null_count: u32 = @intCast(array.array.null_count);
+
+        dict_ptr.* = .{
+            .values = values,
+            .keys = keys,
+            .values_are_ordered = values_are_ordered,
+            .len = len,
+            .offset = offset,
+            .null_count = null_count,
+        };
+
+        return arr.Array.from(dict_ptr);
+    }
+
     const format_str = array.schema.format orelse return error.InvalidFFIArray;
     const format: []const u8 = std.mem.span(format_str);
     if (format.len == 0) {
@@ -702,7 +736,7 @@ pub fn import_array(array: *const FFI_Array, allocator: Allocator) FFIError!arr.
                 return error.InvalidFFIArray;
             }
 
-            const validity = import_validity(array.schema.flags, buffers[0], size);
+            const validity = try import_validity(array.schema.flags, buffers[0], size, allocator);
 
             const bool_arr = try allocator.create(arr.BoolArray);
             bool_arr.* = arr.BoolArray{
@@ -1002,8 +1036,26 @@ pub fn export_array(array: arr.Array, arena: *ArenaAllocator) FFIError!FFI_Array
         .run_end_encoded => {
             return export_run_end(array.to(.run_end_encoded), arena);
         },
-        else => unreachable,
+        .dict => {
+            return export_dict(array.to(.dict), arena);
+        },
     }
+}
+
+fn export_dict(array: *const arr.DictArray, arena: *ArenaAllocator) !FFI_Array {
+    var out = try export_array(array.keys, arena);
+
+    const allocator = arena.allocator();
+    const dict_ptr = try allocator.create(FFI_Array);
+    dict_ptr.* = try export_array(array.values, arena);
+    out.array.dictionary = &dict_ptr.array;
+    out.schema.dictionary = &dict_ptr.schema;
+
+    if (array.values_are_ordered) {
+        out.schema.flags |= abi.ARROW_FLAG_DICTIONARY_ORDERED;
+    }
+
+    return out;
 }
 
 fn export_run_end(array: *const arr.RunEndArray, arena: *ArenaAllocator) !FFI_Array {
