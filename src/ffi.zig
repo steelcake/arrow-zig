@@ -495,6 +495,9 @@ fn import_fixed_size_list(format: []const u8, array: *const FFI_Array, allocator
 fn import_struct(array: *const FFI_Array, allocator: Allocator) !arr.Array {
     const buffers = array.array.buffers.?;
 
+    if (array.array.n_buffers != 1) {
+        return error.InvalidFFIArray;
+    }
     if (array.array.n_children != array.schema.n_children) {
         return error.InvalidFFIArray;
     }
@@ -572,6 +575,71 @@ fn import_map(array: *const FFI_Array, allocator: Allocator) !arr.Array {
         .null_count = null_count,
         .keys_are_sorted = (array.schema.flags & abi.ARROW_FLAG_MAP_KEYS_SORTED) != 0,
     };
+
+    return arr.Array.from(arr_ptr);
+}
+
+fn import_union(comptime ArrT: type, format: []const u8, array: *const FFI_Array, allocator: Allocator) !arr.Array {
+    if (format[3] != ':') {
+        return error.InvalidFormatStr;
+    }
+
+    var it = std.mem.splitSequence(u8, format[3..], ",");
+    const num_type_ids = if (format.len > 3) std.mem.count(u8, format[3..], ",") + 1 else 0;
+
+    const type_id_set = try allocator.alloc(i8, num_type_ids);
+
+    for (0..num_type_ids) |i| {
+        type_id_set[i] = try std.fmt.parseInt(i8, it.next().?, 10);
+    }
+    std.debug.assert(it.next() == null);
+
+    const buffers = array.array.buffers.?;
+
+    const len: u32 = @intCast(array.array.length);
+    const offset: u32 = @intCast(array.array.offset);
+    const size: u32 = len + offset;
+
+    const n_fields: u32 = @intCast(array.array.n_children);
+
+    std.debug.assert(n_fields == num_type_ids);
+
+    const children = try allocator.alloc(arr.Array, n_fields);
+    for (0..n_fields) |i| {
+        const child = FFI_Array{
+            .array = array.array.children[i].*,
+            .schema = array.schema.children[i].*,
+        };
+        children[i] = try import_array(&child, allocator);
+    }
+
+    const type_ids = import_buffer(i8, buffers[0], size);
+
+    const arr_ptr = try allocator.create(ArrT);
+
+    switch (ArrT) {
+        arr.DenseUnionArray => {
+            const offsets = import_buffer(i32, buffers[1], size);
+            arr_ptr.* = .{
+                .type_ids = type_ids,
+                .type_id_set = type_id_set,
+                .offsets = offsets,
+                .children = children,
+                .len = len,
+                .offset = offset,
+            };
+        },
+        arr.SparseUnionArray => {
+            arr_ptr.* = .{
+                .type_ids = type_ids,
+                .type_id_set = type_id_set,
+                .children = children,
+                .len = len,
+                .offset = offset,
+            };
+        },
+        else => @compileError("unexpected array type"),
+    }
 
     return arr.Array.from(arr_ptr);
 }
@@ -725,7 +793,11 @@ pub fn import_array(array: *const FFI_Array, allocator: Allocator) FFIError!arr.
                 'w' => import_fixed_size_list(format, array, allocator),
                 's' => import_struct(array, allocator),
                 'm' => import_map(array, allocator),
-                // 'u' => {},
+                'u' => switch (format[2]) {
+                    'd' => import_union(arr.DenseUnionArray, format, array, allocator),
+                    's' => import_union(arr.SparseUnionArray, format, array, allocator),
+                    else => return error.InvalidFormatStr,
+                },
                 // 'r' => {},
                 else => return error.InvalidFormatStr,
             };
@@ -890,8 +962,89 @@ pub fn export_array(array: arr.Array, arena: *ArenaAllocator) FFIError!FFI_Array
         .map => {
             return export_map(array.to(.map), arena);
         },
+        .dense_union => {
+            return export_union(array.to(.dense_union), arena);
+        },
+        .sparse_union => {
+            return export_union(array.to(.sparse_union), arena);
+        },
         else => unreachable,
     }
+}
+
+fn export_union(array: anytype, arena: *ArenaAllocator) !FFI_Array {
+    const format_base = switch (@TypeOf(array)) {
+        *const arr.DenseUnionArray => "+ud:",
+        *const arr.SparseUnionArray => "+us:",
+        else => @compileError("unexpected array type"),
+    };
+
+    const n_fields = array.children.len;
+
+    const allocator = arena.allocator();
+
+    // size is calculated as base + 5  * num_type_ids + 1 because type ids are 8 bit integers so they can't
+    // occupy more than 3 digits, a minus sign and a comma.
+    // and need the last one byte to make it zero terminated.
+    const format = try allocator.alloc(u8, 3 + 5 * array.type_id_set.len + 1);
+    var write_idx: usize = 0;
+
+    if (array.type_id_set.len > 0) {
+        {
+            const out = std.fmt.bufPrint(format[write_idx..], "{}", .{array.type_id_set[0]}) catch unreachable;
+            write_idx += out.len;
+        }
+        for (1..array.type_id_set.len) |i| {
+            const out = std.fmt.bufPrint(format[write_idx..], ",{}", .{array.type_id_set[i]}) catch unreachable;
+            write_idx += out.len;
+        }
+    }
+
+    format[write_idx] = 0;
+
+    const buffers = try allocator.alloc(?*const anyopaque, 2);
+    buffers[0] = array.type_ids.ptr;
+    buffers[1] = switch (@TypeOf(array)) {
+        *const arr.DenseUnionArray => array.offsets.ptr,
+        *const arr.SparseUnionArray => null,
+        else => @compileError("unexpected array type"),
+    };
+
+    const children = try allocator.alloc(FFI_Array, n_fields);
+    for (0..n_fields) |i| {
+        children[i] = try export_array(array.children[i], arena);
+    }
+
+    const array_children = try allocator.alloc([*c]abi.ArrowArray, n_fields);
+    for (0..n_fields) |i| {
+        array_children[i] = &children[i].array;
+    }
+
+    const schema_children = try allocator.alloc([*c]abi.ArrowSchema, n_fields);
+    for (0..n_fields) |i| {
+        schema_children[i] = &children[i].schema;
+    }
+
+    return .{
+        .array = .{
+            .n_children = @as(i64, @intCast(n_fields)),
+            .children = array_children.ptr,
+            .n_buffers = if (buffers[1] == null) 1 else 2,
+            .buffers = buffers.ptr,
+            .offset = array.offset,
+            .length = array.len,
+            .null_count = 0,
+            .private_data = arena,
+            .release = release_array,
+        },
+        .schema = .{
+            .n_children = @as(i64, @intCast(n_fields)),
+            .children = schema_children.ptr,
+            .format = format_base,
+            .private_data = arena,
+            .release = release_schema,
+        },
+    };
 }
 
 fn export_map(array: *const arr.MapArray, arena: *ArenaAllocator) !FFI_Array {

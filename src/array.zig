@@ -295,22 +295,20 @@ pub const ListArray = ListArr(i32);
 pub const LargeListArray = ListArr(i64);
 
 pub const DenseUnionArray = struct {
-    type_set: []const i8,
-    types: []const i8,
+    type_id_set: []const i8,
+    type_ids: []const i8,
     offsets: []const i32,
     children: []const Array,
     len: u32,
     offset: u32,
-    null_count: u32,
 };
 
 pub const SparseUnionArray = struct {
-    type_set: []const i8,
-    types: []const i8,
+    type_id_set: []const i8,
+    type_ids: []const i8,
     children: []const Array,
     len: u32,
     offset: u32,
-    null_count: u32,
 };
 
 fn DateArr(comptime T: type) type {
