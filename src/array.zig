@@ -219,6 +219,7 @@ pub const DictArray = struct {
 pub const RunEndArray = struct {
     run_ends: Array,
     values: Array,
+    validity: ?[]const u8,
     len: u32,
     offset: u32,
     null_count: u32,

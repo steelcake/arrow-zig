@@ -644,6 +644,49 @@ fn import_union(comptime ArrT: type, format: []const u8, array: *const FFI_Array
     return arr.Array.from(arr_ptr);
 }
 
+pub fn import_run_end(array: *const FFI_Array, allocator: Allocator) !arr.Array {
+    const buffers = array.array.buffers.?;
+    if (array.array.n_buffers != 1) {
+        return error.InvalidFFIArray;
+    }
+
+    if (array.array.n_children != 2 or array.schema.n_children != 2) {
+        return error.InvalidFFIArray;
+    }
+
+    const len: u32 = @intCast(array.array.length);
+    const offset: u32 = @intCast(array.array.offset);
+    const size: u32 = len + offset;
+    const byte_size = validity_size(size);
+    const null_count: u32 = @intCast(array.array.null_count);
+
+    const validity = if (buffers[0]) |b| import_buffer(u8, b, byte_size) else null;
+
+    const run_ends_ffi = FFI_Array{
+        .array = array.array.children[0].*,
+        .schema = array.schema.children[0].*,
+    };
+    const run_ends = try import_array(&run_ends_ffi, allocator);
+
+    const values_ffi = FFI_Array{
+        .array = array.array.children[1].*,
+        .schema = array.schema.children[1].*,
+    };
+    const values = try import_array(&values_ffi, allocator);
+
+    const arr_ptr = try allocator.create(arr.RunEndArray);
+    arr_ptr.* = .{
+        .run_ends = run_ends,
+        .values = values,
+        .validity = validity,
+        .len = len,
+        .offset = offset,
+        .null_count = null_count,
+    };
+
+    return arr.Array.from(arr_ptr);
+}
+
 pub fn import_array(array: *const FFI_Array, allocator: Allocator) FFIError!arr.Array {
     const format_str = array.schema.format orelse return error.InvalidFFIArray;
     const format: []const u8 = std.mem.span(format_str);
@@ -798,7 +841,7 @@ pub fn import_array(array: *const FFI_Array, allocator: Allocator) FFIError!arr.
                     's' => import_union(arr.SparseUnionArray, format, array, allocator),
                     else => return error.InvalidFormatStr,
                 },
-                // 'r' => {},
+                'r' => import_run_end(array, allocator),
                 else => return error.InvalidFormatStr,
             };
         },
@@ -968,8 +1011,53 @@ pub fn export_array(array: arr.Array, arena: *ArenaAllocator) FFIError!FFI_Array
         .sparse_union => {
             return export_union(array.to(.sparse_union), arena);
         },
+        .run_end_encoded => {
+            return export_run_end(array.to(.run_end_encoded), arena);
+        },
         else => unreachable,
     }
+}
+
+fn export_run_end(array: *const arr.RunEndArray, arena: *ArenaAllocator) !FFI_Array {
+    const allocator = arena.allocator();
+
+    const buffers = try allocator.alloc(?*const anyopaque, 1);
+    buffers[0] = if (array.validity) |v| v.ptr else null;
+
+    const children = try allocator.alloc(FFI_Array, 2);
+    children[0] = try export_array(array.run_ends, arena);
+    children[0].schema.name = "run_ends";
+    children[1] = try export_array(array.values, arena);
+    children[1].schema.name = "values";
+
+    const array_children = try allocator.alloc([*c]abi.ArrowArray, 2);
+    array_children[0] = &children[0].array;
+    array_children[1] = &children[1].array;
+
+    const schema_children = try allocator.alloc([*c]abi.ArrowSchema, 2);
+    schema_children[0] = &children[0].schema;
+    schema_children[1] = &children[1].schema;
+
+    return .{
+        .array = .{
+            .n_children = 2,
+            .children = array_children.ptr,
+            .n_buffers = 1,
+            .buffers = buffers.ptr,
+            .offset = array.offset,
+            .length = array.len,
+            .null_count = array.null_count,
+            .private_data = arena,
+            .release = release_array,
+        },
+        .schema = .{
+            .n_children = 2,
+            .children = schema_children.ptr,
+            .format = "+r",
+            .private_data = arena,
+            .release = release_schema,
+        },
+    };
 }
 
 fn export_union(array: anytype, arena: *ArenaAllocator) !FFI_Array {
