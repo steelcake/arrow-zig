@@ -1056,6 +1056,7 @@ fn export_run_end(array: *const arr.RunEndArray, arena: *ArenaAllocator) !FFI_Ar
             .format = "+r",
             .private_data = arena,
             .release = release_schema,
+            .flags = if (array.validity != null) abi.ARROW_FLAG_NULLABLE else 0,
         },
     };
 }
@@ -1152,6 +1153,14 @@ fn export_map(array: *const arr.MapArray, arena: *ArenaAllocator) !FFI_Array {
     const schema_children = try allocator.alloc([*c]abi.ArrowSchema, 1);
     schema_children[0] = &child.schema;
 
+    var flags: i64 = 0;
+    if (array.keys_are_sorted) {
+        flags |= abi.ARROW_FLAG_MAP_KEYS_SORTED;
+    }
+    if (array.validity != null) {
+        flags |= abi.ARROW_FLAG_NULLABLE;
+    }
+
     return .{
         .array = .{
             .n_children = 1,
@@ -1169,8 +1178,8 @@ fn export_map(array: *const arr.MapArray, arena: *ArenaAllocator) !FFI_Array {
             .children = schema_children.ptr,
             .format = "+m",
             .private_data = arena,
-            .flags = if (array.keys_are_sorted) abi.ARROW_FLAG_MAP_KEYS_SORTED else 0,
             .release = release_schema,
+            .flags = flags,
         },
     };
 }
@@ -1218,6 +1227,7 @@ fn export_struct(array: *const arr.StructArray, arena: *ArenaAllocator) !FFI_Arr
             .format = "+s",
             .private_data = arena,
             .release = release_schema,
+            .flags = if (array.validity != null) abi.ARROW_FLAG_NULLABLE else 0,
         },
     };
 }
@@ -1257,6 +1267,7 @@ fn export_fixed_size_list(array: *const arr.FixedSizeListArray, arena: *ArenaAll
             .format = format,
             .private_data = arena,
             .release = release_schema,
+            .flags = if (array.validity != null) abi.ARROW_FLAG_NULLABLE else 0,
         },
     };
 }
@@ -1301,6 +1312,7 @@ fn export_list_view(array: anytype, arena: *ArenaAllocator) !FFI_Array {
             .format = format,
             .private_data = arena,
             .release = release_schema,
+            .flags = if (array.validity != null) abi.ARROW_FLAG_NULLABLE else 0,
         },
     };
 }
@@ -1344,6 +1356,7 @@ fn export_list(array: anytype, arena: *ArenaAllocator) !FFI_Array {
             .format = format,
             .private_data = arena,
             .release = release_schema,
+            .flags = if (array.validity != null) abi.ARROW_FLAG_NULLABLE else 0,
         },
     };
 }
@@ -1433,6 +1446,7 @@ fn export_fixed_size_binary(array: *const arr.FixedSizeBinaryArray, arena: *Aren
             .format = format,
             .private_data = arena,
             .release = release_schema,
+            .flags = if (array.validity != null) abi.ARROW_FLAG_NULLABLE else 0,
         },
     };
 }
@@ -1481,6 +1495,7 @@ fn export_binary_view(array: *const arr.BinaryViewArray, arena: *ArenaAllocator,
             .format = format,
             .private_data = arena,
             .release = release_schema,
+            .flags = if (array.validity != null) abi.ARROW_FLAG_NULLABLE else 0,
         },
     };
 }
@@ -1506,6 +1521,7 @@ fn export_binary(array: anytype, arena: *ArenaAllocator, format: [:0]const u8) !
             .format = format,
             .private_data = arena,
             .release = release_schema,
+            .flags = if (array.validity != null) abi.ARROW_FLAG_NULLABLE else 0,
         },
     };
 }
@@ -1530,6 +1546,7 @@ fn export_primitive_impl(format: [:0]const u8, array: anytype, arena: *ArenaAllo
             .format = format,
             .private_data = arena,
             .release = release_schema,
+            .flags = if (array.validity != null) abi.ARROW_FLAG_NULLABLE else 0,
         },
     };
 }
