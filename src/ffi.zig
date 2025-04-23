@@ -3,7 +3,7 @@ const Allocator = std.mem.Allocator;
 const ArenaAllocator = std.heap.ArenaAllocator;
 
 const arr = @import("./array.zig");
-pub const abi = @cImport(@cInclude("arrow_abi.h"));
+pub const abi = @import("./abi.zig");
 
 pub const FFI_Array = struct {
     schema: abi.ArrowSchema,
@@ -27,8 +27,8 @@ fn import_buffer(comptime T: type, buf: ?*const anyopaque, size: u32) []const T 
     return ptr[0..size];
 }
 
-fn import_validity(flags: i64, buf: ?*const anyopaque, size: u32, allocator: Allocator) !?[]const u8 {
-    if (flags & abi.ARROW_FLAG_NULLABLE == 0) {
+fn import_validity(flags: abi.Flags, buf: ?*const anyopaque, size: u32, allocator: Allocator) !?[]const u8 {
+    if (flags.nullable) {
         return null;
     }
     const byte_size = validity_size(size);
@@ -134,7 +134,7 @@ fn import_binary_view(comptime ArrT: type, array: *const FFI_Array, allocator: A
     const data_buffers = try allocator.alloc([*]const u8, num_data_buffers);
 
     for (0..num_data_buffers) |i| {
-        data_buffers[i] = @ptrCast(array.array.buffers[i + 2].?);
+        data_buffers[i] = @ptrCast(buffers[i + 2].?);
     }
 
     const data = arr.BinaryViewArray{
@@ -396,8 +396,8 @@ fn import_list(comptime ArrT: type, comptime IndexT: type, array: *const FFI_Arr
     const validity = try import_validity(array.schema.flags, buffers[0], size, allocator);
 
     const child = FFI_Array{
-        .array = array.array.children[0].*,
-        .schema = array.schema.children[0].*,
+        .array = array.array.children.?[0].?.*,
+        .schema = array.schema.children.?[0].?.*,
     };
 
     const inner = try import_array(&child, allocator);
@@ -433,8 +433,8 @@ fn import_list_view(comptime ArrT: type, comptime IndexT: type, array: *const FF
     const validity = try import_validity(array.schema.flags, buffers[0], size, allocator);
 
     const child = FFI_Array{
-        .array = array.array.children[0].*,
-        .schema = array.schema.children[0].*,
+        .array = array.array.children.?[0].?.*,
+        .schema = array.schema.children.?[0].?.*,
     };
 
     const inner = try import_array(&child, allocator);
@@ -478,8 +478,8 @@ fn import_fixed_size_list(format: []const u8, array: *const FFI_Array, allocator
     const validity = try import_validity(array.schema.flags, buffers[0], size, allocator);
 
     const child = FFI_Array{
-        .array = array.array.children[0].*,
-        .schema = array.schema.children[0].*,
+        .array = array.array.children.?[0].?.*,
+        .schema = array.schema.children.?[0].?.*,
     };
 
     const inner = try import_array(&child, allocator);
@@ -518,14 +518,14 @@ fn import_struct(array: *const FFI_Array, allocator: Allocator) !arr.Array {
 
     const field_names = try allocator.alloc([:0]const u8, n_fields);
     for (0..n_fields) |i| {
-        field_names[i] = std.mem.span(array.schema.children[i].*.name);
+        field_names[i] = std.mem.span(array.schema.children.?[i].?.*.name.?);
     }
 
     const field_values = try allocator.alloc(arr.Array, n_fields);
     for (0..n_fields) |i| {
         const child = FFI_Array{
-            .array = array.array.children[i].*,
-            .schema = array.schema.children[i].*,
+            .array = array.array.children.?[i].?.*,
+            .schema = array.schema.children.?[i].?.*,
         };
         field_values[i] = try import_array(&child, allocator);
     }
@@ -562,8 +562,8 @@ fn import_map(array: *const FFI_Array, allocator: Allocator) !arr.Array {
     const validity = try import_validity(array.schema.flags, buffers[0], size, allocator);
 
     const child = FFI_Array{
-        .array = array.array.children[0].*,
-        .schema = array.schema.children[0].*,
+        .array = array.array.children.?[0].?.*,
+        .schema = array.schema.children.?[0].?.*,
     };
 
     const entries = try import_array(&child, allocator);
@@ -576,7 +576,7 @@ fn import_map(array: *const FFI_Array, allocator: Allocator) !arr.Array {
         .len = len,
         .offset = offset,
         .null_count = null_count,
-        .keys_are_sorted = (array.schema.flags & abi.ARROW_FLAG_MAP_KEYS_SORTED) != 0,
+        .keys_are_sorted = array.schema.flags.map_keys_sorted,
     };
 
     return arr.Array.from(arr_ptr);
@@ -610,8 +610,8 @@ fn import_union(comptime ArrT: type, format: []const u8, array: *const FFI_Array
     const children = try allocator.alloc(arr.Array, n_fields);
     for (0..n_fields) |i| {
         const child = FFI_Array{
-            .array = array.array.children[i].*,
-            .schema = array.schema.children[i].*,
+            .array = array.array.children.?[i].?.*,
+            .schema = array.schema.children.?[i].?.*,
         };
         children[i] = try import_array(&child, allocator);
     }
@@ -657,14 +657,14 @@ pub fn import_run_end(array: *const FFI_Array, allocator: Allocator) !arr.Array 
     const null_count: u32 = @intCast(array.array.null_count);
 
     const run_ends_ffi = FFI_Array{
-        .array = array.array.children[0].*,
-        .schema = array.schema.children[0].*,
+        .array = array.array.children.?[0].?.*,
+        .schema = array.schema.children.?[0].?.*,
     };
     const run_ends = try import_array(&run_ends_ffi, allocator);
 
     const values_ffi = FFI_Array{
-        .array = array.array.children[1].*,
-        .schema = array.schema.children[1].*,
+        .array = array.array.children.?[1].?.*,
+        .schema = array.schema.children.?[1].?.*,
     };
     const values = try import_array(&values_ffi, allocator);
 
@@ -691,7 +691,7 @@ pub fn import_array(array: *const FFI_Array, allocator: Allocator) FFIError!arr.
 
         const values = try import_array(&dict_ffi, allocator);
 
-        const values_are_ordered = array.schema.flags & abi.ARROW_FLAG_DICTIONARY_ORDERED != 0;
+        const is_ordered = array.schema.flags.dictionary_ordered;
 
         const dict_ptr = try allocator.create(arr.DictArray);
 
@@ -702,7 +702,7 @@ pub fn import_array(array: *const FFI_Array, allocator: Allocator) FFIError!arr.
         dict_ptr.* = .{
             .values = values,
             .keys = keys,
-            .values_are_ordered = values_are_ordered,
+            .is_ordered = is_ordered,
             .len = len,
             .offset = offset,
             .null_count = null_count,
@@ -711,8 +711,7 @@ pub fn import_array(array: *const FFI_Array, allocator: Allocator) FFIError!arr.
         return arr.Array.from(dict_ptr);
     }
 
-    const format_str = array.schema.format orelse return error.InvalidFFIArray;
-    const format: []const u8 = std.mem.span(format_str);
+    const format: []const u8 = std.mem.span(array.schema.format);
     if (format.len == 0) {
         return error.InvalidFFIArray;
     }
@@ -911,7 +910,7 @@ fn release_impl(comptime T: type, data: [*c]T) void {
     const n_children: usize = @intCast(obj.n_children);
 
     for (0..n_children) |i| {
-        const child = obj.children[i];
+        const child = obj.children.?[i].?;
         if (child.*.release) |r| {
             r(child);
             std.debug.assert(child.*.release == null);
@@ -920,7 +919,7 @@ fn release_impl(comptime T: type, data: [*c]T) void {
 
     if (obj.dictionary) |dict| {
         if (dict.*.release) |r| {
-            r(obj.dictionary);
+            r(obj.dictionary.?);
             std.debug.assert(dict.*.release == null);
         }
     }
@@ -1117,10 +1116,7 @@ fn export_dict(array: *const arr.DictArray, private_data: *PrivateData) !FFI_Arr
     dict_ptr.* = try export_array_impl(array.values, private_data);
     out.array.dictionary = &dict_ptr.array;
     out.schema.dictionary = &dict_ptr.schema;
-
-    if (array.values_are_ordered) {
-        out.schema.flags |= abi.ARROW_FLAG_DICTIONARY_ORDERED;
-    }
+    out.schema.flags.dictionary_ordered = array.is_ordered;
 
     return out;
 }
@@ -1256,14 +1252,6 @@ fn export_map(array: *const arr.MapArray, private_data: *PrivateData) !FFI_Array
     const schema_children = try allocator.alloc([*c]abi.ArrowSchema, 1);
     schema_children[0] = &child.schema;
 
-    var flags: i64 = 0;
-    if (array.keys_are_sorted) {
-        flags |= abi.ARROW_FLAG_MAP_KEYS_SORTED;
-    }
-    if (array.validity != null) {
-        flags |= abi.ARROW_FLAG_NULLABLE;
-    }
-
     return .{
         .array = .{
             .n_children = 1,
@@ -1282,7 +1270,7 @@ fn export_map(array: *const arr.MapArray, private_data: *PrivateData) !FFI_Array
             .format = "+m",
             .private_data = private_data,
             .release = release_schema,
-            .flags = flags,
+            .flags = .{ .nullable = array.validity != null, .map_keys_sorted = array.keys_are_sorted },
         },
     };
 }
@@ -1330,7 +1318,7 @@ fn export_struct(array: *const arr.StructArray, private_data: *PrivateData) !FFI
             .format = "+s",
             .private_data = private_data,
             .release = release_schema,
-            .flags = if (array.validity != null) abi.ARROW_FLAG_NULLABLE else 0,
+            .flags = .{ .nullable = array.validity != null },
         },
     };
 }
@@ -1370,7 +1358,7 @@ fn export_fixed_size_list(array: *const arr.FixedSizeListArray, private_data: *P
             .format = format,
             .private_data = private_data,
             .release = release_schema,
-            .flags = if (array.validity != null) abi.ARROW_FLAG_NULLABLE else 0,
+            .flags = .{ .nullable = array.validity != null },
         },
     };
 }
@@ -1415,7 +1403,7 @@ fn export_list_view(array: anytype, private_data: *PrivateData) !FFI_Array {
             .format = format,
             .private_data = private_data,
             .release = release_schema,
-            .flags = if (array.validity != null) abi.ARROW_FLAG_NULLABLE else 0,
+            .flags = .{ .nullable = array.validity != null },
         },
     };
 }
@@ -1459,7 +1447,7 @@ fn export_list(array: anytype, private_data: *PrivateData) !FFI_Array {
             .format = format,
             .private_data = private_data,
             .release = release_schema,
-            .flags = if (array.validity != null) abi.ARROW_FLAG_NULLABLE else 0,
+            .flags = .{ .nullable = array.validity != null },
         },
     };
 }
@@ -1549,7 +1537,7 @@ fn export_fixed_size_binary(array: *const arr.FixedSizeBinaryArray, private_data
             .format = format,
             .private_data = private_data,
             .release = release_schema,
-            .flags = if (array.validity != null) abi.ARROW_FLAG_NULLABLE else 0,
+            .flags = .{ .nullable = array.validity != null },
         },
     };
 }
@@ -1598,7 +1586,7 @@ fn export_binary_view(array: *const arr.BinaryViewArray, private_data: *PrivateD
             .format = format,
             .private_data = private_data,
             .release = release_schema,
-            .flags = if (array.validity != null) abi.ARROW_FLAG_NULLABLE else 0,
+            .flags = .{ .nullable = array.validity != null },
         },
     };
 }
@@ -1624,7 +1612,7 @@ fn export_binary(array: anytype, private_data: *PrivateData, format: [:0]const u
             .format = format,
             .private_data = private_data,
             .release = release_schema,
-            .flags = if (array.validity != null) abi.ARROW_FLAG_NULLABLE else 0,
+            .flags = .{ .nullable = array.validity != null },
         },
     };
 }
@@ -1649,7 +1637,7 @@ fn export_primitive_impl(format: [:0]const u8, array: anytype, private_data: *Pr
             .format = format,
             .private_data = private_data,
             .release = release_schema,
-            .flags = if (array.validity != null) abi.ARROW_FLAG_NULLABLE else 0,
+            .flags = .{ .nullable = array.validity != null },
         },
     };
 }
