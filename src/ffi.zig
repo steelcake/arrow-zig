@@ -871,17 +871,73 @@ pub fn import_array(array: *const FFI_Array, allocator: Allocator) FFIError!arr.
     }
 }
 
-fn release_array(array: [*c]abi.ArrowArray) callconv(.C) void {
-    const ptr = array orelse unreachable;
-    const arena: *ArenaAllocator = @ptrCast(@alignCast(ptr.*.private_data));
-    const backing_alloc = arena.*.child_allocator;
-    arena.deinit();
-    backing_alloc.destroy(arena);
+const PrivateData = struct {
+    ref_count: std.atomic.Value(i32),
+    arena: ArenaAllocator,
+
+    fn init(arena: ArenaAllocator) !*PrivateData {
+        const self = try arena.child_allocator.create(PrivateData);
+        self.* = .{
+            .arena = arena,
+            .ref_count = std.atomic.Value(i32).init(1),
+        };
+        return self;
+    }
+
+    fn deinit(self: *PrivateData) void {
+        const backing_alloc = self.arena.child_allocator;
+        self.arena.deinit();
+        backing_alloc.destroy(self);
+    }
+
+    fn increment(self: *PrivateData) *PrivateData {
+        _ = self.ref_count.fetchAdd(1, .monotonic);
+        return self;
+    }
+
+    fn decrement(self: *PrivateData) void {
+        if (self.ref_count.fetchSub(1, .release) == 1) {
+            _ = self.ref_count.load(.acquire);
+
+            self.deinit();
+        }
+    }
+};
+
+fn release_impl(comptime T: type, data: [*c]T) void {
+    const ptr = data orelse unreachable;
+    const obj = ptr.*;
+
+    const n_children: usize = @intCast(obj.n_children);
+
+    for (0..n_children) |i| {
+        const child = obj.children[i];
+        if (child.*.release) |r| {
+            r(child);
+            std.debug.assert(child.*.release == null);
+        }
+    }
+
+    if (obj.dictionary) |dict| {
+        if (dict.*.release) |r| {
+            r(obj.dictionary);
+            std.debug.assert(dict.*.release == null);
+        }
+    }
+
+    const arc: *PrivateData = @ptrCast(@alignCast(ptr.*.private_data));
+    arc.decrement();
+
+    ptr.*.release = null;
 }
 
-// This is no-op because actual releasing of memory happens
-// when release_array is called
-fn release_schema(_: [*c]abi.ArrowSchema) callconv(.C) void {}
+fn release_array(array: [*c]abi.ArrowArray) callconv(.C) void {
+    release_impl(abi.ArrowArray, array);
+}
+
+fn release_schema(schema: [*c]abi.ArrowSchema) callconv(.C) void {
+    release_impl(abi.ArrowSchema, schema);
+}
 
 /// calling arena.deinit should free all memory relating to this array
 ///
@@ -891,7 +947,18 @@ fn release_schema(_: [*c]abi.ArrowSchema) callconv(.C) void {}
 ///
 /// Generally arena should be allocated inside a global allocator like std.heap.GeneralPurposeAlloc and it should have that global alloc as it's child alloc.
 /// and array should be allocated using this arena.
-pub fn export_array(array: arr.Array, arena: *ArenaAllocator) FFIError!FFI_Array {
+///
+/// Ownership of the arena is transferred to the FFI_Array from this point on so the caller should not use it.
+pub fn export_array(array: arr.Array, arena: ArenaAllocator) FFIError!FFI_Array {
+    const private_data = try PrivateData.init(arena);
+    errdefer private_data.deinit();
+
+    const out = try export_array_impl(array, private_data);
+
+    return out;
+}
+
+fn export_array_impl(array: arr.Array, private_data: *PrivateData) FFIError!FFI_Array {
     switch (array.type_) {
         .null => {
             const a = array.to(.null);
@@ -899,155 +966,155 @@ pub fn export_array(array: arr.Array, arena: *ArenaAllocator) FFIError!FFI_Array
             return .{
                 .schema = .{
                     .format = "n",
-                    .private_data = arena,
+                    .private_data = private_data.increment(),
                     .release = release_schema,
                 },
                 .array = .{
                     .length = a.len,
                     .offset = 0,
-                    .private_data = arena,
+                    .private_data = private_data,
                     .release = release_array,
                 },
             };
         },
         .i8 => {
-            return export_primitive(array.to(.i8), arena);
+            return export_primitive(array.to(.i8), private_data);
         },
         .i16 => {
-            return export_primitive(array.to(.i16), arena);
+            return export_primitive(array.to(.i16), private_data);
         },
         .i32 => {
-            return export_primitive(array.to(.i32), arena);
+            return export_primitive(array.to(.i32), private_data);
         },
         .i64 => {
-            return export_primitive(array.to(.i64), arena);
+            return export_primitive(array.to(.i64), private_data);
         },
         .u8 => {
-            return export_primitive(array.to(.u8), arena);
+            return export_primitive(array.to(.u8), private_data);
         },
         .u16 => {
-            return export_primitive(array.to(.u16), arena);
+            return export_primitive(array.to(.u16), private_data);
         },
         .u32 => {
-            return export_primitive(array.to(.u32), arena);
+            return export_primitive(array.to(.u32), private_data);
         },
         .u64 => {
-            return export_primitive(array.to(.u64), arena);
+            return export_primitive(array.to(.u64), private_data);
         },
         .f16 => {
-            return export_primitive(array.to(.f16), arena);
+            return export_primitive(array.to(.f16), private_data);
         },
         .f32 => {
-            return export_primitive(array.to(.f32), arena);
+            return export_primitive(array.to(.f32), private_data);
         },
         .f64 => {
-            return export_primitive(array.to(.f64), arena);
+            return export_primitive(array.to(.f64), private_data);
         },
         .binary => {
-            return export_binary(array.to(.binary), arena, "z");
+            return export_binary(array.to(.binary), private_data, "z");
         },
         .large_binary => {
-            return export_binary(array.to(.large_binary), arena, "Z");
+            return export_binary(array.to(.large_binary), private_data, "Z");
         },
         .utf8 => {
-            return export_binary(&array.to(.utf8).inner, arena, "u");
+            return export_binary(&array.to(.utf8).inner, private_data, "u");
         },
         .large_utf8 => {
-            return export_binary(&array.to(.large_utf8).inner, arena, "U");
+            return export_binary(&array.to(.large_utf8).inner, private_data, "U");
         },
         .bool => {
-            return export_primitive(array.to(.bool), arena);
+            return export_primitive(array.to(.bool), private_data);
         },
         .binary_view => {
-            return export_binary_view(array.to(.binary_view), arena, "vz");
+            return export_binary_view(array.to(.binary_view), private_data, "vz");
         },
         .utf8_view => {
-            return export_binary_view(&array.to(.utf8_view).inner, arena, "vu");
+            return export_binary_view(&array.to(.utf8_view).inner, private_data, "vu");
         },
         .decimal32 => {
-            return export_decimal(array.to(.decimal32), arena);
+            return export_decimal(array.to(.decimal32), private_data);
         },
         .decimal64 => {
-            return export_decimal(array.to(.decimal64), arena);
+            return export_decimal(array.to(.decimal64), private_data);
         },
         .decimal128 => {
-            return export_decimal(array.to(.decimal128), arena);
+            return export_decimal(array.to(.decimal128), private_data);
         },
         .decimal256 => {
-            return export_decimal(array.to(.decimal256), arena);
+            return export_decimal(array.to(.decimal256), private_data);
         },
         .fixed_size_binary => {
-            return export_fixed_size_binary(array.to(.fixed_size_binary), arena);
+            return export_fixed_size_binary(array.to(.fixed_size_binary), private_data);
         },
         .date32 => {
-            return export_date(array.to(.date32), arena);
+            return export_date(array.to(.date32), private_data);
         },
         .date64 => {
-            return export_date(array.to(.date64), arena);
+            return export_date(array.to(.date64), private_data);
         },
         .time32 => {
-            return export_time(array.to(.time32), arena);
+            return export_time(array.to(.time32), private_data);
         },
         .time64 => {
-            return export_time(array.to(.time64), arena);
+            return export_time(array.to(.time64), private_data);
         },
         .timestamp => {
-            return export_timestamp(array.to(.timestamp), arena);
+            return export_timestamp(array.to(.timestamp), private_data);
         },
         .duration => {
-            return export_duration(array.to(.duration), arena);
+            return export_duration(array.to(.duration), private_data);
         },
         .interval_year_month => {
-            return export_interval("tiM", array.to(.interval_year_month), arena);
+            return export_interval("tiM", array.to(.interval_year_month), private_data);
         },
         .interval_day_time => {
-            return export_interval("tiD", array.to(.interval_day_time), arena);
+            return export_interval("tiD", array.to(.interval_day_time), private_data);
         },
         .interval_month_day_nano => {
-            return export_interval("tin", array.to(.interval_month_day_nano), arena);
+            return export_interval("tin", array.to(.interval_month_day_nano), private_data);
         },
         .list => {
-            return export_list(array.to(.list), arena);
+            return export_list(array.to(.list), private_data);
         },
         .large_list => {
-            return export_list(array.to(.large_list), arena);
+            return export_list(array.to(.large_list), private_data);
         },
         .list_view => {
-            return export_list_view(array.to(.list_view), arena);
+            return export_list_view(array.to(.list_view), private_data);
         },
         .large_list_view => {
-            return export_list_view(array.to(.large_list_view), arena);
+            return export_list_view(array.to(.large_list_view), private_data);
         },
         .fixed_size_list => {
-            return export_fixed_size_list(array.to(.fixed_size_list), arena);
+            return export_fixed_size_list(array.to(.fixed_size_list), private_data);
         },
         .struct_ => {
-            return export_struct(array.to(.struct_), arena);
+            return export_struct(array.to(.struct_), private_data);
         },
         .map => {
-            return export_map(array.to(.map), arena);
+            return export_map(array.to(.map), private_data);
         },
         .dense_union => {
-            return export_union(array.to(.dense_union), arena);
+            return export_union(array.to(.dense_union), private_data);
         },
         .sparse_union => {
-            return export_union(array.to(.sparse_union), arena);
+            return export_union(array.to(.sparse_union), private_data);
         },
         .run_end_encoded => {
-            return export_run_end(array.to(.run_end_encoded), arena);
+            return export_run_end(array.to(.run_end_encoded), private_data);
         },
         .dict => {
-            return export_dict(array.to(.dict), arena);
+            return export_dict(array.to(.dict), private_data);
         },
     }
 }
 
-fn export_dict(array: *const arr.DictArray, arena: *ArenaAllocator) !FFI_Array {
-    var out = try export_array(array.keys, arena);
+fn export_dict(array: *const arr.DictArray, private_data: *PrivateData) !FFI_Array {
+    var out = try export_array_impl(array.keys, private_data.increment());
 
-    const allocator = arena.allocator();
+    const allocator = private_data.arena.allocator();
     const dict_ptr = try allocator.create(FFI_Array);
-    dict_ptr.* = try export_array(array.values, arena);
+    dict_ptr.* = try export_array_impl(array.values, private_data);
     out.array.dictionary = &dict_ptr.array;
     out.schema.dictionary = &dict_ptr.schema;
 
@@ -1058,13 +1125,13 @@ fn export_dict(array: *const arr.DictArray, arena: *ArenaAllocator) !FFI_Array {
     return out;
 }
 
-fn export_run_end(array: *const arr.RunEndArray, arena: *ArenaAllocator) !FFI_Array {
-    const allocator = arena.allocator();
+fn export_run_end(array: *const arr.RunEndArray, private_data: *PrivateData) !FFI_Array {
+    const allocator = private_data.arena.allocator();
 
     const children = try allocator.alloc(FFI_Array, 2);
-    children[0] = try export_array(array.run_ends, arena);
+    children[0] = try export_array_impl(array.run_ends, private_data.increment());
     children[0].schema.name = "run_ends";
-    children[1] = try export_array(array.values, arena);
+    children[1] = try export_array_impl(array.values, private_data.increment());
     children[1].schema.name = "values";
 
     const array_children = try allocator.alloc([*c]abi.ArrowArray, 2);
@@ -1084,20 +1151,20 @@ fn export_run_end(array: *const arr.RunEndArray, arena: *ArenaAllocator) !FFI_Ar
             .offset = array.offset,
             .length = array.len,
             .null_count = array.null_count,
-            .private_data = arena,
+            .private_data = private_data.increment(),
             .release = release_array,
         },
         .schema = .{
             .n_children = 2,
             .children = schema_children.ptr,
             .format = "+r",
-            .private_data = arena,
+            .private_data = private_data,
             .release = release_schema,
         },
     };
 }
 
-fn export_union(array: anytype, arena: *ArenaAllocator) !FFI_Array {
+fn export_union(array: anytype, private_data: *PrivateData) !FFI_Array {
     const format_base = switch (@TypeOf(array)) {
         *const arr.DenseUnionArray => "+ud:",
         *const arr.SparseUnionArray => "+us:",
@@ -1106,7 +1173,7 @@ fn export_union(array: anytype, arena: *ArenaAllocator) !FFI_Array {
 
     const n_fields = array.children.len;
 
-    const allocator = arena.allocator();
+    const allocator = private_data.arena.allocator();
 
     // size is calculated as base + 5  * num_type_ids + 1 because type ids are 8 bit integers so they can't
     // occupy more than 3 digits, a minus sign and a comma.
@@ -1137,7 +1204,7 @@ fn export_union(array: anytype, arena: *ArenaAllocator) !FFI_Array {
 
     const children = try allocator.alloc(FFI_Array, n_fields);
     for (0..n_fields) |i| {
-        children[i] = try export_array(array.children[i], arena);
+        children[i] = try export_array_impl(array.children[i], private_data.increment());
     }
 
     const array_children = try allocator.alloc([*c]abi.ArrowArray, n_fields);
@@ -1159,28 +1226,28 @@ fn export_union(array: anytype, arena: *ArenaAllocator) !FFI_Array {
             .offset = array.offset,
             .length = array.len,
             .null_count = 0,
-            .private_data = arena,
+            .private_data = private_data.increment(),
             .release = release_array,
         },
         .schema = .{
             .n_children = @as(i64, @intCast(n_fields)),
             .children = schema_children.ptr,
             .format = format_base,
-            .private_data = arena,
+            .private_data = private_data,
             .release = release_schema,
         },
     };
 }
 
-fn export_map(array: *const arr.MapArray, arena: *ArenaAllocator) !FFI_Array {
-    const allocator = arena.allocator();
+fn export_map(array: *const arr.MapArray, private_data: *PrivateData) !FFI_Array {
+    const allocator = private_data.arena.allocator();
 
     const buffers = try allocator.alloc(?*const anyopaque, 2);
     buffers[0] = if (array.validity) |v| v.ptr else null;
     buffers[1] = array.offsets.ptr;
 
     const child = try allocator.create(FFI_Array);
-    child.* = try export_array(arr.Array.from(&array.entries), arena);
+    child.* = try export_array_impl(arr.Array.from(&array.entries), private_data.increment());
     child.schema.name = "entries";
 
     const array_children = try allocator.alloc([*c]abi.ArrowArray, 1);
@@ -1206,31 +1273,31 @@ fn export_map(array: *const arr.MapArray, arena: *ArenaAllocator) !FFI_Array {
             .offset = array.offset,
             .length = array.len,
             .null_count = array.null_count,
-            .private_data = arena,
+            .private_data = private_data.increment(),
             .release = release_array,
         },
         .schema = .{
             .n_children = 1,
             .children = schema_children.ptr,
             .format = "+m",
-            .private_data = arena,
+            .private_data = private_data,
             .release = release_schema,
             .flags = flags,
         },
     };
 }
 
-fn export_struct(array: *const arr.StructArray, arena: *ArenaAllocator) !FFI_Array {
+fn export_struct(array: *const arr.StructArray, private_data: *PrivateData) !FFI_Array {
     const n_fields = array.field_values.len;
 
-    const allocator = arena.allocator();
+    const allocator = private_data.arena.allocator();
 
     const buffers = try allocator.alloc(?*const anyopaque, 1);
     buffers[0] = if (array.validity) |v| v.ptr else null;
 
     const children = try allocator.alloc(FFI_Array, n_fields);
     for (0..n_fields) |i| {
-        var out = try export_array(array.field_values[i], arena);
+        var out = try export_array_impl(array.field_values[i], private_data.increment());
         out.schema.name = array.field_names[i].ptr;
         children[i] = out;
     }
@@ -1254,22 +1321,22 @@ fn export_struct(array: *const arr.StructArray, arena: *ArenaAllocator) !FFI_Arr
             .offset = array.offset,
             .length = array.len,
             .null_count = array.null_count,
-            .private_data = arena,
+            .private_data = private_data.increment(),
             .release = release_array,
         },
         .schema = .{
             .n_children = @as(i64, @intCast(n_fields)),
             .children = schema_children.ptr,
             .format = "+s",
-            .private_data = arena,
+            .private_data = private_data,
             .release = release_schema,
             .flags = if (array.validity != null) abi.ARROW_FLAG_NULLABLE else 0,
         },
     };
 }
 
-fn export_fixed_size_list(array: *const arr.FixedSizeListArray, arena: *ArenaAllocator) !FFI_Array {
-    const allocator = arena.allocator();
+fn export_fixed_size_list(array: *const arr.FixedSizeListArray, private_data: *PrivateData) !FFI_Array {
+    const allocator = private_data.arena.allocator();
 
     const format = try std.fmt.allocPrintZ(allocator, "+w:{}", .{array.item_width});
 
@@ -1277,7 +1344,7 @@ fn export_fixed_size_list(array: *const arr.FixedSizeListArray, arena: *ArenaAll
     buffers[0] = if (array.validity) |v| v.ptr else null;
 
     const child = try allocator.create(FFI_Array);
-    child.* = try export_array(array.inner, arena);
+    child.* = try export_array_impl(array.inner, private_data.increment());
 
     const array_children = try allocator.alloc([*c]abi.ArrowArray, 1);
     array_children[0] = &child.array;
@@ -1294,35 +1361,35 @@ fn export_fixed_size_list(array: *const arr.FixedSizeListArray, arena: *ArenaAll
             .offset = array.offset,
             .length = array.len,
             .null_count = array.null_count,
-            .private_data = arena,
+            .private_data = private_data.increment(),
             .release = release_array,
         },
         .schema = .{
             .n_children = 1,
             .children = schema_children.ptr,
             .format = format,
-            .private_data = arena,
+            .private_data = private_data,
             .release = release_schema,
             .flags = if (array.validity != null) abi.ARROW_FLAG_NULLABLE else 0,
         },
     };
 }
 
-fn export_list_view(array: anytype, arena: *ArenaAllocator) !FFI_Array {
+fn export_list_view(array: anytype, private_data: *PrivateData) !FFI_Array {
     const format = comptime switch (@TypeOf(array)) {
         *const arr.ListViewArray => "+vl",
         *const arr.LargeListViewArray => "+vL",
         else => @compileError("unexpected array type"),
     };
 
-    const allocator = arena.allocator();
+    const allocator = private_data.arena.allocator();
     const buffers = try allocator.alloc(?*const anyopaque, 3);
     buffers[0] = if (array.validity) |v| v.ptr else null;
     buffers[1] = array.offsets.ptr;
     buffers[2] = array.sizes.ptr;
 
     const child = try allocator.create(FFI_Array);
-    child.* = try export_array(array.inner, arena);
+    child.* = try export_array_impl(array.inner, private_data.increment());
 
     const array_children = try allocator.alloc([*c]abi.ArrowArray, 1);
     array_children[0] = &child.array;
@@ -1339,34 +1406,34 @@ fn export_list_view(array: anytype, arena: *ArenaAllocator) !FFI_Array {
             .offset = array.offset,
             .length = array.len,
             .null_count = array.null_count,
-            .private_data = arena,
+            .private_data = private_data.increment(),
             .release = release_array,
         },
         .schema = .{
             .n_children = 1,
             .children = schema_children.ptr,
             .format = format,
-            .private_data = arena,
+            .private_data = private_data,
             .release = release_schema,
             .flags = if (array.validity != null) abi.ARROW_FLAG_NULLABLE else 0,
         },
     };
 }
 
-fn export_list(array: anytype, arena: *ArenaAllocator) !FFI_Array {
+fn export_list(array: anytype, private_data: *PrivateData) !FFI_Array {
     const format = comptime switch (@TypeOf(array)) {
         *const arr.ListArray => "+l",
         *const arr.LargeListArray => "+L",
         else => @compileError("unexpected array type"),
     };
 
-    const allocator = arena.allocator();
+    const allocator = private_data.arena.allocator();
     const buffers = try allocator.alloc(?*const anyopaque, 2);
     buffers[0] = if (array.validity) |v| v.ptr else null;
     buffers[1] = array.offsets.ptr;
 
     const child = try allocator.create(FFI_Array);
-    child.* = try export_array(array.inner, arena);
+    child.* = try export_array_impl(array.inner, private_data.increment());
 
     const array_children = try allocator.alloc([*c]abi.ArrowArray, 1);
     array_children[0] = &child.array;
@@ -1383,25 +1450,25 @@ fn export_list(array: anytype, arena: *ArenaAllocator) !FFI_Array {
             .offset = array.offset,
             .length = array.len,
             .null_count = array.null_count,
-            .private_data = arena,
+            .private_data = private_data.increment(),
             .release = release_array,
         },
         .schema = .{
             .n_children = 1,
             .children = schema_children.ptr,
             .format = format,
-            .private_data = arena,
+            .private_data = private_data,
             .release = release_schema,
             .flags = if (array.validity != null) abi.ARROW_FLAG_NULLABLE else 0,
         },
     };
 }
 
-fn export_interval(format: [:0]const u8, array: anytype, arena: *ArenaAllocator) !FFI_Array {
-    return export_primitive_impl(format, &array.inner, arena);
+fn export_interval(format: [:0]const u8, array: anytype, private_data: *PrivateData) !FFI_Array {
+    return export_primitive_impl(format, &array.inner, private_data);
 }
 
-fn export_duration(dur_array: *const arr.DurationArray, arena: *ArenaAllocator) !FFI_Array {
+fn export_duration(dur_array: *const arr.DurationArray, private_data: *PrivateData) !FFI_Array {
     const format = switch (dur_array.unit) {
         .second => "tDs",
         .millisecond => "tDm",
@@ -1409,11 +1476,11 @@ fn export_duration(dur_array: *const arr.DurationArray, arena: *ArenaAllocator) 
         .nanosecond => "tDn",
     };
 
-    return export_primitive_impl(format, &dur_array.inner, arena);
+    return export_primitive_impl(format, &dur_array.inner, private_data);
 }
 
-fn export_timestamp(timestamp_array: *const arr.TimestampArray, arena: *ArenaAllocator) !FFI_Array {
-    const allocator = arena.allocator();
+fn export_timestamp(timestamp_array: *const arr.TimestampArray, private_data: *PrivateData) !FFI_Array {
+    const allocator = private_data.arena.allocator();
 
     const format_base = switch (timestamp_array.ts.unit) {
         .second => "tss:",
@@ -1427,12 +1494,12 @@ fn export_timestamp(timestamp_array: *const arr.TimestampArray, arena: *ArenaAll
     else
         format_base;
 
-    const out = try export_primitive_impl(format, &timestamp_array.inner, arena);
+    const out = try export_primitive_impl(format, &timestamp_array.inner, private_data);
 
     return out;
 }
 
-fn export_time(time_array: anytype, arena: *ArenaAllocator) !FFI_Array {
+fn export_time(time_array: anytype, private_data: *PrivateData) !FFI_Array {
     const format = switch (@TypeOf(time_array)) {
         *const arr.Time32Array => switch (time_array.unit) {
             .second => "tts",
@@ -1445,21 +1512,21 @@ fn export_time(time_array: anytype, arena: *ArenaAllocator) !FFI_Array {
         else => @compileError("unexpected array type"),
     };
 
-    return export_primitive_impl(format, &time_array.inner, arena);
+    return export_primitive_impl(format, &time_array.inner, private_data);
 }
 
-fn export_date(date_array: anytype, arena: *ArenaAllocator) !FFI_Array {
+fn export_date(date_array: anytype, private_data: *PrivateData) !FFI_Array {
     const format = comptime switch (@TypeOf(date_array)) {
         *const arr.Date32Array => "tdD",
         *const arr.Date64Array => "tdm",
         else => @compileError("unexpected array type"),
     };
 
-    return export_primitive_impl(format, &date_array.inner, arena);
+    return export_primitive_impl(format, &date_array.inner, private_data);
 }
 
-fn export_fixed_size_binary(array: *const arr.FixedSizeBinaryArray, arena: *ArenaAllocator) !FFI_Array {
-    const allocator = arena.allocator();
+fn export_fixed_size_binary(array: *const arr.FixedSizeBinaryArray, private_data: *PrivateData) !FFI_Array {
+    const allocator = private_data.arena.allocator();
 
     const format = try std.fmt.allocPrintZ(allocator, "w:{}", .{array.byte_width});
 
@@ -1475,19 +1542,19 @@ fn export_fixed_size_binary(array: *const arr.FixedSizeBinaryArray, arena: *Aren
             .offset = array.offset,
             .length = array.len,
             .null_count = array.null_count,
-            .private_data = arena,
+            .private_data = private_data.increment(),
             .release = release_array,
         },
         .schema = .{
             .format = format,
-            .private_data = arena,
+            .private_data = private_data,
             .release = release_schema,
             .flags = if (array.validity != null) abi.ARROW_FLAG_NULLABLE else 0,
         },
     };
 }
 
-fn export_decimal(dec_array: anytype, arena: *ArenaAllocator) !FFI_Array {
+fn export_decimal(dec_array: anytype, private_data: *PrivateData) !FFI_Array {
     const width = comptime switch (@TypeOf(dec_array)) {
         *const arr.Decimal32Array => "32",
         *const arr.Decimal64Array => "64",
@@ -1496,19 +1563,19 @@ fn export_decimal(dec_array: anytype, arena: *ArenaAllocator) !FFI_Array {
         else => @compileError("unexpected array type"),
     };
 
-    const allocator = arena.allocator();
+    const allocator = private_data.arena.allocator();
 
     const format = try std.fmt.allocPrintZ(allocator, "d:{},{},{s}", .{ dec_array.params.precision, dec_array.params.scale, width });
 
-    const out = try export_primitive_impl(format, &dec_array.inner, arena);
+    const out = try export_primitive_impl(format, &dec_array.inner, private_data);
 
     return out;
 }
 
-fn export_binary_view(array: *const arr.BinaryViewArray, arena: *ArenaAllocator, format: [:0]const u8) !FFI_Array {
+fn export_binary_view(array: *const arr.BinaryViewArray, private_data: *PrivateData, format: [:0]const u8) !FFI_Array {
     const n_buffers = array.buffers.len + 2;
 
-    const allocator = arena.allocator();
+    const allocator = private_data.arena.allocator();
     const buffers = try allocator.alloc(?*const anyopaque, n_buffers);
     buffers[0] = if (array.validity) |v| v.ptr else null;
     buffers[1] = array.views.ptr;
@@ -1524,20 +1591,20 @@ fn export_binary_view(array: *const arr.BinaryViewArray, arena: *ArenaAllocator,
             .offset = array.offset,
             .length = array.len,
             .null_count = array.null_count,
-            .private_data = arena,
+            .private_data = private_data.increment(),
             .release = release_array,
         },
         .schema = .{
             .format = format,
-            .private_data = arena,
+            .private_data = private_data,
             .release = release_schema,
             .flags = if (array.validity != null) abi.ARROW_FLAG_NULLABLE else 0,
         },
     };
 }
 
-fn export_binary(array: anytype, arena: *ArenaAllocator, format: [:0]const u8) !FFI_Array {
-    const allocator = arena.allocator();
+fn export_binary(array: anytype, private_data: *PrivateData, format: [:0]const u8) !FFI_Array {
+    const allocator = private_data.arena.allocator();
     const buffers = try allocator.alloc(?*const anyopaque, 3);
     buffers[0] = if (array.validity) |v| v.ptr else null;
     buffers[1] = array.offsets.ptr;
@@ -1550,20 +1617,20 @@ fn export_binary(array: anytype, arena: *ArenaAllocator, format: [:0]const u8) !
             .offset = array.offset,
             .length = array.len,
             .null_count = array.null_count,
-            .private_data = arena,
+            .private_data = private_data.increment(),
             .release = release_array,
         },
         .schema = .{
             .format = format,
-            .private_data = arena,
+            .private_data = private_data,
             .release = release_schema,
             .flags = if (array.validity != null) abi.ARROW_FLAG_NULLABLE else 0,
         },
     };
 }
 
-fn export_primitive_impl(format: [:0]const u8, array: anytype, arena: *ArenaAllocator) !FFI_Array {
-    const allocator = arena.allocator();
+fn export_primitive_impl(format: [:0]const u8, array: anytype, private_data: *PrivateData) !FFI_Array {
+    const allocator = private_data.arena.allocator();
     const buffers = try allocator.alloc(?*const anyopaque, 2);
     buffers[0] = if (array.validity) |v| v.ptr else null;
     buffers[1] = array.values.ptr;
@@ -1575,19 +1642,19 @@ fn export_primitive_impl(format: [:0]const u8, array: anytype, arena: *ArenaAllo
             .offset = array.offset,
             .length = array.len,
             .null_count = array.null_count,
-            .private_data = arena,
+            .private_data = private_data.increment(),
             .release = release_array,
         },
         .schema = .{
             .format = format,
-            .private_data = arena,
+            .private_data = private_data,
             .release = release_schema,
             .flags = if (array.validity != null) abi.ARROW_FLAG_NULLABLE else 0,
         },
     };
 }
 
-fn export_primitive(array: anytype, arena: *ArenaAllocator) !FFI_Array {
+fn export_primitive(array: anytype, private_data: *PrivateData) !FFI_Array {
     const format = comptime switch (@TypeOf(array)) {
         *const arr.Int8Array => "c",
         *const arr.UInt8Array => "C",
@@ -1604,7 +1671,7 @@ fn export_primitive(array: anytype, arena: *ArenaAllocator) !FFI_Array {
         else => @compileError("unexpected array type"),
     };
 
-    return export_primitive_impl(format, array, arena);
+    return export_primitive_impl(format, array, private_data);
 }
 
 pub const FFIError = error{
@@ -1619,8 +1686,7 @@ pub const FFIError = error{
 test "roundtrip" {
     const original_data = [_]i32{ 3, 2, 1, 4, 5, 6 };
 
-    const export_arena = std.testing.allocator.create(std.heap.ArenaAllocator) catch unreachable;
-    export_arena.* = ArenaAllocator.init(std.testing.allocator);
+    var export_arena = ArenaAllocator.init(std.testing.allocator);
     const export_alloc = export_arena.allocator();
     const typed = export_alloc.create(arr.Int32Array) catch unreachable;
     const values = export_alloc.alloc(i32, 6) catch unreachable;
