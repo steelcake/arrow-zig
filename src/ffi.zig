@@ -145,16 +145,16 @@ fn import_decimal(format: []const u8, array: *const FFI_Array, allocator: Alloca
 
             if (std.mem.eql(u8, s, "32")) {
                 const inner = import_primitive(i32, array);
-                return try arr.Array.from(arr.Decimal32Array{ .params = params, .inner = inner }, allocator);
+                return try arr.Array.from(.decimal32, arr.Decimal32Array{ .params = params, .inner = inner }, allocator);
             } else if (std.mem.eql(u8, s, "64")) {
                 const inner = import_primitive(i64, array);
-                return try arr.Array.from(arr.Decimal64Array{ .params = params, .inner = inner }, allocator);
+                return try arr.Array.from(.decimal64, arr.Decimal64Array{ .params = params, .inner = inner }, allocator);
             } else if (std.mem.eql(u8, s, "128")) {
                 const inner = import_primitive(i128, array);
-                return try arr.Array.from(arr.Decimal128Array{ .params = params, .inner = inner }, allocator);
+                return try arr.Array.from(.decimal128, arr.Decimal128Array{ .params = params, .inner = inner }, allocator);
             } else if (std.mem.eql(u8, s, "256")) {
                 const inner = import_primitive(i256, array);
-                return try arr.Array.from(arr.Decimal256Array{ .params = params, .inner = inner }, allocator);
+                return try arr.Array.from(.decimal256, arr.Decimal256Array{ .params = params, .inner = inner }, allocator);
             } else {
                 unreachable;
             }
@@ -167,7 +167,7 @@ fn import_decimal(format: []const u8, array: *const FFI_Array, allocator: Alloca
     };
 
     const inner = import_primitive(i128, array);
-    return try arr.Array.from(arr.Decimal128Array{ .params = params, .inner = inner }, allocator);
+    return try arr.Array.from(.decimal128, arr.Decimal128Array{ .params = params, .inner = inner }, allocator);
 }
 
 fn import_fixed_size_binary(format: []const u8, array: *const FFI_Array) arr.FixedSizeBinaryArray {
@@ -415,24 +415,28 @@ fn import_union(format: []const u8, array: *const FFI_Array, allocator: Allocato
         'd' => {
             std.debug.assert(array.array.n_buffers == 2);
 
-            return arr.Array.from(arr.DenseUnionArray{
-                .type_id_set = type_id_set,
-                .children = children,
-                .type_ids = type_ids,
-                .len = len,
-                .offset = offset,
+            return arr.Array.from(.dense_union, arr.DenseUnionArray{
+                .inner = .{
+                    .type_id_set = type_id_set,
+                    .children = children,
+                    .type_ids = type_ids,
+                    .len = len,
+                    .offset = offset,
+                },
                 .offsets = import_buffer(i32, buffers[1], size),
             }, allocator);
         },
         's' => {
             std.debug.assert(array.array.n_buffers == 1);
 
-            return arr.Array.from(arr.SparseUnionArray{
-                .type_id_set = type_id_set,
-                .children = children,
-                .type_ids = type_ids,
-                .len = len,
-                .offset = offset,
+            return arr.Array.from(.sparse_union, arr.SparseUnionArray{
+                .inner = .{
+                    .type_id_set = type_id_set,
+                    .children = children,
+                    .type_ids = type_ids,
+                    .len = len,
+                    .offset = offset,
+                },
             }, allocator);
         },
         else => unreachable,
@@ -519,7 +523,7 @@ fn import_null(array: *const FFI_Array) arr.NullArray {
 /// Invokes runtime checked illegal behavior otherwise (unreachable, panic etc.)
 pub fn import_array(array: *const FFI_Array, allocator: Allocator) Error!arr.Array {
     if (array.array.dictionary != null) {
-        return arr.Array.from(import_dict(array, allocator), allocator);
+        return arr.Array.from(.dict, try import_dict(array, allocator), allocator);
     }
 
     const format: []const u8 = std.mem.span(array.schema.format);
@@ -527,64 +531,64 @@ pub fn import_array(array: *const FFI_Array, allocator: Allocator) Error!arr.Arr
 
     switch (format[0]) {
         'n' => {
-            return arr.Array.from(import_null(array), allocator);
+            return arr.Array.from(.null, import_null(array), allocator);
         },
         'b' => {
-            return arr.Array.from(import_bool(array), allocator);
+            return arr.Array.from(.bool, import_bool(array), allocator);
         },
         'c' => {
-            return arr.Array.from(import_primitive(i8, array), allocator);
+            return arr.Array.from(.i8, import_primitive(i8, array), allocator);
         },
         'C' => {
-            return arr.Array.from(import_primitive(u8, array), allocator);
+            return arr.Array.from(.u8, import_primitive(u8, array), allocator);
         },
         's' => {
-            return arr.Array.from(import_primitive(i16, array), allocator);
+            return arr.Array.from(.i16, import_primitive(i16, array), allocator);
         },
         'S' => {
-            return arr.Array.from(import_primitive(u16, array), allocator);
+            return arr.Array.from(.u16, import_primitive(u16, array), allocator);
         },
         'i' => {
-            return arr.Array.from(import_primitive(i32, array), allocator);
+            return arr.Array.from(.i32, import_primitive(i32, array), allocator);
         },
         'I' => {
-            return arr.Array.from(import_primitive(u32, array), allocator);
+            return arr.Array.from(.u32, import_primitive(u32, array), allocator);
         },
         'l' => {
-            return arr.Array.from(import_primitive(i64, array), allocator);
+            return arr.Array.from(.i64, import_primitive(i64, array), allocator);
         },
         'L' => {
-            return arr.Array.from(import_primitive(u64, array), allocator);
+            return arr.Array.from(.u64, import_primitive(u64, array), allocator);
         },
         'e' => {
-            return arr.Array.from(import_primitive(f16, array), allocator);
+            return arr.Array.from(.f16, import_primitive(f16, array), allocator);
         },
         'f' => {
-            return arr.Array.from(import_primitive(f32, array), allocator);
+            return arr.Array.from(.f32, import_primitive(f32, array), allocator);
         },
         'g' => {
-            return arr.Array.from(import_primitive(f64, array), allocator);
+            return arr.Array.from(.f64, import_primitive(f64, array), allocator);
         },
         'z' => {
-            return arr.Array.from(import_binary(i32, array), allocator);
+            return arr.Array.from(.binary, import_binary(i32, array), allocator);
         },
         'Z' => {
-            return arr.Array.from(import_binary(i64, array), allocator);
+            return arr.Array.from(.large_binary, import_binary(i64, array), allocator);
         },
         'u' => {
-            return arr.Array.from(arr.Utf8Array{
+            return arr.Array.from(.utf8, arr.Utf8Array{
                 .inner = import_binary(i32, array),
             }, allocator);
         },
         'U' => {
-            return arr.Array.from(arr.LargeUtf8Array{
+            return arr.Array.from(.large_utf8, arr.LargeUtf8Array{
                 .inner = import_binary(i64, array),
             }, allocator);
         },
         'v' => {
             return switch (format[1]) {
-                'z' => arr.Array.from(import_binary_view(array), allocator),
-                'u' => arr.Array.from(arr.Utf8ViewArray{ .inner = import_binary_view(array) }, allocator),
+                'z' => arr.Array.from(.binary_view, import_binary_view(array), allocator),
+                'u' => arr.Array.from(.utf8_view, arr.Utf8ViewArray{ .inner = import_binary_view(array) }, allocator),
                 else => unreachable,
             };
         },
@@ -592,20 +596,20 @@ pub fn import_array(array: *const FFI_Array, allocator: Allocator) Error!arr.Arr
             return import_decimal(format, array, allocator);
         },
         'w' => {
-            return arr.Array.from(import_fixed_size_binary(format, array), allocator);
+            return arr.Array.from(.fixed_size_binary, import_fixed_size_binary(format, array), allocator);
         },
         't' => {
             switch (format[1]) {
                 'd' => return switch (format[2]) {
-                    'D' => arr.Array.from(arr.Date32Array{ .inner = import_primitive(i32, array) }, allocator),
-                    'm' => arr.Array.from(arr.Date64Array{ .inner = import_primitive(i64, array) }, allocator),
+                    'D' => arr.Array.from(.date32, arr.Date32Array{ .inner = import_primitive(i32, array) }, allocator),
+                    'm' => arr.Array.from(.date64, arr.Date64Array{ .inner = import_primitive(i64, array) }, allocator),
                     else => unreachable,
                 },
                 't' => return switch (format[2]) {
-                    's' => arr.Array.from(arr.Time32Array{ .inner = import_primitive(i32, array), .unit = .second }, allocator),
-                    'm' => arr.Array.from(arr.Time32Array{ .inner = import_primitive(i32, array), .unit = .millisecond }, allocator),
-                    'u' => arr.Array.from(arr.Time64Array{ .inner = import_primitive(i64, array), .unit = .microsecond }, allocator),
-                    'n' => arr.Array.from(arr.Time64Array{ .inner = import_primitive(i64, array), .unit = .nanosecond }, allocator),
+                    's' => arr.Array.from(.time32, arr.Time32Array{ .inner = import_primitive(i32, array), .unit = .second }, allocator),
+                    'm' => arr.Array.from(.time32, arr.Time32Array{ .inner = import_primitive(i32, array), .unit = .millisecond }, allocator),
+                    'u' => arr.Array.from(.time64, arr.Time64Array{ .inner = import_primitive(i64, array), .unit = .microsecond }, allocator),
+                    'n' => arr.Array.from(.time64, arr.Time64Array{ .inner = import_primitive(i64, array), .unit = .nanosecond }, allocator),
                     else => unreachable,
                 },
                 's' => {
@@ -617,7 +621,7 @@ pub fn import_array(array: *const FFI_Array, allocator: Allocator) Error!arr.Arr
                         else => unreachable,
                     };
 
-                    return arr.Array.from(import_timestamp(format, unit, array), allocator);
+                    return arr.Array.from(.timestamp, import_timestamp(format, unit, array), allocator);
                 },
                 'D' => {
                     const unit: arr.TimestampUnit = switch (format[2]) {
@@ -628,15 +632,15 @@ pub fn import_array(array: *const FFI_Array, allocator: Allocator) Error!arr.Arr
                         else => unreachable,
                     };
 
-                    return arr.Array.from(arr.DurationArray{
+                    return arr.Array.from(.duration, arr.DurationArray{
                         .inner = import_primitive(i64, array),
                         .unit = unit,
                     }, allocator);
                 },
                 'i' => return switch (format[2]) {
-                    'M' => arr.Array.from(arr.IntervalYearMonthArray{ .inner = import_primitive(i32, array) }, allocator),
-                    'D' => arr.Array.from(arr.IntervalDayTimeArray{ .inner = import_primitive([2]i32, array) }, allocator),
-                    'n' => arr.Array.from(arr.IntervalMonthDayNanoArray{ .inner = import_primitive(arr.MonthDayNano, array) }, allocator),
+                    'M' => arr.Array.from(.interval_year_month, arr.IntervalYearMonthArray{ .inner = import_primitive(i32, array) }, allocator),
+                    'D' => arr.Array.from(.interval_day_time, arr.IntervalDayTimeArray{ .inner = import_primitive([2]i32, array) }, allocator),
+                    'n' => arr.Array.from(.interval_month_day_nano, arr.IntervalMonthDayNanoArray{ .inner = import_primitive(arr.MonthDayNano, array) }, allocator),
                     else => unreachable,
                 },
                 else => unreachable,
@@ -644,18 +648,18 @@ pub fn import_array(array: *const FFI_Array, allocator: Allocator) Error!arr.Arr
         },
         '+' => {
             return switch (format[1]) {
-                'l' => arr.Array.from(try import_list(i32, array, allocator), allocator),
-                'L' => arr.Array.from(try import_list(i64, array, allocator), allocator),
+                'l' => arr.Array.from(.list, try import_list(i32, array, allocator), allocator),
+                'L' => arr.Array.from(.large_list, try import_list(i64, array, allocator), allocator),
                 'v' => switch (format[2]) {
-                    'l' => arr.Array.from(try import_list_view(i32, array, allocator), allocator),
-                    'L' => arr.Array.from(try import_list_view(i64, array, allocator), allocator),
+                    'l' => arr.Array.from(.list_view, try import_list_view(i32, array, allocator), allocator),
+                    'L' => arr.Array.from(.large_list_view, try import_list_view(i64, array, allocator), allocator),
                     else => unreachable,
                 },
-                'w' => arr.Array.from(try import_fixed_size_list(format, array, allocator), allocator),
-                's' => arr.Array.from(try import_struct(array, allocator), allocator),
-                'm' => arr.Array.from(try import_map(array, allocator), allocator),
+                'w' => arr.Array.from(.fixed_size_list, try import_fixed_size_list(format, array, allocator), allocator),
+                's' => arr.Array.from(.struct_, try import_struct(array, allocator), allocator),
+                'm' => arr.Array.from(.map, try import_map(array, allocator), allocator),
                 'u' => import_union(format, array, allocator),
-                'r' => arr.Array.from(try import_run_end(array, allocator), allocator),
+                'r' => arr.Array.from(.run_end_encoded, try import_run_end(array, allocator), allocator),
                 else => unreachable,
             };
         },
@@ -681,11 +685,11 @@ const PrivateData = struct {
     fn deinit(self: *PrivateData) void {
         const backing_alloc = self.arena.child_allocator;
         self.arena.deinit();
-        backing_alloc.destroy(self);
-
         if (self.ffi) |*ffi| {
             ffi.release();
         }
+
+        backing_alloc.destroy(self);
     }
 
     fn increment(self: *PrivateData) *PrivateData {
@@ -703,7 +707,7 @@ const PrivateData = struct {
 };
 
 fn release_impl(comptime T: type, data: ?*T) void {
-    const ptr = data orelse unreachable;
+    const ptr = data orelse return;
     const obj = ptr.*;
 
     const n_children: usize = @intCast(obj.n_children);
@@ -763,112 +767,137 @@ fn export_array_impl(array: arr.Array, private_data: *PrivateData) Error!FFI_Arr
             return export_null(array.to(.null), private_data);
         },
         .i8 => {
-            return export_primitive(array.to(.i8), private_data);
+            return export_primitive(i8, array.to(.i8), "c", private_data);
         },
         .i16 => {
-            return export_primitive(array.to(.i16), private_data);
+            return export_primitive(i16, array.to(.i16), "s", private_data);
         },
         .i32 => {
-            return export_primitive(array.to(.i32), private_data);
+            return export_primitive(i32, array.to(.i32), "i", private_data);
         },
         .i64 => {
-            return export_primitive(array.to(.i64), private_data);
+            return export_primitive(i64, array.to(.i64), "l", private_data);
         },
         .u8 => {
-            return export_primitive(array.to(.u8), private_data);
+            return export_primitive(u8, array.to(.u8), "C", private_data);
         },
         .u16 => {
-            return export_primitive(array.to(.u16), private_data);
+            return export_primitive(u16, array.to(.u16), "S", private_data);
         },
         .u32 => {
-            return export_primitive(array.to(.u32), private_data);
+            return export_primitive(u32, array.to(.u32), "I", private_data);
         },
         .u64 => {
-            return export_primitive(array.to(.u64), private_data);
+            return export_primitive(u64, array.to(.u64), "L", private_data);
         },
         .f16 => {
-            return export_primitive(array.to(.f16), private_data);
+            return export_primitive(f16, array.to(.f16), "e", private_data);
         },
         .f32 => {
-            return export_primitive(array.to(.f32), private_data);
+            return export_primitive(f32, array.to(.f32), "f", private_data);
         },
         .f64 => {
-            return export_primitive(array.to(.f64), private_data);
+            return export_primitive(f64, array.to(.f64), "g", private_data);
         },
         .binary => {
-            return export_binary(array.to(.binary), private_data, "z");
+            return export_binary(i32, array.to(.binary), "z", private_data);
         },
         .large_binary => {
-            return export_binary(array.to(.large_binary), private_data, "Z");
+            return export_binary(i64, array.to(.large_binary), "Z", private_data);
         },
         .utf8 => {
-            return export_binary(&array.to(.utf8).inner, private_data, "u");
+            return export_binary(i32, &array.to(.utf8).inner, "u", private_data);
         },
         .large_utf8 => {
-            return export_binary(&array.to(.large_utf8).inner, private_data, "U");
+            return export_binary(i64, &array.to(.large_utf8).inner, "U", private_data);
         },
         .bool => {
-            return export_primitive(array.to(.bool), private_data);
+            return export_bool(array.to(.bool), private_data);
         },
         .binary_view => {
-            return export_binary_view(array.to(.binary_view), private_data, "vz");
+            return export_binary_view(array.to(.binary_view), "vz", private_data);
         },
         .utf8_view => {
-            return export_binary_view(&array.to(.utf8_view).inner, private_data, "vu");
+            return export_binary_view(&array.to(.utf8_view).inner, "vu", private_data);
         },
         .decimal32 => {
-            return export_decimal(array.to(.decimal32), private_data);
+            const d_array = array.to(.decimal32);
+            const format = try decimal_format(d_array.params, "32", private_data.arena.allocator());
+            return export_primitive(i32, &d_array.inner, format, private_data);
         },
         .decimal64 => {
-            return export_decimal(array.to(.decimal64), private_data);
+            const d_array = array.to(.decimal64);
+            const format = try decimal_format(d_array.params, "64", private_data.arena.allocator());
+            return export_primitive(i64, &d_array.inner, format, private_data);
         },
         .decimal128 => {
-            return export_decimal(array.to(.decimal128), private_data);
+            const d_array = array.to(.decimal128);
+            const format = try decimal_format(d_array.params, "128", private_data.arena.allocator());
+            return export_primitive(i128, &d_array.inner, format, private_data);
         },
         .decimal256 => {
-            return export_decimal(array.to(.decimal256), private_data);
+            const d_array = array.to(.decimal256);
+            const format = try decimal_format(d_array.params, "256", private_data.arena.allocator());
+            return export_primitive(i256, &d_array.inner, format, private_data);
         },
         .fixed_size_binary => {
             return export_fixed_size_binary(array.to(.fixed_size_binary), private_data);
         },
         .date32 => {
-            return export_date(array.to(.date32), private_data);
+            return export_primitive(i32, &array.to(.date32).inner, "tdD", private_data);
         },
         .date64 => {
-            return export_date(array.to(.date64), private_data);
+            return export_primitive(i64, &array.to(.date64).inner, "tdm", private_data);
         },
         .time32 => {
-            return export_time(array.to(.time32), private_data);
+            const t_array = array.to(.time32);
+            const format = switch (t_array.unit) {
+                .second => "tts",
+                .millisecond => "ttm",
+            };
+            return export_primitive(i32, &t_array.inner, format, private_data);
         },
         .time64 => {
-            return export_time(array.to(.time64), private_data);
+            const t_array = array.to(.time64);
+            const format = switch (t_array.unit) {
+                .microsecond => "ttu",
+                .nanosecond => "ttn",
+            };
+            return export_primitive(i64, &t_array.inner, format, private_data);
         },
         .timestamp => {
             return export_timestamp(array.to(.timestamp), private_data);
         },
         .duration => {
-            return export_duration(array.to(.duration), private_data);
+            const d_array = array.to(.duration);
+            const format = switch (d_array.unit) {
+                .second => "tDs",
+                .millisecond => "tDm",
+                .microsecond => "tDu",
+                .nanosecond => "tDn",
+            };
+            return export_primitive(i64, &d_array.inner, format, private_data);
         },
         .interval_year_month => {
-            return export_interval("tiM", array.to(.interval_year_month), private_data);
+            return export_primitive(i32, &array.to(.interval_year_month).inner, "tiM", private_data);
         },
         .interval_day_time => {
-            return export_interval("tiD", array.to(.interval_day_time), private_data);
+            return export_primitive([2]i32, &array.to(.interval_day_time).inner, "tiD", private_data);
         },
         .interval_month_day_nano => {
-            return export_interval("tin", array.to(.interval_month_day_nano), private_data);
+            return export_primitive(arr.MonthDayNano, &array.to(.interval_month_day_nano).inner, "tin", private_data);
         },
         .list => {
-            return export_list(array.to(.list), private_data);
+            return export_list(i32, array.to(.list), private_data);
         },
         .large_list => {
-            return export_list(array.to(.large_list), private_data);
+            return export_list(i64, array.to(.large_list), private_data);
         },
         .list_view => {
-            return export_list_view(array.to(.list_view), private_data);
+            return export_list_view(i32, array.to(.list_view), private_data);
         },
         .large_list_view => {
-            return export_list_view(array.to(.large_list_view), private_data);
+            return export_list_view(i64, array.to(.large_list_view), private_data);
         },
         .fixed_size_list => {
             return export_fixed_size_list(array.to(.fixed_size_list), private_data);
@@ -880,10 +909,12 @@ fn export_array_impl(array: arr.Array, private_data: *PrivateData) Error!FFI_Arr
             return export_map(array.to(.map), private_data);
         },
         .dense_union => {
-            return export_union(array.to(.dense_union), private_data);
+            const u_array = array.to(.dense_union);
+            return export_union(&u_array.inner, u_array.offsets, "+ud:", private_data);
         },
         .sparse_union => {
-            return export_union(array.to(.sparse_union), private_data);
+            const u_array = array.to(.sparse_union);
+            return export_union(&u_array.inner, null, "+us:", private_data);
         },
         .run_end_encoded => {
             return export_run_end(array.to(.run_end_encoded), private_data);
@@ -898,25 +929,26 @@ fn export_null(array: *const arr.NullArray, private_data: *PrivateData) FFI_Arra
     return .{
         .schema = .{
             .format = "n",
-            .private_data = private_data.increment(),
-            .release = release_schema,
+            .name = null,
             .metadata = null,
             .flags = .{},
             .n_children = 0,
             .children = null,
             .dictionary = null,
-            .name = null,
+            .release = release_schema,
+            .private_data = private_data.increment(),
         },
         .array = .{
             .length = array.len,
-            .private_data = private_data,
-            .release = release_array,
             .null_count = 0,
             .offset = 0,
+            .n_buffers = 0,
             .n_children = 0,
+            .buffers = null,
             .children = null,
             .dictionary = null,
-            .name = null,
+            .release = release_array,
+            .private_data = private_data,
         },
     };
 }
@@ -935,6 +967,9 @@ fn export_dict(array: *const arr.DictArray, private_data: *PrivateData) Error!FF
 }
 
 fn export_run_end(array: *const arr.RunEndArray, private_data: *PrivateData) Error!FFI_Array {
+    const n_children = 2;
+    const n_buffers = 0;
+
     const allocator = private_data.arena.allocator();
 
     const children = try allocator.alloc(FFI_Array, 2);
@@ -943,160 +978,181 @@ fn export_run_end(array: *const arr.RunEndArray, private_data: *PrivateData) Err
     children[1] = try export_array_impl(array.values, private_data.increment());
     children[1].schema.name = "values";
 
-    const array_children = try allocator.alloc([*c]abi.ArrowArray, 2);
+    const array_children = try allocator.alloc([*c]abi.ArrowArray, n_children);
     array_children[0] = &children[0].array;
     array_children[1] = &children[1].array;
 
-    const schema_children = try allocator.alloc([*c]abi.ArrowSchema, 2);
+    const schema_children = try allocator.alloc([*c]abi.ArrowSchema, n_children);
     schema_children[0] = &children[0].schema;
     schema_children[1] = &children[1].schema;
 
     return .{
-        .array = .{
-            .n_children = 2,
-            .children = array_children.ptr,
-            .n_buffers = 0,
-            .buffers = null,
-            .offset = array.offset,
-            .length = array.len,
-            .null_count = array.null_count,
-            .private_data = private_data.increment(),
-            .release = release_array,
-            .dictionary = null,
-        },
         .schema = .{
-            .n_children = 2,
-            .children = schema_children.ptr,
             .format = "+r",
-            .private_data = private_data,
-            .release = release_schema,
-            .dictionary = null,
             .name = null,
+            .metadata = null,
+            .flags = .{},
+            .n_children = n_children,
+            .children = schema_children.ptr,
+            .dictionary = null,
+            .release = release_schema,
+            .private_data = private_data.increment(),
+        },
+        .array = .{
+            .length = array.len,
+            .null_count = 0,
+            .offset = array.offset,
+            .n_buffers = n_buffers,
+            .n_children = n_children,
+            .buffers = null,
+            .children = array_children.ptr,
+            .dictionary = null,
+            .release = release_array,
+            .private_data = private_data,
         },
     };
 }
 
-fn export_union(array: anytype, private_data: *PrivateData) Error!FFI_Array {
-    const format_base = switch (@TypeOf(array)) {
-        *const arr.DenseUnionArray => "+ud:",
-        *const arr.SparseUnionArray => "+us:",
-        else => @compileError("unexpected array type"),
-    };
-
-    const n_fields = array.children.len;
-
-    const allocator = private_data.arena.allocator();
+fn union_format(base: []const u8, type_id_set: []const i8, allocator: Allocator) Error![:0]const u8 {
+    std.debug.assert(base.len == 4);
 
     // size is calculated as base + 5  * num_type_ids + 1 because type ids are 8 bit integers so they can't
     // occupy more than 3 digits, a minus sign and a comma.
     // and need the last one byte to make it zero terminated.
-    const format = try allocator.alloc(u8, 3 + 5 * array.type_id_set.len + 1);
-    var write_idx: usize = 0;
+    const format = try allocator.alloc(u8, 4 + 5 * type_id_set.len + 1);
 
-    if (array.type_id_set.len > 0) {
+    @memcpy(format[0..4], base);
+
+    var write_idx: usize = 4;
+
+    if (type_id_set.len > 0) {
         {
-            const out = std.fmt.bufPrint(format[write_idx..], "{}", .{array.type_id_set[0]}) catch unreachable;
+            const out = std.fmt.bufPrint(format[write_idx..], "{}", .{type_id_set[0]}) catch unreachable;
             write_idx += out.len;
         }
-        for (1..array.type_id_set.len) |i| {
-            const out = std.fmt.bufPrint(format[write_idx..], ",{}", .{array.type_id_set[i]}) catch unreachable;
+        for (1..type_id_set.len) |i| {
+            const out = std.fmt.bufPrint(format[write_idx..], ",{}", .{type_id_set[i]}) catch unreachable;
             write_idx += out.len;
         }
     }
 
     format[write_idx] = 0;
 
-    const buffers = try allocator.alloc(?*const anyopaque, 2);
+    return @ptrCast(format[0..write_idx]);
+}
+
+fn export_union(array: *const arr.UnionArr, offsets: ?[]const i32, format_base: []const u8, private_data: *PrivateData) Error!FFI_Array {
+    const n_fields = array.children.len;
+    const n_children: i64 = @intCast(n_fields);
+    const n_buffers: u32 = if (offsets != null) 2 else 1;
+
+    const allocator = private_data.arena.allocator();
+
+    const buffers = try allocator.alloc(?*const anyopaque, n_buffers);
     buffers[0] = array.type_ids.ptr;
-    buffers[1] = switch (@TypeOf(array)) {
-        *const arr.DenseUnionArray => array.offsets.ptr,
-        *const arr.SparseUnionArray => null,
-        else => @compileError("unexpected array type"),
-    };
+    if (offsets) |o| {
+        buffers[1] = o.ptr;
+    }
 
     const children = try allocator.alloc(FFI_Array, n_fields);
     for (0..n_fields) |i| {
         children[i] = try export_array_impl(array.children[i], private_data.increment());
     }
 
-    const array_children = try allocator.alloc([*c]abi.ArrowArray, n_fields);
+    const array_children = try allocator.alloc(?*abi.ArrowArray, n_fields);
     for (0..n_fields) |i| {
         array_children[i] = &children[i].array;
     }
 
-    const schema_children = try allocator.alloc([*c]abi.ArrowSchema, n_fields);
+    const schema_children = try allocator.alloc(?*abi.ArrowSchema, n_fields);
     for (0..n_fields) |i| {
         schema_children[i] = &children[i].schema;
     }
 
+    const format = try union_format(format_base, array.type_id_set, allocator);
+
     return .{
+        .schema = .{
+            .format = format,
+            .name = null,
+            .metadata = null,
+            .flags = .{},
+            .n_children = n_children,
+            .children = schema_children.ptr,
+            .dictionary = null,
+            .release = release_schema,
+            .private_data = private_data.increment(),
+        },
         .array = .{
-            .n_children = @as(i64, @intCast(n_fields)),
-            .children = array_children.ptr,
-            .n_buffers = if (buffers[1] == null) 1 else 2,
-            .buffers = buffers.ptr,
-            .offset = array.offset,
             .length = array.len,
             .null_count = 0,
-            .private_data = private_data.increment(),
+            .offset = array.offset,
+            .n_buffers = n_buffers,
+            .n_children = n_children,
+            .buffers = buffers.ptr,
+            .children = array_children.ptr,
+            .dictionary = null,
             .release = release_array,
-        },
-        .schema = .{
-            .n_children = @as(i64, @intCast(n_fields)),
-            .children = schema_children.ptr,
-            .format = format_base,
             .private_data = private_data,
-            .release = release_schema,
         },
     };
 }
 
 fn export_map(array: *const arr.MapArray, private_data: *PrivateData) Error!FFI_Array {
+    const n_buffers = 2;
+    const n_children = 1;
+
     const allocator = private_data.arena.allocator();
 
-    const buffers = try allocator.alloc(?*const anyopaque, 2);
+    const buffers = try allocator.alloc(?*const anyopaque, n_buffers);
     buffers[0] = if (array.validity) |v| v.ptr else null;
     buffers[1] = array.offsets.ptr;
 
     const child = try allocator.create(FFI_Array);
-    child.* = try export_array_impl(arr.Array.from(&array.entries), private_data.increment());
+    child.* = try export_array_impl(arr.Array.from_ptr(.struct_, &array.entries), private_data.increment());
     child.schema.name = "entries";
 
-    const array_children = try allocator.alloc([*c]abi.ArrowArray, 1);
+    const array_children = try allocator.alloc([*c]abi.ArrowArray, n_children);
     array_children[0] = &child.array;
 
-    const schema_children = try allocator.alloc([*c]abi.ArrowSchema, 1);
+    const schema_children = try allocator.alloc([*c]abi.ArrowSchema, n_children);
     schema_children[0] = &child.schema;
 
     return .{
+        .schema = .{
+            .format = "+m",
+            .name = null,
+            .metadata = null,
+            .flags = .{ .nullable = array.validity != null, .map_keys_sorted = array.keys_are_sorted },
+            .n_children = n_children,
+            .children = schema_children.ptr,
+            .dictionary = null,
+            .release = release_schema,
+            .private_data = private_data.increment(),
+        },
         .array = .{
-            .n_children = 1,
-            .children = array_children.ptr,
-            .n_buffers = 2,
-            .buffers = buffers.ptr,
-            .offset = array.offset,
             .length = array.len,
             .null_count = array.null_count,
-            .private_data = private_data.increment(),
+            .offset = array.offset,
+            .n_buffers = n_buffers,
+            .n_children = n_children,
+            .buffers = buffers.ptr,
+            .children = array_children.ptr,
+            .dictionary = null,
             .release = release_array,
-        },
-        .schema = .{
-            .n_children = 1,
-            .children = schema_children.ptr,
-            .format = "+m",
             .private_data = private_data,
-            .release = release_schema,
-            .flags = .{ .nullable = array.validity != null, .map_keys_sorted = array.keys_are_sorted },
         },
     };
 }
 
 fn export_struct(array: *const arr.StructArray, private_data: *PrivateData) Error!FFI_Array {
     const n_fields = array.field_values.len;
+    const n_buffers = 1;
+    const n_children: i64 = @intCast(n_fields);
 
     const allocator = private_data.arena.allocator();
 
-    const buffers = try allocator.alloc(?*const anyopaque, 1);
+    const buffers = try allocator.alloc(?*const anyopaque, n_buffers);
     buffers[0] = if (array.validity) |v| v.ptr else null;
 
     const children = try allocator.alloc(FFI_Array, n_fields);
@@ -1117,69 +1173,83 @@ fn export_struct(array: *const arr.StructArray, private_data: *PrivateData) Erro
     }
 
     return .{
+        .schema = .{
+            .format = "+s",
+            .name = null,
+            .metadata = null,
+            .flags = .{ .nullable = array.validity != null },
+            .n_children = n_children,
+            .children = schema_children.ptr,
+            .dictionary = null,
+            .release = release_schema,
+            .private_data = private_data.increment(),
+        },
         .array = .{
-            .n_children = @as(i64, @intCast(n_fields)),
-            .children = array_children.ptr,
-            .n_buffers = 1,
-            .buffers = buffers.ptr,
-            .offset = array.offset,
             .length = array.len,
             .null_count = array.null_count,
-            .private_data = private_data.increment(),
+            .offset = array.offset,
+            .n_buffers = n_buffers,
+            .n_children = n_children,
+            .buffers = buffers.ptr,
+            .children = array_children.ptr,
+            .dictionary = null,
             .release = release_array,
-        },
-        .schema = .{
-            .n_children = @as(i64, @intCast(n_fields)),
-            .children = schema_children.ptr,
-            .format = "+s",
             .private_data = private_data,
-            .release = release_schema,
-            .flags = .{ .nullable = array.validity != null },
         },
     };
 }
 
 fn export_fixed_size_list(array: *const arr.FixedSizeListArray, private_data: *PrivateData) Error!FFI_Array {
+    const n_buffers = 1;
+    const n_children = 1;
+
     const allocator = private_data.arena.allocator();
 
     const format = try std.fmt.allocPrintZ(allocator, "+w:{}", .{array.item_width});
 
-    const buffers = try allocator.alloc(?*const anyopaque, 1);
+    const buffers = try allocator.alloc(?*const anyopaque, n_buffers);
     buffers[0] = if (array.validity) |v| v.ptr else null;
 
     const child = try allocator.create(FFI_Array);
     child.* = try export_array_impl(array.inner, private_data.increment());
 
-    const array_children = try allocator.alloc([*c]abi.ArrowArray, 1);
+    const array_children = try allocator.alloc([*c]abi.ArrowArray, n_children);
     array_children[0] = &child.array;
 
-    const schema_children = try allocator.alloc([*c]abi.ArrowSchema, 1);
+    const schema_children = try allocator.alloc([*c]abi.ArrowSchema, n_children);
     schema_children[0] = &child.schema;
 
     return .{
+        .schema = .{
+            .format = format,
+            .name = null,
+            .metadata = null,
+            .flags = .{ .nullable = array.validity != null },
+            .n_children = n_children,
+            .children = schema_children.ptr,
+            .dictionary = null,
+            .release = release_schema,
+            .private_data = private_data.increment(),
+        },
         .array = .{
-            .n_children = 1,
-            .children = array_children.ptr,
-            .n_buffers = 1,
-            .buffers = buffers.ptr,
-            .offset = array.offset,
             .length = array.len,
             .null_count = array.null_count,
-            .private_data = private_data.increment(),
+            .offset = array.offset,
+            .n_buffers = n_buffers,
+            .n_children = n_children,
+            .buffers = buffers.ptr,
+            .children = array_children.ptr,
+            .dictionary = null,
             .release = release_array,
-        },
-        .schema = .{
-            .n_children = 1,
-            .children = schema_children.ptr,
-            .format = format,
             .private_data = private_data,
-            .release = release_schema,
-            .flags = .{ .nullable = array.validity != null },
         },
     };
 }
 
 fn export_list_view(comptime IndexT: type, array: *const arr.ListViewArr(IndexT), private_data: *PrivateData) Error!FFI_Array {
+    const n_buffers = 3;
+    const n_children = 1;
+
     const format = comptime switch (IndexT) {
         i32 => "+vl",
         i64 => "+vL",
@@ -1187,7 +1257,7 @@ fn export_list_view(comptime IndexT: type, array: *const arr.ListViewArr(IndexT)
     };
 
     const allocator = private_data.arena.allocator();
-    const buffers = try allocator.alloc(?*const anyopaque, 3);
+    const buffers = try allocator.alloc(?*const anyopaque, n_buffers);
     buffers[0] = if (array.validity) |v| v.ptr else null;
     buffers[1] = array.offsets.ptr;
     buffers[2] = array.sizes.ptr;
@@ -1195,36 +1265,43 @@ fn export_list_view(comptime IndexT: type, array: *const arr.ListViewArr(IndexT)
     const child = try allocator.create(FFI_Array);
     child.* = try export_array_impl(array.inner, private_data.increment());
 
-    const array_children = try allocator.alloc(*abi.ArrowArray, 1);
+    const array_children = try allocator.alloc(?*abi.ArrowArray, n_children);
     array_children[0] = &child.array;
 
-    const schema_children = try allocator.alloc(*abi.ArrowSchema, 1);
+    const schema_children = try allocator.alloc(?*abi.ArrowSchema, n_children);
     schema_children[0] = &child.schema;
 
     return .{
+        .schema = .{
+            .format = format,
+            .name = null,
+            .metadata = null,
+            .flags = .{ .nullable = array.validity != null },
+            .n_children = n_children,
+            .children = schema_children.ptr,
+            .dictionary = null,
+            .release = release_schema,
+            .private_data = private_data.increment(),
+        },
         .array = .{
-            .n_children = 1,
-            .children = array_children.ptr,
-            .n_buffers = 3,
-            .buffers = buffers.ptr,
-            .offset = array.offset,
             .length = array.len,
             .null_count = array.null_count,
-            .private_data = private_data.increment(),
+            .offset = array.offset,
+            .n_buffers = n_buffers,
+            .n_children = n_children,
+            .buffers = buffers.ptr,
+            .children = array_children.ptr,
+            .dictionary = null,
             .release = release_array,
-        },
-        .schema = .{
-            .n_children = 1,
-            .children = schema_children.ptr,
-            .format = format,
             .private_data = private_data,
-            .release = release_schema,
-            .flags = .{ .nullable = array.validity != null },
         },
     };
 }
 
 fn export_list(comptime IndexT: type, array: *const arr.ListArr(IndexT), private_data: *PrivateData) Error!FFI_Array {
+    const n_buffers = 2;
+    const n_children = 1;
+
     const format = comptime switch (IndexT) {
         i32 => "+l",
         i64 => "+L",
@@ -1232,55 +1309,44 @@ fn export_list(comptime IndexT: type, array: *const arr.ListArr(IndexT), private
     };
 
     const allocator = private_data.arena.allocator();
-    const buffers = try allocator.alloc(?*const anyopaque, 2);
+    const buffers = try allocator.alloc(?*const anyopaque, n_buffers);
     buffers[0] = if (array.validity) |v| v.ptr else null;
     buffers[1] = array.offsets.ptr;
 
     const child = try allocator.create(FFI_Array);
     child.* = try export_array_impl(array.inner, private_data.increment());
 
-    const array_children = try allocator.alloc([*c]abi.ArrowArray, 1);
+    const array_children = try allocator.alloc([*c]abi.ArrowArray, n_children);
     array_children[0] = &child.array;
 
-    const schema_children = try allocator.alloc([*c]abi.ArrowSchema, 1);
+    const schema_children = try allocator.alloc([*c]abi.ArrowSchema, n_children);
     schema_children[0] = &child.schema;
 
     return .{
+        .schema = .{
+            .format = format,
+            .name = null,
+            .metadata = null,
+            .flags = .{ .nullable = array.validity != null },
+            .n_children = n_children,
+            .children = schema_children.ptr,
+            .dictionary = null,
+            .release = release_schema,
+            .private_data = private_data.increment(),
+        },
         .array = .{
-            .n_children = 1,
-            .children = array_children.ptr,
-            .n_buffers = 2,
-            .buffers = buffers.ptr,
-            .offset = array.offset,
             .length = array.len,
             .null_count = array.null_count,
-            .private_data = private_data.increment(),
+            .offset = array.offset,
+            .n_buffers = n_buffers,
+            .n_children = n_children,
+            .buffers = buffers.ptr,
+            .children = array_children.ptr,
+            .dictionary = null,
             .release = release_array,
-        },
-        .schema = .{
-            .n_children = 1,
-            .children = schema_children.ptr,
-            .format = format,
             .private_data = private_data,
-            .release = release_schema,
-            .flags = .{ .nullable = array.validity != null },
         },
     };
-}
-
-fn export_interval(format: [:0]const u8, array: anytype, private_data: *PrivateData) Error!FFI_Array {
-    return export_primitive_impl(format, &array.inner, private_data);
-}
-
-fn export_duration(dur_array: *const arr.DurationArray, private_data: *PrivateData) Error!FFI_Array {
-    const format = switch (dur_array.unit) {
-        .second => "tDs",
-        .millisecond => "tDm",
-        .microsecond => "tDu",
-        .nanosecond => "tDn",
-    };
-
-    return export_primitive_impl(format, &dur_array.inner, private_data);
 }
 
 fn export_timestamp(timestamp_array: *const arr.TimestampArray, private_data: *PrivateData) Error!FFI_Array {
@@ -1298,85 +1364,52 @@ fn export_timestamp(timestamp_array: *const arr.TimestampArray, private_data: *P
     else
         format_base;
 
-    const out = try export_primitive_impl(format, &timestamp_array.inner, private_data);
-
-    return out;
-}
-
-fn export_time(time_array: anytype, private_data: *PrivateData) Error!FFI_Array {
-    const format = switch (@TypeOf(time_array)) {
-        *const arr.Time32Array => switch (time_array.unit) {
-            .second => "tts",
-            .millisecond => "ttm",
-        },
-        *const arr.Time64Array => switch (time_array.unit) {
-            .microsecond => "ttu",
-            .nanosecond => "ttn",
-        },
-        else => @compileError("unexpected array type"),
-    };
-
-    return export_primitive_impl(format, &time_array.inner, private_data);
-}
-
-fn export_date(date_array: anytype, private_data: *PrivateData) Error!FFI_Array {
-    const format = comptime switch (@TypeOf(date_array)) {
-        *const arr.Date32Array => "tdD",
-        *const arr.Date64Array => "tdm",
-        else => @compileError("unexpected array type"),
-    };
-
-    return export_primitive_impl(format, &date_array.inner, private_data);
+    return export_primitive(i64, &timestamp_array.inner, format, private_data);
 }
 
 fn export_fixed_size_binary(array: *const arr.FixedSizeBinaryArray, private_data: *PrivateData) Error!FFI_Array {
+    const n_buffers = 2;
+
     const allocator = private_data.arena.allocator();
 
     const format = try std.fmt.allocPrintZ(allocator, "w:{}", .{array.byte_width});
 
-    const buffers = try allocator.alloc(?*const anyopaque, 2);
-
+    const buffers = try allocator.alloc(?*const anyopaque, n_buffers);
     buffers[0] = if (array.validity) |v| v.ptr else null;
     buffers[1] = array.data.ptr;
 
     return .{
-        .array = .{
-            .n_buffers = 2,
-            .buffers = buffers.ptr,
-            .offset = array.offset,
-            .length = array.len,
-            .null_count = array.null_count,
-            .private_data = private_data.increment(),
-            .release = release_array,
-        },
         .schema = .{
             .format = format,
-            .private_data = private_data,
-            .release = release_schema,
+            .name = null,
+            .metadata = null,
             .flags = .{ .nullable = array.validity != null },
+            .n_children = 0,
+            .children = null,
+            .dictionary = null,
+            .release = release_schema,
+            .private_data = private_data.increment(),
+        },
+        .array = .{
+            .length = array.len,
+            .null_count = array.null_count,
+            .offset = array.offset,
+            .n_buffers = n_buffers,
+            .n_children = 0,
+            .buffers = buffers.ptr,
+            .children = null,
+            .dictionary = null,
+            .release = release_array,
+            .private_data = private_data,
         },
     };
 }
 
-fn export_decimal(dec_array: anytype, private_data: *PrivateData) Error!FFI_Array {
-    const width = comptime switch (@TypeOf(dec_array)) {
-        *const arr.Decimal32Array => "32",
-        *const arr.Decimal64Array => "64",
-        *const arr.Decimal128Array => "128",
-        *const arr.Decimal256Array => "256",
-        else => @compileError("unexpected array type"),
-    };
-
-    const allocator = private_data.arena.allocator();
-
-    const format = try std.fmt.allocPrintZ(allocator, "d:{},{},{s}", .{ dec_array.params.precision, dec_array.params.scale, width });
-
-    const out = try export_primitive_impl(format, &dec_array.inner, private_data);
-
-    return out;
+fn decimal_format(params: arr.DecimalParams, width: []const u8, allocator: Allocator) Error![:0]const u8 {
+    return std.fmt.allocPrintZ(allocator, "d:{},{},{s}", .{ params.precision, params.scale, width });
 }
 
-fn export_binary_view(array: *const arr.BinaryViewArray, private_data: *PrivateData, format: [:0]const u8) Error!FFI_Array {
+fn export_binary_view(array: *const arr.BinaryViewArray, format: [:0]const u8, private_data: *PrivateData) Error!FFI_Array {
     const n_buffers = array.buffers.len + 2;
 
     const allocator = private_data.arena.allocator();
@@ -1389,20 +1422,28 @@ fn export_binary_view(array: *const arr.BinaryViewArray, private_data: *PrivateD
     }
 
     return .{
-        .array = .{
-            .n_buffers = @as(i64, @intCast(n_buffers)),
-            .buffers = buffers.ptr,
-            .offset = array.offset,
-            .length = array.len,
-            .null_count = array.null_count,
-            .private_data = private_data.increment(),
-            .release = release_array,
-        },
         .schema = .{
             .format = format,
-            .private_data = private_data,
-            .release = release_schema,
+            .name = null,
+            .metadata = null,
             .flags = .{ .nullable = array.validity != null },
+            .n_children = 0,
+            .children = null,
+            .dictionary = null,
+            .release = release_schema,
+            .private_data = private_data.increment(),
+        },
+        .array = .{
+            .length = array.len,
+            .null_count = array.null_count,
+            .offset = array.offset,
+            .n_buffers = @as(i64, @intCast(n_buffers)),
+            .n_children = 0,
+            .buffers = buffers.ptr,
+            .children = null,
+            .dictionary = null,
+            .release = release_array,
+            .private_data = private_data,
         },
     };
 }
@@ -1417,20 +1458,63 @@ fn export_binary(comptime IndexT: type, array: *const arr.BinaryArr(IndexT), for
     buffers[2] = array.data.ptr;
 
     return .{
-        .array = .{
-            .n_buffers = n_buffers,
-            .buffers = buffers.ptr,
-            .offset = array.offset,
-            .length = array.len,
-            .null_count = array.null_count,
-            .private_data = private_data.increment(),
-            .release = release_array,
-        },
         .schema = .{
             .format = format,
-            .private_data = private_data,
-            .release = release_schema,
+            .name = null,
+            .metadata = null,
             .flags = .{ .nullable = array.validity != null },
+            .n_children = 0,
+            .children = null,
+            .dictionary = null,
+            .release = release_schema,
+            .private_data = private_data.increment(),
+        },
+        .array = .{
+            .length = array.len,
+            .null_count = array.null_count,
+            .offset = array.offset,
+            .n_buffers = n_buffers,
+            .n_children = 0,
+            .buffers = buffers.ptr,
+            .children = null,
+            .dictionary = null,
+            .release = release_array,
+            .private_data = private_data,
+        },
+    };
+}
+
+fn export_bool(array: *const arr.BoolArray, private_data: *PrivateData) Error!FFI_Array {
+    const n_buffers = 2;
+
+    const allocator = private_data.arena.allocator();
+    const buffers = try allocator.alloc(?*const anyopaque, n_buffers);
+    buffers[0] = if (array.validity) |v| v.ptr else null;
+    buffers[1] = array.values.ptr;
+
+    return .{
+        .schema = .{
+            .format = "b",
+            .name = null,
+            .metadata = null,
+            .flags = .{ .nullable = array.validity != null },
+            .n_children = 0,
+            .children = null,
+            .dictionary = null,
+            .release = release_schema,
+            .private_data = private_data.increment(),
+        },
+        .array = .{
+            .length = array.len,
+            .null_count = array.null_count,
+            .offset = array.offset,
+            .n_buffers = n_buffers,
+            .n_children = 0,
+            .buffers = buffers.ptr,
+            .children = null,
+            .dictionary = null,
+            .release = release_array,
+            .private_data = private_data,
         },
     };
 }
@@ -1444,20 +1528,28 @@ fn export_primitive(comptime T: type, array: *const arr.PrimitiveArr(T), format:
     buffers[1] = array.values.ptr;
 
     return .{
-        .array = .{
-            .n_buffers = n_buffers,
-            .buffers = buffers.ptr,
-            .offset = array.offset,
-            .length = array.len,
-            .null_count = array.null_count,
-            .private_data = private_data.increment(),
-            .release = release_array,
-        },
         .schema = .{
             .format = format,
-            .private_data = private_data,
-            .release = release_schema,
+            .name = null,
+            .metadata = null,
             .flags = .{ .nullable = array.validity != null },
+            .n_children = 0,
+            .children = null,
+            .dictionary = null,
+            .release = release_schema,
+            .private_data = private_data.increment(),
+        },
+        .array = .{
+            .length = array.len,
+            .null_count = array.null_count,
+            .offset = array.offset,
+            .n_buffers = n_buffers,
+            .n_children = 0,
+            .buffers = buffers.ptr,
+            .children = null,
+            .dictionary = null,
+            .release = release_array,
+            .private_data = private_data,
         },
     };
 }
@@ -1479,7 +1571,7 @@ test "roundtrip" {
         .null_count = 0,
     };
 
-    const array = arr.Array.from_ptr(typed);
+    const array = arr.Array.from_ptr(.i32, typed);
 
     // use 'catch unreachable' up to here beacuse we don't want everything to leak
     // and just using defer isn't feasible because all of that ownership is handed to the consumer
