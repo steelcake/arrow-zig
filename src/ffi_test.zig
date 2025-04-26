@@ -10,7 +10,7 @@ const expect_equal = @import("./expect_equal.zig").expect_equal;
 
 extern fn test_helper_roundtrip_array(input_array: *const anyopaque, input_schema: *const anyopaque, output_array: *anyopaque, output_schema: *anyopaque) i32;
 
-fn run_test(array: arr.Array, arena: ArenaAllocator) !void {
+fn run_test(array: *const arr.Array, arena: ArenaAllocator) !void {
     var input = ffi_export: {
         const x = try ffi.export_array(.{
             .array = array,
@@ -32,7 +32,7 @@ fn run_test(array: arr.Array, arena: ArenaAllocator) !void {
     defer import_arena.deinit();
     const import_alloc = import_arena.allocator();
     const imported = try ffi.import_array(&output, import_alloc);
-    try expect_equal(array, imported);
+    try expect_equal(array, &imported);
 }
 
 fn validity_len(len: u32) u32 {
@@ -67,18 +67,16 @@ fn make_primitive(comptime T: type, vals: []const T, allocator: Allocator) !arr.
     };
 }
 
-fn test_primitive(comptime ArrayT: arr.ArrayType, comptime T: type, vals: []const T) !void {
+fn test_primitive(comptime array_type: arr.ArrayType, comptime T: type, vals: []const T) !void {
     var arena = ArenaAllocator.init(testing.allocator);
 
     const array = init: {
         const allocator = arena.allocator();
         errdefer arena.deinit();
-        const a = try allocator.create(arr.PrimitiveArr(T));
-        a.* = try make_primitive(T, vals, allocator);
-        break :init a;
+        break :init try make_primitive(T, vals, allocator);
     };
 
-    try run_test(arr.Array.from_ptr(ArrayT, array), arena);
+    try run_test(&@unionInit(arr.Array, @tagName(array_type), array), arena);
 }
 
 test "primitive roundtrip" {

@@ -1,6 +1,3 @@
-const std = @import("std");
-const Allocator = std.mem.Allocator;
-
 pub const DecimalParams = struct {
     precision: u8,
     scale: i8,
@@ -75,78 +72,51 @@ pub const ArrayType = enum {
     dict,
 };
 
-fn array_type_to_type(comptime ArrayT: ArrayType) type {
-    return comptime switch (ArrayT) {
-        .null => NullArray,
-        .i8 => Int8Array,
-        .i16 => Int16Array,
-        .i32 => Int32Array,
-        .i64 => Int64Array,
-        .u8 => UInt8Array,
-        .u16 => UInt16Array,
-        .u32 => UInt32Array,
-        .u64 => UInt64Array,
-        .f16 => Float16Array,
-        .f32 => Float32Array,
-        .f64 => Float64Array,
-        .binary => BinaryArray,
-        .utf8 => Utf8Array,
-        .bool => BoolArray,
-        .decimal32 => Decimal32Array,
-        .decimal64 => Decimal64Array,
-        .decimal128 => Decimal128Array,
-        .decimal256 => Decimal256Array,
-        .date32 => Date32Array,
-        .date64 => Date64Array,
-        .time32 => Time32Array,
-        .time64 => Time64Array,
-        .timestamp => TimestampArray,
-        .interval_year_month => IntervalYearMonthArray,
-        .interval_day_time => IntervalDayTimeArray,
-        .interval_month_day_nano => IntervalMonthDayNanoArray,
-        .list => ListArray,
-        .struct_ => StructArray,
-        .dense_union => DenseUnionArray,
-        .sparse_union => SparseUnionArray,
-        .fixed_size_binary => FixedSizeBinaryArray,
-        .fixed_size_list => FixedSizeListArray,
-        .map => MapArray,
-        .duration => DurationArray,
-        .large_binary => LargeBinaryArray,
-        .large_utf8 => LargeUtf8Array,
-        .large_list => LargeListArray,
-        .run_end_encoded => RunEndArray,
-        .binary_view => BinaryViewArray,
-        .utf8_view => Utf8ViewArray,
-        .list_view => ListViewArray,
-        .large_list_view => LargeListViewArray,
-        .dict => DictArray,
-    };
-}
-
-pub const Error = error{OutOfMemory};
-
-pub const Array = struct {
-    arr: *const anyopaque,
-    type_: ArrayType,
-
-    pub fn from(comptime ArrayT: ArrayType, arr: array_type_to_type(ArrayT), allocator: Allocator) Error!Array {
-        const ptr = try allocator.create(@TypeOf(arr));
-        ptr.* = arr;
-        return Array.from_ptr(ArrayT, ptr);
-    }
-
-    pub fn from_ptr(comptime ArrayT: ArrayType, arr: *const array_type_to_type(ArrayT)) Array {
-        return .{
-            .type_ = ArrayT,
-            .arr = arr,
-        };
-    }
-
-    pub fn to(self: Array, comptime ArrayT: ArrayType) *const array_type_to_type(ArrayT) {
-        std.debug.assert(ArrayT == self.type_);
-        return @ptrCast(@alignCast(self.arr));
-    }
+pub const Array = union(ArrayType) {
+    null: NullArray,
+    i8: Int8Array,
+    i16: Int16Array,
+    i32: Int32Array,
+    i64: Int64Array,
+    u8: UInt8Array,
+    u16: UInt16Array,
+    u32: UInt32Array,
+    u64: UInt64Array,
+    f16: Float16Array,
+    f32: Float32Array,
+    f64: Float64Array,
+    binary: BinaryArray,
+    utf8: Utf8Array,
+    bool: BoolArray,
+    decimal32: Decimal32Array,
+    decimal64: Decimal64Array,
+    decimal128: Decimal128Array,
+    decimal256: Decimal256Array,
+    date32: Date32Array,
+    date64: Date64Array,
+    time32: Time32Array,
+    time64: Time64Array,
+    timestamp: TimestampArray,
+    interval_year_month: IntervalYearMonthArray,
+    interval_day_time: IntervalDayTimeArray,
+    interval_month_day_nano: IntervalMonthDayNanoArray,
+    list: ListArray,
+    struct_: StructArray,
+    dense_union: DenseUnionArray,
+    sparse_union: SparseUnionArray,
+    fixed_size_binary: FixedSizeBinaryArray,
+    fixed_size_list: FixedSizeListArray,
+    map: MapArray,
+    duration: DurationArray,
+    large_binary: LargeBinaryArray,
+    large_utf8: LargeUtf8Array,
+    large_list: LargeListArray,
+    run_end_encoded: RunEndArray,
+    binary_view: BinaryViewArray,
+    utf8_view: Utf8ViewArray,
+    list_view: ListViewArray,
+    large_list_view: LargeListViewArray,
+    dict: DictArray,
 };
 
 pub const BoolArray = struct {
@@ -188,10 +158,19 @@ pub const Float16Array = PrimitiveArr(f16);
 pub const Float32Array = PrimitiveArr(f32);
 pub const Float64Array = PrimitiveArr(f64);
 
-fn DecimalArr(comptime T: type) type {
-    comptime switch (T) {
-        i32, i64, i128, i256 => {},
-        else => @compileError("unsupported decimal impl type"),
+pub const DecimalInt = enum {
+    i32,
+    i64,
+    i128,
+    i256,
+};
+
+fn DecimalArr(comptime int: DecimalInt) type {
+    const T = comptime switch (int) {
+        .i32 => i32,
+        .i64 => i64,
+        .i128 => i128,
+        .i256 => i256,
     };
 
     return struct {
@@ -200,33 +179,54 @@ fn DecimalArr(comptime T: type) type {
     };
 }
 
-pub const Decimal32Array = DecimalArr(i32);
-pub const Decimal64Array = DecimalArr(i64);
-pub const Decimal128Array = DecimalArr(i128);
-pub const Decimal256Array = DecimalArr(i256);
+pub const Decimal32Array = struct {
+    inner: PrimitiveArr(i32),
+    params: DecimalParams,
+};
+pub const Decimal64Array = struct {
+    inner: PrimitiveArr(i64),
+    params: DecimalParams,
+};
+pub const Decimal128Array = struct {
+    inner: PrimitiveArr(i128),
+    params: DecimalParams,
+};
+pub const Decimal256Array = struct {
+    inner: PrimitiveArr(i256),
+    params: DecimalParams,
+};
 
 pub const DictArray = struct {
-    keys: Array,
-    values: Array,
+    keys: *const Array,
+    values: *const Array,
     is_ordered: bool,
 };
 
 pub const RunEndArray = struct {
-    run_ends: Array,
-    values: Array,
+    run_ends: *const Array,
+    values: *const Array,
     len: u32,
     offset: u32,
 };
 
-pub fn BinaryArr(comptime IndexT: type) type {
-    comptime switch (IndexT) {
-        i32, i64 => {},
-        else => @compileError("unsupported index type"),
-    };
+pub const IndexType = enum {
+    i32,
+    i64,
+
+    pub fn to_type(self: IndexType) type {
+        return switch (self) {
+            .i32 => i32,
+            .i64 => i64,
+        };
+    }
+};
+
+pub fn BinaryArr(comptime index_type: IndexType) type {
+    const I = index_type.to_type();
 
     return struct {
         data: []const u8,
-        offsets: []const IndexT,
+        offsets: []const I,
         validity: ?[]const u8,
         len: u32,
         offset: u32,
@@ -234,8 +234,8 @@ pub fn BinaryArr(comptime IndexT: type) type {
     };
 }
 
-pub const BinaryArray = BinaryArr(i32);
-pub const LargeBinaryArray = BinaryArr(i64);
+pub const BinaryArray = BinaryArr(.i32);
+pub const LargeBinaryArray = BinaryArr(.i64);
 
 pub const Utf8Array = struct {
     inner: BinaryArray,
@@ -255,7 +255,7 @@ pub const StructArray = struct {
 };
 
 pub const FixedSizeListArray = struct {
-    inner: Array,
+    inner: *const Array,
     validity: ?[]const u8,
     len: u32,
     offset: u32,
@@ -263,15 +263,12 @@ pub const FixedSizeListArray = struct {
     item_width: i32,
 };
 
-pub fn ListArr(comptime IndexT: type) type {
-    comptime switch (IndexT) {
-        i32, i64 => {},
-        else => @compileError("unsupported index type"),
-    };
+pub fn ListArr(comptime index_type: IndexType) type {
+    const I = index_type.to_type();
 
     return struct {
-        inner: Array,
-        offsets: []const IndexT,
+        inner: *const Array,
+        offsets: []const I,
         validity: ?[]const u8,
         len: u32,
         offset: u32,
@@ -279,8 +276,8 @@ pub fn ListArr(comptime IndexT: type) type {
     };
 }
 
-pub const ListArray = ListArr(i32);
-pub const LargeListArray = ListArr(i64);
+pub const ListArray = ListArr(.i32);
+pub const LargeListArray = ListArr(.i64);
 
 pub const UnionArr = struct {
     type_id_set: []const i8,
@@ -299,35 +296,35 @@ pub const SparseUnionArray = struct {
     inner: UnionArr,
 };
 
-fn DateArr(comptime T: type) type {
-    comptime switch (T) {
-        i32, i64 => {},
-        else => @compileError("unsupported index type"),
+pub const Date32Array = struct {
+    inner: Int32Array,
+};
+pub const Date64Array = struct {
+    inner: Int64Array,
+};
+
+fn TimeArr(comptime backing_t: IndexType) type {
+    const T = backing_t.to_type();
+
+    const Unit = comptime switch (backing_t) {
+        .i32 => Time32Unit,
+        .i64 => Time64Unit,
     };
 
     return struct {
         inner: PrimitiveArr(T),
+        unit: Unit,
     };
 }
 
-pub const Date32Array = DateArr(i32);
-pub const Date64Array = DateArr(i64);
-
-fn TimeArr(comptime T: type) type {
-    const UnitT = comptime switch (T) {
-        i32 => Time32Unit,
-        i64 => Time64Unit,
-        else => @compileError("unsupported index type"),
-    };
-
-    return struct {
-        inner: PrimitiveArr(T),
-        unit: UnitT,
-    };
-}
-
-pub const Time32Array = TimeArr(i32);
-pub const Time64Array = TimeArr(i64);
+pub const Time32Array = struct {
+    inner: Int32Array,
+    unit: Time32Unit,
+};
+pub const Time64Array = struct {
+    inner: Int64Array,
+    unit: Time64Unit,
+};
 
 pub const TimestampArray = struct {
     inner: Int64Array,
@@ -381,16 +378,13 @@ pub const Utf8ViewArray = struct {
     inner: BinaryViewArray,
 };
 
-pub fn ListViewArr(comptime IndexT: type) type {
-    comptime switch (IndexT) {
-        i32, i64 => {},
-        else => @compileError("unsupported index type"),
-    };
+pub fn ListViewArr(comptime index_type: IndexType) type {
+    const I = index_type.to_type();
 
     return struct {
-        inner: Array,
-        offsets: []const IndexT,
-        sizes: []const IndexT,
+        inner: *const Array,
+        offsets: []const I,
+        sizes: []const I,
         validity: ?[]const u8,
         len: u32,
         offset: u32,
@@ -398,11 +392,11 @@ pub fn ListViewArr(comptime IndexT: type) type {
     };
 }
 
-pub const ListViewArray = ListViewArr(i32);
-pub const LargeListViewArray = ListViewArr(i64);
+pub const ListViewArray = ListViewArr(.i32);
+pub const LargeListViewArray = ListViewArr(.i64);
 
 pub const MapArray = struct {
-    entries: StructArray,
+    entries: *const StructArray,
     offsets: []const i32,
     validity: ?[]const u8,
     len: u32,
@@ -410,19 +404,3 @@ pub const MapArray = struct {
     null_count: u32,
     keys_are_sorted: bool,
 };
-
-test "array casting" {
-    const typed_arr: Int32Array = .{
-        .validity = null,
-        .len = 0,
-        .offset = 0,
-        .values = &.{},
-        .null_count = 0,
-    };
-
-    const arr = Array.from_ptr(.i32, &typed_arr);
-
-    const re_typed_arr = arr.to(.i32);
-
-    try std.testing.expectEqual(&typed_arr, re_typed_arr);
-}

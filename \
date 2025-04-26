@@ -1107,10 +1107,12 @@ fn export_map(array: *const arr.MapArray, private_data: *PrivateData) Error!FFI_
 
     const child = try allocator.create(FFI_Array);
 
-    const entries = try allocator.create(arr.Array);
-    entries.* = .{ .struct_ = array.entries.* };
+    // This is aliasing but it is fine because the copied struct array will be desroyed at the end of this fn (it is stack allocated) 
+    // we don't export any direct pointers to the StructArray itself since it doesn't hold any arrow buffers inline
+    const entries_s = array.entries.*;
+    const entries = arr.Array{ .struct_ = entries_s };
 
-    child.* = try export_array_impl(entries, private_data.increment());
+    child.* = try export_array_impl(&entries, private_data.increment());
     child.schema.name = "entries";
 
     const array_children = try allocator.alloc([*c]abi.ArrowArray, n_children);
