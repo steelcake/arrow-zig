@@ -67,7 +67,7 @@ fn make_primitive(comptime T: type, vals: []const T, allocator: Allocator) !arr.
     };
 }
 
-fn test_primitive(comptime array_type: arr.ArrayType, comptime T: type, vals: []const T) !void {
+fn test_primitive(comptime T: type, vals: []const T) !void {
     var arena = ArenaAllocator.init(testing.allocator);
 
     const array = init: {
@@ -76,16 +76,16 @@ fn test_primitive(comptime array_type: arr.ArrayType, comptime T: type, vals: []
         break :init try make_primitive(T, vals, allocator);
     };
 
-    try run_test(&@unionInit(arr.Array, @tagName(array_type), array), arena);
+    try run_test(&@unionInit(arr.Array, @typeName(T), array), arena);
 }
 
 test "primitive roundtrip" {
-    try test_primitive(.i8, i8, &[_]i8{ -5, -69, -12, 3, 2, 3, 1, 2, 122 });
-    try test_primitive(.u8, u8, &[_]u8{ 3, 2, 3, 1, 2, 132 });
-    try test_primitive(.i16, i16, &[_]i16{ -5, -69, 3, 2, 3, 1, 2, 132, 321, 324 });
-    try test_primitive(.u16, u16, &[_]u16{ 3, 2, 3, 1, 2, 132, 321, 324 });
-    try test_primitive(.i32, i32, &[_]i32{ -5, -69, -123123, 3, 2, 3, 1, 2, 132, 321, 324, 56456 });
-    try test_primitive(.u32, u32, &[_]u32{ 3, 2, 3, 1, 2, 132, 321, 324, 56456 });
-    try test_primitive(.i64, i64, &[_]i64{ -5, -69, -123123, 3, 2, 3, 1, 2, 132, 321, 324, 56456 });
-    try test_primitive(.u64, u64, &[_]u64{ 3, 2, 3, 1, 2, 132, 321, 324, 56456 });
+    try test_primitive(i8, &[_]i8{ -5, -69, -12, 3, 2, 3, 1, 2, 122 });
+    try test_primitive(u8, &[_]u8{ 3, 2, 3, 1, 2, 132 });
+    try test_primitive(i16, &[_]i16{ -5, -69, 3, 2, 3, 1, 2, 132, 321, 324 });
+    try test_primitive(u16, &[_]u16{ 3, 2, 3, 1, 2, 132, 321, 324 });
+    try test_primitive(i32, &[_]i32{ -5, -69, -123123, 3, 2, 3, 1, 2, 132, 321, 324, 56456 });
+    try test_primitive(u32, &[_]u32{ 3, 2, 3, 1, 2, 132, 321, 324, 56456 });
+    try test_primitive(i64, &[_]i64{ -5, -69, -123123, 3, 2, 3, 1, 2, 132, 321, 324, 56456 });
+    try test_primitive(u64, &[_]u64{ 3, 2, 3, 1, 2, 132, 321, 324, 56456 });
 }
