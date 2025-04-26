@@ -1,9 +1,11 @@
 pub const array = @import("./array.zig");
 pub const ffi = @import("./ffi.zig");
+const ffi_test = @import("./ffi_test.zig");
 // pub const ipc = @import("./ipc.zig");
 
 test {
     _ = array;
     _ = ffi;
+    _ = ffi_test;
     // _ = ipc;
 }

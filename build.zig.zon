@@ -35,7 +35,12 @@
     // `zig build --fetch` can be used to fetch all dependencies of a package, recursively.
     // Once all dependencies are fetched, `zig build` no longer requires
     // internet connectivity.
-    .dependencies = .{},
+    .dependencies = .{
+        .nanoarrow = .{
+            .url = "git+https://github.com/steelcake/nanoarrow-zig?ref=main#37777bc892545e136a653338010228c9609abc04",
+            .hash = "nanoarrow-0.0.0-1Bv_R6sIAABxlPp1TWPe7UB3MP03iu2njavwNFhOde5i",
+        },
+    },
     .paths = .{
         "build.zig",
         "build.zig.zon",
