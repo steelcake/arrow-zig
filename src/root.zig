@@ -1,5 +1,7 @@
 pub const array = @import("./array.zig");
 pub const ffi = @import("./ffi.zig");
+pub const bitmap = @import("./bitmap.zig");
+pub const expect_equal = @import("./expect_equal.zig");
 const ffi_test = @import("./ffi_test.zig");
 // pub const ipc = @import("./ipc.zig");
 
