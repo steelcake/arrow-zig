@@ -6,7 +6,6 @@ const testing = std.testing;
 const ffi = @import("./ffi.zig");
 const arr = @import("./array.zig");
 const bitmap = @import("./bitmap.zig");
-const expect_equal = @import("./expect_equal.zig").expect_equal;
 
 extern fn test_helper_roundtrip_array(input_array: *const anyopaque, input_schema: *const anyopaque, output_array: *anyopaque, output_schema: *anyopaque) i32;
 
@@ -32,7 +31,8 @@ fn run_test(array: *const arr.Array, arena: ArenaAllocator) !void {
     defer import_arena.deinit();
     const import_alloc = import_arena.allocator();
     const imported = try ffi.import_array(&output, import_alloc);
-    try expect_equal(array, &imported);
+
+    try testing.expectEqualDeep(array, &imported);
 }
 
 fn validity_len(len: u32) u32 {
