@@ -111,27 +111,6 @@ pub const Float16Array = PrimitiveArr(f16);
 pub const Float32Array = PrimitiveArr(f32);
 pub const Float64Array = PrimitiveArr(f64);
 
-pub const DecimalInt = enum {
-    i32,
-    i64,
-    i128,
-    i256,
-};
-
-fn DecimalArr(comptime int: DecimalInt) type {
-    const T = comptime switch (int) {
-        .i32 => i32,
-        .i64 => i64,
-        .i128 => i128,
-        .i256 => i256,
-    };
-
-    return struct {
-        inner: PrimitiveArr(T),
-        params: DecimalParams,
-    };
-}
-
 pub const Decimal32Array = struct {
     inner: PrimitiveArr(i32),
     params: DecimalParams,

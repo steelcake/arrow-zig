@@ -2,6 +2,7 @@ const std = @import("std");
 const ArenaAllocator = std.heap.ArenaAllocator;
 const Allocator = std.mem.Allocator;
 const testing = std.testing;
+const Random = std.Random.DefaultPrng;
 
 const ffi = @import("./ffi.zig");
 const arr = @import("./array.zig");
@@ -35,57 +36,67 @@ fn run_test(array: *const arr.Array, arena: ArenaAllocator) !void {
     try testing.expectEqualDeep(array, &imported);
 }
 
-fn validity_len(len: u32) u32 {
-    return (len + 7) / 8;
-}
+const offset = 3;
+const len = 1024;
 
-fn make_primitive(comptime T: type, vals: []const T, allocator: Allocator) !arr.PrimitiveArr(T) {
-    const values = try allocator.alloc(T, vals.len);
-    @memcpy(values, vals);
+fn make_validity(rand: *Random, allocator: Allocator) !struct { validity: []const u8, null_count: u32 } {
+    const num_bytes = (len + 7) / 8;
 
-    const offset: u32 = 2;
-    const len = @as(u32, @intCast(vals.len)) - offset;
-
-    const bitmap_len = validity_len(@intCast(vals.len));
-
-    const validity = try allocator.alloc(u8, bitmap_len);
-    for (0..bitmap_len) |i| {
-        validity[i] = @intCast(i % 256);
+    const validity = try allocator.alloc(u8, num_bytes);
+    for (0..num_bytes) |i| {
+        validity[i] = rand.random().int(u8);
     }
 
     var null_count: u32 = 0;
-    for (offset..offset + len) |i| {
+    for (offset..len) |i| {
         null_count += @intFromBool(bitmap.get(validity, @intCast(i)));
     }
 
+    return .{ .null_count = null_count, .validity = validity };
+}
+
+fn make_primitive(comptime T: type, rand: *Random, allocator: Allocator) !arr.PrimitiveArr(T) {
+    const values = try allocator.alloc(T, len);
+
+    for (0..len) |i| {
+        values[i] = rand.random().int(T);
+    }
+
     return .{
-        .len = len,
+        .len = len - offset,
         .offset = offset,
-        .validity = validity,
-        .null_count = null_count,
+        .validity = null,
+        .null_count = 0,
         .values = values,
     };
 }
 
-fn test_primitive(comptime T: type, vals: []const T) !void {
+fn make_primitive_with_validity(comptime T: type, rand: *Random, allocator: Allocator) !arr.PrimitiveArr(T) {
+    var a = try make_primitive(T, rand, allocator);
+    const v = try make_validity(rand, allocator);
+
+    a.validity = v.validity;
+    a.null_count = v.null_count;
+
+    return a;
+}
+
+fn test_primitive(comptime T: type, random: *Random) !void {
     var arena = ArenaAllocator.init(testing.allocator);
 
     const array = init: {
         const allocator = arena.allocator();
         errdefer arena.deinit();
-        break :init try make_primitive(T, vals, allocator);
+        break :init try make_primitive_with_validity(T, random, allocator);
     };
 
     try run_test(&@unionInit(arr.Array, @typeName(T), array), arena);
 }
 
 test "primitive roundtrip" {
-    try test_primitive(i8, &[_]i8{ -5, -69, -12, 3, 2, 3, 1, 2, 122 });
-    try test_primitive(u8, &[_]u8{ 3, 2, 3, 1, 2, 132 });
-    try test_primitive(i16, &[_]i16{ -5, -69, 3, 2, 3, 1, 2, 132, 321, 324 });
-    try test_primitive(u16, &[_]u16{ 3, 2, 3, 1, 2, 132, 321, 324 });
-    try test_primitive(i32, &[_]i32{ -5, -69, -123123, 3, 2, 3, 1, 2, 132, 321, 324, 56456 });
-    try test_primitive(u32, &[_]u32{ 3, 2, 3, 1, 2, 132, 321, 324, 56456 });
-    try test_primitive(i64, &[_]i64{ -5, -69, -123123, 3, 2, 3, 1, 2, 132, 321, 324, 56456 });
-    try test_primitive(u64, &[_]u64{ 3, 2, 3, 1, 2, 132, 321, 324, 56456 });
+    var rand = Random.init(0);
+
+    inline for (&[_]type{ i8, i16, i32, i64, u8, u16, u32, u64 }) |t| {
+        try test_primitive(t, &rand);
+    }
 }
