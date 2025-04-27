@@ -93,10 +93,39 @@ fn test_primitive(comptime T: type, random: *Random) !void {
     try run_test(&@unionInit(arr.Array, @typeName(T), array), arena);
 }
 
+fn test_decimal(comptime int: arr.DecimalInt, random: *Random) !void {
+    var arena = ArenaAllocator.init(testing.allocator);
+
+    const array = init: {
+        const allocator = arena.allocator();
+        errdefer arena.deinit();
+        const inner = try make_primitive_with_validity(int.to_type(), random, allocator);
+
+        break :init arr.DecimalArr(int){
+            .inner = inner,
+            .params = .{
+                .precision = 6,
+                .scale = -3,
+            },
+        };
+    };
+
+    try run_test(&@unionInit(arr.Array, "decimal" ++ @tagName(int)[1..], array), arena);
+}
+
 test "primitive roundtrip" {
-    var rand = Random.init(0);
+    var rand = Random.init(69);
 
     inline for (&[_]type{ i8, i16, i32, i64, u8, u16, u32, u64 }) |t| {
         try test_primitive(t, &rand);
+    }
+
+    inline for (&[_]arr.DecimalInt{
+        // .i32,
+        // .i64,
+        .i128,
+        .i256,
+    }) |int| {
+        try test_decimal(int, &rand);
     }
 }

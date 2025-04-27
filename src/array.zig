@@ -111,22 +111,33 @@ pub const Float16Array = PrimitiveArr(f16);
 pub const Float32Array = PrimitiveArr(f32);
 pub const Float64Array = PrimitiveArr(f64);
 
-pub const Decimal32Array = struct {
-    inner: PrimitiveArr(i32),
-    params: DecimalParams,
+pub const DecimalInt = enum {
+    i32,
+    i64,
+    i128,
+    i256,
+
+    pub fn to_type(comptime self: DecimalInt) type {
+        return comptime switch (self) {
+            .i32 => i32,
+            .i64 => i64,
+            .i128 => i128,
+            .i256 => i256,
+        };
+    }
 };
-pub const Decimal64Array = struct {
-    inner: PrimitiveArr(i64),
-    params: DecimalParams,
-};
-pub const Decimal128Array = struct {
-    inner: PrimitiveArr(i128),
-    params: DecimalParams,
-};
-pub const Decimal256Array = struct {
-    inner: PrimitiveArr(i256),
-    params: DecimalParams,
-};
+
+pub fn DecimalArr(comptime int: DecimalInt) type {
+    return struct {
+        inner: PrimitiveArr(int.to_type()),
+        params: DecimalParams,
+    };
+}
+
+pub const Decimal32Array = DecimalArr(.i32);
+pub const Decimal64Array = DecimalArr(.i64);
+pub const Decimal128Array = DecimalArr(.i128);
+pub const Decimal256Array = DecimalArr(.i256);
 
 pub const DictArray = struct {
     keys: *const Array,
