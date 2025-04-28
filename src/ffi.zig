@@ -88,9 +88,11 @@ fn import_binary(comptime index_type: arr.IndexType, array: *const FFI_Array) ar
 
     const validity = import_validity(array.schema.flags, buffers[0], size);
 
+    const offsets = import_buffer(index_type.to_type(), buffers[1], size + 1);
+
     return .{
-        .data = import_buffer(u8, buffers[2], size),
-        .offsets = import_buffer(index_type.to_type(), buffers[1], size + 1),
+        .data = import_buffer(u8, buffers[2], @intCast(offsets[offsets.len - 1])),
+        .offsets = offsets,
         .validity = validity,
         .len = len,
         .offset = offset,
@@ -478,7 +480,7 @@ fn import_run_end(array: *const FFI_Array, allocator: Allocator) Error!arr.RunEn
 fn import_bool(array: *const FFI_Array) arr.BoolArray {
     const buffers = array.array.buffers orelse unreachable;
 
-    std.debug.assert(array.array.n_buffers == 0);
+    std.debug.assert(array.array.n_buffers == 2);
 
     const len: u32 = @intCast(array.array.length);
     const offset: u32 = @intCast(array.array.offset);

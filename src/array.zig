@@ -180,13 +180,14 @@ pub fn BinaryArr(comptime index_type: IndexType) type {
 pub const BinaryArray = BinaryArr(.i32);
 pub const LargeBinaryArray = BinaryArr(.i64);
 
-pub const Utf8Array = struct {
-    inner: BinaryArray,
-};
+pub fn Utf8Arr(comptime index_type: IndexType) type {
+    return struct {
+        inner: BinaryArr(index_type),
+    };
+}
 
-pub const LargeUtf8Array = struct {
-    inner: LargeBinaryArray,
-};
+pub const Utf8Array = Utf8Arr(.i32);
+pub const LargeUtf8Array = Utf8Arr(.i64);
 
 pub const StructArray = struct {
     field_names: []const [:0]const u8,
@@ -239,14 +240,16 @@ pub const SparseUnionArray = struct {
     inner: UnionArr,
 };
 
-pub const Date32Array = struct {
-    inner: Int32Array,
-};
-pub const Date64Array = struct {
-    inner: Int64Array,
-};
+pub fn DateArr(comptime backing_t: IndexType) type {
+    return struct {
+        inner: PrimitiveArr(backing_t.to_type()),
+    };
+}
 
-fn TimeArr(comptime backing_t: IndexType) type {
+pub const Date32Array = DateArr(.i32);
+pub const Date64Array = DateArr(.i64);
+
+pub fn TimeArr(comptime backing_t: IndexType) type {
     const T = backing_t.to_type();
 
     const Unit = comptime switch (backing_t) {
@@ -260,14 +263,8 @@ fn TimeArr(comptime backing_t: IndexType) type {
     };
 }
 
-pub const Time32Array = struct {
-    inner: Int32Array,
-    unit: Time32Unit,
-};
-pub const Time64Array = struct {
-    inner: Int64Array,
-    unit: Time64Unit,
-};
+pub const Time32Array = TimeArr(.i32);
+pub const Time64Array = TimeArr(.i64);
 
 pub const TimestampArray = struct {
     inner: Int64Array,
