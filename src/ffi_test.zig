@@ -3,6 +3,7 @@ const ArenaAllocator = std.heap.ArenaAllocator;
 const Allocator = std.mem.Allocator;
 const testing = std.testing;
 const Random = std.Random.DefaultPrng;
+const native_endian = @import("builtin").target.cpu.arch.endian();
 
 const ffi = @import("./ffi.zig");
 const arr = @import("./array.zig");
@@ -70,14 +71,26 @@ fn make_primitive(comptime T: type, rand: *Random, allocator: Allocator) !arr.Pr
     const values = try allocator.alloc(T, len);
 
     for (0..len) |i| {
-        if (T == f16) {
-            values[i] = @floatCast(rand.random().float(f32));
-        } else {
-            switch (@typeInfo(T)) {
+        switch (T) {
+            f16 => values[i] = @floatCast(rand.random().float(f32)),
+            [2]i32 => {
+                values[i] = .{
+                    rand.random().int(i32),
+                    rand.random().int(i32),
+                };
+            },
+            arr.MonthDayNano => {
+                values[i] = arr.MonthDayNano{
+                    .days = rand.random().int(i32),
+                    .months = rand.random().int(i32),
+                    .nanoseconds = rand.random().int(i64),
+                };
+            },
+            else => switch (@typeInfo(T)) {
                 .int => values[i] = rand.random().int(T),
                 .float => values[i] = rand.random().float(T),
                 else => unreachable,
-            }
+            },
         }
     }
 
@@ -87,6 +100,24 @@ fn make_primitive(comptime T: type, rand: *Random, allocator: Allocator) !arr.Pr
         .validity = null,
         .null_count = 0,
         .values = values,
+    };
+}
+
+fn make_fixed_size_binary(rand: *Random, allocator: Allocator) !arr.FixedSizeBinaryArray {
+    const byte_width = 32;
+
+    const data = try allocator.alloc(u8, byte_width * len);
+    for (0..len) |i| {
+        rand.random().bytes(data[byte_width * i .. byte_width * (i + 1)]);
+    }
+
+    return arr.FixedSizeBinaryArray{
+        .len = len - offset,
+        .offset = offset,
+        .validity = null,
+        .null_count = 0,
+        .data = data,
+        .byte_width = byte_width,
     };
 }
 
@@ -115,6 +146,75 @@ fn make_binary(comptime index_type: arr.IndexType, rand: *Random, allocator: All
     };
 }
 
+// nanoarrow doesn't seem to fully validate binary view arrays,
+// consider the binary view construction here untested
+fn make_binary_view(rand: *Random, allocator: Allocator) !arr.BinaryViewArray {
+    const max_item_len = 30;
+    const max_buf_len = 256;
+
+    var buffers = std.ArrayListUnmanaged([*]const u8){};
+    const views = try allocator.alloc(arr.BinaryView, len);
+
+    var buf = try allocator.alloc(u8, max_buf_len);
+    var write_idx: usize = 0;
+    var buffer_idx: usize = 0;
+
+    for (0..len) |i| {
+        const item_len = rand.random().intRangeAtMost(usize, 0, max_item_len);
+
+        var item align(4) = std.mem.zeroes([max_item_len]u8);
+        rand.random().bytes(item[0..item_len]);
+
+        if (item_len <= 12) {
+            views[i] = arr.BinaryView{
+                .length = @intCast(item_len),
+                .prefix = 0,
+                .buffer_idx = 0,
+                .offset = 0,
+            };
+            @memcpy(@as([*]u8, @ptrCast(&views[i].prefix))[0..item_len], item[0..item_len]);
+        } else {
+            if (write_idx + item_len > buf.len) {
+                try buffers.append(allocator, buf.ptr);
+                buffer_idx += 1;
+                write_idx = 0;
+                buf = try allocator.alloc(u8, max_buf_len);
+            }
+
+            @memcpy(buf[write_idx .. write_idx + item_len], item[0..item_len]);
+            views[i] = arr.BinaryView{
+                .buffer_idx = @intCast(buffer_idx),
+                .offset = @intCast(write_idx),
+                .length = @intCast(item_len),
+                .prefix = @bitCast(@as(*const [4]u8, @ptrCast(&item)).*),
+            };
+            write_idx += item_len;
+        }
+
+        write_idx += item_len;
+    }
+    try buffers.append(allocator, buf.ptr);
+
+    return arr.BinaryViewArray{
+        .len = len - offset,
+        .offset = offset,
+        .validity = null,
+        .null_count = 0,
+        .views = views,
+        .buffers = buffers.items,
+    };
+}
+
+fn make_fixed_size_binary_with_validity(rand: *Random, allocator: Allocator) !arr.FixedSizeBinaryArray {
+    var a = try make_fixed_size_binary(rand, allocator);
+    const v = try make_validity(rand, allocator);
+
+    a.validity = v.validity;
+    a.null_count = v.null_count;
+
+    return a;
+}
+
 fn make_primitive_with_validity(comptime T: type, rand: *Random, allocator: Allocator) !arr.PrimitiveArr(T) {
     var a = try make_primitive(T, rand, allocator);
     const v = try make_validity(rand, allocator);
@@ -137,6 +237,16 @@ fn make_bool_with_validity(rand: *Random, allocator: Allocator) !arr.BoolArray {
 
 fn make_binary_with_validity(comptime index_type: arr.IndexType, rand: *Random, allocator: Allocator) !arr.BinaryArr(index_type) {
     var a = try make_binary(index_type, rand, allocator);
+    const v = try make_validity(rand, allocator);
+
+    a.validity = v.validity;
+    a.null_count = v.null_count;
+
+    return a;
+}
+
+fn make_binary_view_with_validity(rand: *Random, allocator: Allocator) !arr.BinaryViewArray {
+    var a = try make_binary_view(rand, allocator);
     const v = try make_validity(rand, allocator);
 
     a.validity = v.validity;
@@ -212,6 +322,59 @@ fn test_time(comptime backing_t: arr.IndexType, random: *Random) !void {
     }
 }
 
+fn test_timestamp(random: *Random) !void {
+    const timezone = "Europe/Paris";
+
+    for ([_]arr.TimestampUnit{ .second, .nanosecond, .millisecond, .microsecond }) |unit| {
+        var arena = ArenaAllocator.init(testing.allocator);
+
+        const array = init: {
+            const allocator = arena.allocator();
+            errdefer arena.deinit();
+            const inner = try make_primitive_with_validity(i64, random, allocator);
+
+            break :init arr.TimestampArray{ .inner = inner, .ts = arr.Timestamp{ .unit = unit, .timezone = timezone } };
+        };
+
+        try run_test(&arr.Array{ .timestamp = array }, arena);
+    }
+}
+
+fn test_duration(random: *Random) !void {
+    for ([_]arr.TimestampUnit{ .second, .nanosecond, .millisecond, .microsecond }) |unit| {
+        var arena = ArenaAllocator.init(testing.allocator);
+
+        const array = init: {
+            const allocator = arena.allocator();
+            errdefer arena.deinit();
+            const inner = try make_primitive_with_validity(i64, random, allocator);
+
+            break :init arr.DurationArray{
+                .inner = inner,
+                .unit = unit,
+            };
+        };
+
+        try run_test(&arr.Array{ .duration = array }, arena);
+    }
+}
+
+fn test_interval(comptime interval_type: arr.IntervalType, random: *Random) !void {
+    var arena = ArenaAllocator.init(testing.allocator);
+
+    const array = init: {
+        const allocator = arena.allocator();
+        errdefer arena.deinit();
+        const inner = try make_primitive_with_validity(interval_type.to_type(), random, allocator);
+
+        break :init arr.IntervalArr(interval_type){
+            .inner = inner,
+        };
+    };
+
+    try run_test(&@unionInit(arr.Array, "interval_" ++ @tagName(interval_type), array), arena);
+}
+
 fn test_binary(comptime index_type: arr.IndexType, random: *Random) !void {
     var arena = ArenaAllocator.init(testing.allocator);
 
@@ -259,6 +422,43 @@ fn test_bool(random: *Random) !void {
     try run_test(&arr.Array{ .bool = array }, arena);
 }
 
+fn test_binary_view(random: *Random) !void {
+    var arena = ArenaAllocator.init(testing.allocator);
+
+    const array = init: {
+        const allocator = arena.allocator();
+        errdefer arena.deinit();
+        break :init try make_binary_view_with_validity(random, allocator);
+    };
+
+    try run_test(&arr.Array{ .binary_view = array }, arena);
+}
+
+fn test_fixed_size_binary(random: *Random) !void {
+    var arena = ArenaAllocator.init(testing.allocator);
+
+    const array = init: {
+        const allocator = arena.allocator();
+        errdefer arena.deinit();
+        break :init try make_fixed_size_binary_with_validity(random, allocator);
+    };
+
+    try run_test(&arr.Array{ .fixed_size_binary = array }, arena);
+}
+
+fn test_utf8_view(random: *Random) !void {
+    var arena = ArenaAllocator.init(testing.allocator);
+
+    const array = init: {
+        const allocator = arena.allocator();
+        errdefer arena.deinit();
+        const x = try make_binary_view_with_validity(random, allocator);
+        break :init arr.Utf8ViewArray{ .inner = x };
+    };
+
+    try run_test(&arr.Array{ .utf8_view = array }, arena);
+}
+
 test "primitive roundtrip" {
     var rand = Random.init(69);
 
@@ -297,6 +497,26 @@ test "time roundtrip" {
     }
 }
 
+test "timestamp roundtrip" {
+    var rand = Random.init(12);
+
+    try test_timestamp(&rand);
+}
+
+test "duration roundtrip" {
+    var rand = Random.init(12);
+
+    try test_duration(&rand);
+}
+
+test "interval roundtrip" {
+    var rand = Random.init(60);
+
+    inline for (&[_]arr.IntervalType{ .day_time, .year_month, .month_day_nano }) |interval_type| {
+        try test_interval(interval_type, &rand);
+    }
+}
+
 test "binary roundtrip" {
     var rand = Random.init(1131);
 
@@ -321,4 +541,22 @@ test "bool roundtrip" {
 test "null roundtrip" {
     const arena = ArenaAllocator.init(testing.allocator);
     try run_test(&arr.Array{ .null = arr.NullArray{ .len = 69 } }, arena);
+}
+
+test "binary view roundtrip" {
+    var rand = Random.init(1131);
+
+    try test_binary_view(&rand);
+}
+
+test "utf8 view roundtrip" {
+    var rand = Random.init(1131);
+
+    try test_utf8_view(&rand);
+}
+
+test "fixed_size_binary roundtrip" {
+    var rand = Random.init(123123);
+
+    try test_fixed_size_binary(&rand);
 }

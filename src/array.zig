@@ -271,23 +271,35 @@ pub const TimestampArray = struct {
     ts: Timestamp,
 };
 
-pub const IntervalDayTimeArray = struct {
-    inner: PrimitiveArr([2]i32),
-};
-
 pub const MonthDayNano = extern struct {
     months: i32,
     days: i32,
     nanoseconds: i64,
 };
 
-pub const IntervalMonthDayNanoArray = struct {
-    inner: PrimitiveArr(MonthDayNano),
+pub const IntervalType = enum {
+    month_day_nano,
+    year_month,
+    day_time,
+
+    pub fn to_type(comptime self: IntervalType) type {
+        return comptime switch (self) {
+            .month_day_nano => MonthDayNano,
+            .year_month => i32,
+            .day_time => [2]i32,
+        };
+    }
 };
 
-pub const IntervalYearMonthArray = struct {
-    inner: Int32Array,
-};
+pub fn IntervalArr(comptime interval_type: IntervalType) type {
+    return struct {
+        inner: PrimitiveArr(interval_type.to_type()),
+    };
+}
+
+pub const IntervalDayTimeArray = IntervalArr(.day_time);
+pub const IntervalMonthDayNanoArray = IntervalArr(.month_day_nano);
+pub const IntervalYearMonthArray = IntervalArr(.year_month);
 
 pub const DurationArray = struct {
     inner: Int64Array,
