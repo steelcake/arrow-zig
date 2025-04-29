@@ -11,6 +11,7 @@ const Error = error{
     OutOfCapacity,
     NonNullable,
     LenCapacityMismatch,
+    InvalidSliceLength,
 };
 
 pub const BoolBuilder = struct {
@@ -104,7 +105,7 @@ pub const BoolBuilder = struct {
     }
 };
 
-pub fn PrimitiveBuilder(comptime T: type) type {
+fn PrimitiveBuilder(comptime T: type) type {
     return struct {
         const Self = @This();
 
@@ -205,6 +206,102 @@ pub const Int64Builder = PrimitiveBuilder(i64);
 pub const Float16Builder = PrimitiveBuilder(f16);
 pub const Float32Builder = PrimitiveBuilder(f32);
 pub const Float64Builder = PrimitiveBuilder(f64);
+
+pub const FixedSizeBinaryBuilder = struct {
+    const Self = FixedSizeBinaryBuilder;
+
+    data: []u8,
+    validity: ?[]u8,
+    null_count: u32,
+    len: u32,
+    capacity: u32,
+    byte_width: u32,
+
+    pub fn with_capacity(byte_width: u32, capacity: u32, nullable: bool, allocator: Allocator) Error!Self {
+        const data = try allocator.alloc(u8, byte_width * capacity);
+        @memset(data, 0);
+
+        const num_bytes = (capacity + 7) / 8;
+        var validity: ?[]u8 = null;
+        if (nullable) {
+            const v = try allocator.alloc(u8, num_bytes);
+            @memset(v, 0);
+            validity = v;
+        }
+
+        return Self{
+            .data = data,
+            .validity = validity,
+            .null_count = 0,
+            .len = 0,
+            .capacity = capacity,
+            .byte_width = byte_width,
+        };
+    }
+
+    pub fn finish(self: Self) Error!arr.FixedSizeBinaryArray {
+        std.debug.assert(self.validity != null or self.null_count == 0);
+
+        if (self.capacity != self.len) {
+            return Error.LenCapacityMismatch;
+        }
+
+        return arr.FixedSizeBinaryArray{
+            .len = self.len,
+            .offset = 0,
+            .validity = self.validity,
+            .data = self.data,
+            .null_count = self.null_count,
+            .byte_width = self.byte_width,
+        };
+    }
+
+    pub fn append_option(self: *Self, val: ?[]const u8) Error!void {
+        if (self.capacity == self.len) {
+            return Error.OutOfCapacity;
+        }
+
+        const validity = self.validity orelse return Error.NonNullable;
+
+        if (val) |v| {
+            bitmap.set(validity.ptr, self.len);
+
+            if (v.len != self.byte_width) {
+                return Error.InvalidSliceLength;
+            }
+
+            @memcpy(self.data[self.byte_width * self.len ..].ptr, v);
+        } else {
+            self.null_count += 1;
+        }
+        self.len += 1;
+    }
+
+    pub fn append_value(self: *Self, val: []const u8) Error!void {
+        if (self.capacity == self.len) {
+            return Error.OutOfCapacity;
+        }
+
+        if (self.validity) |v| {
+            bitmap.set(v.ptr, self.len);
+        }
+
+        @memcpy(self.data[self.byte_width * self.len ..].ptr, val);
+        self.len += 1;
+    }
+
+    pub fn append_null(self: *Self) Error!void {
+        if (self.capacity == self.len) {
+            return Error.OutOfCapacity;
+        }
+        if (self.validity == null) {
+            return Error.NonNullable;
+        }
+
+        self.null_count += 1;
+        self.len += 1;
+    }
+};
 
 test "bool nullable " {
     var arena = ArenaAllocator.init(testing.allocator);
@@ -338,4 +435,97 @@ test "primitive non-nullable" {
     try testing.expectEqual(0, array.offset);
     try testing.expectEqualDeep(&[_]u32{ 31, 69, 12, 12, 12, 12, 12, 12, 12, 12 }, array.values);
     try testing.expectEqual(null, array.validity);
+}
+
+test "fixed-size-binary nullable" {
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const len = 10;
+    const byte_width = 3;
+
+    var builder = try FixedSizeBinaryBuilder.with_capacity(byte_width, len, true, allocator);
+
+    try builder.append_null();
+    try builder.append_value("asd");
+    try builder.append_value("qwe");
+    try builder.append_option(null);
+    try builder.append_option("ppp");
+    try builder.append_option("xyz");
+
+    try testing.expectEqual(Error.LenCapacityMismatch, builder.finish());
+
+    for (0..4) |_| {
+        try builder.append_null();
+    }
+
+    try testing.expectEqual(Error.OutOfCapacity, builder.append_null());
+    try testing.expectEqual(Error.OutOfCapacity, builder.append_value("asd"));
+    try testing.expectEqual(Error.OutOfCapacity, builder.append_option(null));
+
+    const array = try builder.finish();
+
+    try testing.expectEqual(len, array.len);
+    try testing.expectEqual(6, array.null_count);
+    try testing.expectEqual(0, array.offset);
+    try testing.expectEqualDeep(&[_]u8{
+        0,   0,   0,
+        'a', 's', 'd',
+        'q', 'w', 'e',
+        0,   0,   0,
+        'p', 'p', 'p',
+        'x', 'y', 'z',
+        0,   0,   0,
+        0,   0,   0,
+        0,   0,   0,
+        0,   0,   0,
+    }, array.data);
+    try testing.expectEqualDeep(&[_]u8{ 0b00110110, 0 }, array.validity.?);
+    try testing.expectEqual(byte_width, array.byte_width);
+}
+
+test "fixed-size-binary non-nullable" {
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const len = 10;
+    const byte_width = 3;
+
+    var builder = try FixedSizeBinaryBuilder.with_capacity(byte_width, len, false, allocator);
+
+    try testing.expectEqual(Error.NonNullable, builder.append_null());
+    try testing.expectEqual(Error.NonNullable, builder.append_option(null));
+
+    try builder.append_value("asd");
+    try builder.append_value("qwe");
+
+    try testing.expectEqual(Error.LenCapacityMismatch, builder.finish());
+
+    for (0..8) |_| {
+        try builder.append_value("xyz");
+    }
+
+    try testing.expectEqual(Error.OutOfCapacity, builder.append_value("691"));
+
+    const array = try builder.finish();
+
+    try testing.expectEqual(len, array.len);
+    try testing.expectEqual(0, array.null_count);
+    try testing.expectEqual(0, array.offset);
+    try testing.expectEqualDeep(&[_]u8{
+        'a', 's', 'd',
+        'q', 'w', 'e',
+        'x', 'y', 'z',
+        'x', 'y', 'z',
+        'x', 'y', 'z',
+        'x', 'y', 'z',
+        'x', 'y', 'z',
+        'x', 'y', 'z',
+        'x', 'y', 'z',
+        'x', 'y', 'z',
+    }, array.data);
+    try testing.expectEqual(null, array.validity);
+    try testing.expectEqual(byte_width, array.byte_width);
 }
