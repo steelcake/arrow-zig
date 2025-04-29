@@ -264,12 +264,11 @@ pub const FixedSizeBinaryBuilder = struct {
         const validity = self.validity orelse return Error.NonNullable;
 
         if (val) |v| {
-            bitmap.set(validity.ptr, self.len);
-
             if (v.len != self.byte_width) {
                 return Error.InvalidSliceLength;
             }
 
+            bitmap.set(validity.ptr, self.len);
             @memcpy(self.data[self.byte_width * self.len ..].ptr, v);
         } else {
             self.null_count += 1;
@@ -280,6 +279,9 @@ pub const FixedSizeBinaryBuilder = struct {
     pub fn append_value(self: *Self, val: []const u8) Error!void {
         if (self.capacity == self.len) {
             return Error.OutOfCapacity;
+        }
+        if (val.len != self.byte_width) {
+            return Error.InvalidSliceLength;
         }
 
         if (self.validity) |v| {
@@ -447,6 +449,9 @@ test "fixed-size-binary nullable" {
 
     var builder = try FixedSizeBinaryBuilder.with_capacity(byte_width, len, true, allocator);
 
+    try testing.expectEqual(Error.InvalidSliceLength, builder.append_value("1131"));
+    try testing.expectEqual(Error.InvalidSliceLength, builder.append_option("1131"));
+
     try builder.append_null();
     try builder.append_value("asd");
     try builder.append_value("qwe");
@@ -494,6 +499,8 @@ test "fixed-size-binary non-nullable" {
     const byte_width = 3;
 
     var builder = try FixedSizeBinaryBuilder.with_capacity(byte_width, len, false, allocator);
+
+    try testing.expectEqual(Error.InvalidSliceLength, builder.append_value("1131"));
 
     try testing.expectEqual(Error.NonNullable, builder.append_null());
     try testing.expectEqual(Error.NonNullable, builder.append_option(null));
