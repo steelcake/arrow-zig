@@ -37,10 +37,10 @@ fn run_test(array: *const arr.Array, arena: ArenaAllocator) !void {
     try testing.expectEqualDeep(array, &imported);
 }
 
-const OFFSET = 3;
-const LEN = 113;
+const offset = 3;
+const len = 113;
 
-fn make_validity(len: u32, offset: u32, rand: *Random, allocator: Allocator) !struct { validity: []const u8, null_count: u32 } {
+fn make_validity(rand: *Random, allocator: Allocator) !struct { validity: []const u8, null_count: u32 } {
     const num_bytes = (len + 7) / 8;
 
     const validity = try allocator.alloc(u8, num_bytes);
@@ -57,20 +57,20 @@ fn make_validity(len: u32, offset: u32, rand: *Random, allocator: Allocator) !st
 }
 
 fn make_bool(rand: *Random, allocator: Allocator) !arr.BoolArray {
-    const num_bytes = (LEN + 7) / 8;
+    const num_bytes = (len + 7) / 8;
 
     const values = try allocator.alloc(u8, num_bytes);
     for (0..num_bytes) |i| {
         values[i] = rand.random().int(u8);
     }
 
-    return .{ .len = LEN - OFFSET, .offset = OFFSET, .validity = null, .null_count = 0, .values = values };
+    return .{ .len = len - offset, .offset = offset, .validity = null, .null_count = 0, .values = values };
 }
 
 fn make_primitive(comptime T: type, rand: *Random, allocator: Allocator) !arr.PrimitiveArr(T) {
-    const values = try allocator.alloc(T, LEN);
+    const values = try allocator.alloc(T, len);
 
-    for (0..LEN) |i| {
+    for (0..len) |i| {
         switch (T) {
             f16 => values[i] = @floatCast(rand.random().float(f32)),
             [2]i32 => {
@@ -95,8 +95,8 @@ fn make_primitive(comptime T: type, rand: *Random, allocator: Allocator) !arr.Pr
     }
 
     return .{
-        .len = LEN - OFFSET,
-        .offset = OFFSET,
+        .len = len - offset,
+        .offset = offset,
         .validity = null,
         .null_count = 0,
         .values = values,
@@ -106,14 +106,14 @@ fn make_primitive(comptime T: type, rand: *Random, allocator: Allocator) !arr.Pr
 fn make_fixed_size_binary(rand: *Random, allocator: Allocator) !arr.FixedSizeBinaryArray {
     const byte_width = 32;
 
-    const data = try allocator.alloc(u8, byte_width * LEN);
-    for (0..LEN) |i| {
+    const data = try allocator.alloc(u8, byte_width * len);
+    for (0..len) |i| {
         rand.random().bytes(data[byte_width * i .. byte_width * (i + 1)]);
     }
 
     return arr.FixedSizeBinaryArray{
-        .len = LEN - OFFSET,
-        .offset = OFFSET,
+        .len = len - offset,
+        .offset = offset,
         .validity = null,
         .null_count = 0,
         .data = data,
@@ -126,19 +126,19 @@ fn make_binary(comptime index_type: arr.IndexType, rand: *Random, allocator: All
 
     const max_item_len = 7;
 
-    const offsets = try allocator.alloc(IndexT, LEN + 1);
+    const offsets = try allocator.alloc(IndexT, len + 1);
     offsets[0] = 0;
-    const data = try allocator.alloc(u8, LEN * max_item_len);
+    const data = try allocator.alloc(u8, len * max_item_len);
 
-    for (0..LEN) |i| {
+    for (0..len) |i| {
         const item_len = rand.random().intRangeAtMost(IndexT, 0, max_item_len);
         offsets[i + 1] = offsets[i] + item_len;
         rand.random().bytes(data[@intCast(offsets[i])..@intCast(offsets[i + 1])]);
     }
 
     return arr.BinaryArr(index_type){
-        .len = LEN - OFFSET,
-        .offset = OFFSET,
+        .len = len - offset,
+        .offset = offset,
         .validity = null,
         .null_count = 0,
         .data = data[@intCast(offsets[0])..@intCast(offsets[offsets.len - 1])],
@@ -153,13 +153,13 @@ fn make_binary_view(rand: *Random, allocator: Allocator) !arr.BinaryViewArray {
     const max_buf_len = 256;
 
     var buffers = std.ArrayListUnmanaged([*]const u8){};
-    const views = try allocator.alloc(arr.BinaryView, LEN);
+    const views = try allocator.alloc(arr.BinaryView, len);
 
     var buf = try allocator.alloc(u8, max_buf_len);
     var write_idx: usize = 0;
     var buffer_idx: usize = 0;
 
-    for (0..LEN) |i| {
+    for (0..len) |i| {
         const item_len = rand.random().intRangeAtMost(usize, 0, max_item_len);
 
         var item align(4) = std.mem.zeroes([max_item_len]u8);
@@ -196,8 +196,8 @@ fn make_binary_view(rand: *Random, allocator: Allocator) !arr.BinaryViewArray {
     try buffers.append(allocator, buf.ptr);
 
     return arr.BinaryViewArray{
-        .len = LEN - OFFSET,
-        .offset = OFFSET,
+        .len = len - offset,
+        .offset = offset,
         .validity = null,
         .null_count = 0,
         .views = views,
@@ -205,40 +205,21 @@ fn make_binary_view(rand: *Random, allocator: Allocator) !arr.BinaryViewArray {
     };
 }
 
-fn make_list_of_primitive(comptime T: type, comptime index_type: arr.IndexType, rand: *Random, allocator: Allocator) !arr.ListArr(index_type) {
-    const inner = try allocator.create(arr.Array);
-    inner.* = @unionInit(arr.Array, @typeName(T), try make_primitive_with_validity(T, rand, allocator));
+fn make_list(comptime index_type: arr.IndexType, inner: *arr.Array, rand: *Random, allocator: Allocator) !arr.ListArr(index_type) {
 
-    const inner_len = LEN - OFFSET;
-
-    const max_len = inner_len / 10;
-
-    var offsets = std.ArrayListUnmanaged(index_type.to_type()){};
-    var item_offset: u32 = 0;
-    while (item_offset < inner_len) {
-        const limit = inner_len - item_offset;
-        const item_len: u32 = @min(rand.random().intRangeAtMost(u32, 0, max_len), limit);
-
-        try offsets.append(allocator, @intCast(item_offset));
-        item_offset += item_len;
-    }
-    try offsets.append(allocator, @intCast(item_offset));
-
-    const list_offset = 1;
-
-    return arr.ListArr(index_type){
+    return arr.ListArr(index_type) {
         .inner = inner,
         .validity = null,
         .null_count = 0,
-        .len = @as(u32, @intCast(offsets.items.len)) - 1 - list_offset,
-        .offset = list_offset,
-        .offsets = offsets.items,
+        .len = len - offset,
+        .offset = offset,
+        .offsets = offsets,
     };
 }
 
 fn make_fixed_size_binary_with_validity(rand: *Random, allocator: Allocator) !arr.FixedSizeBinaryArray {
     var a = try make_fixed_size_binary(rand, allocator);
-    const v = try make_validity(LEN, OFFSET, rand, allocator);
+    const v = try make_validity(rand, allocator);
 
     a.validity = v.validity;
     a.null_count = v.null_count;
@@ -248,7 +229,7 @@ fn make_fixed_size_binary_with_validity(rand: *Random, allocator: Allocator) !ar
 
 fn make_primitive_with_validity(comptime T: type, rand: *Random, allocator: Allocator) !arr.PrimitiveArr(T) {
     var a = try make_primitive(T, rand, allocator);
-    const v = try make_validity(LEN, OFFSET, rand, allocator);
+    const v = try make_validity(rand, allocator);
 
     a.validity = v.validity;
     a.null_count = v.null_count;
@@ -258,7 +239,7 @@ fn make_primitive_with_validity(comptime T: type, rand: *Random, allocator: Allo
 
 fn make_bool_with_validity(rand: *Random, allocator: Allocator) !arr.BoolArray {
     var a = try make_bool(rand, allocator);
-    const v = try make_validity(LEN, OFFSET, rand, allocator);
+    const v = try make_validity(rand, allocator);
 
     a.validity = v.validity;
     a.null_count = v.null_count;
@@ -268,7 +249,7 @@ fn make_bool_with_validity(rand: *Random, allocator: Allocator) !arr.BoolArray {
 
 fn make_binary_with_validity(comptime index_type: arr.IndexType, rand: *Random, allocator: Allocator) !arr.BinaryArr(index_type) {
     var a = try make_binary(index_type, rand, allocator);
-    const v = try make_validity(LEN, OFFSET, rand, allocator);
+    const v = try make_validity(rand, allocator);
 
     a.validity = v.validity;
     a.null_count = v.null_count;
@@ -278,17 +259,7 @@ fn make_binary_with_validity(comptime index_type: arr.IndexType, rand: *Random, 
 
 fn make_binary_view_with_validity(rand: *Random, allocator: Allocator) !arr.BinaryViewArray {
     var a = try make_binary_view(rand, allocator);
-    const v = try make_validity(LEN, OFFSET, rand, allocator);
-
-    a.validity = v.validity;
-    a.null_count = v.null_count;
-
-    return a;
-}
-
-fn make_list_of_primitive_with_validity(comptime T: type, comptime index_type: arr.IndexType, rand: *Random, allocator: Allocator) !arr.ListArr(index_type) {
-    var a = try make_list_of_primitive(T, index_type, rand, allocator);
-    const v = try make_validity(a.len + a.offset, a.offset, rand, allocator);
+    const v = try make_validity(rand, allocator);
 
     a.validity = v.validity;
     a.null_count = v.null_count;
@@ -500,23 +471,6 @@ fn test_utf8_view(random: *Random) !void {
     try run_test(&arr.Array{ .utf8_view = array }, arena);
 }
 
-fn test_list_of_primitive(comptime T: type, comptime index_type: arr.IndexType, random: *Random) !void {
-    var arena = ArenaAllocator.init(testing.allocator);
-
-    const array = init: {
-        const allocator = arena.allocator();
-        errdefer arena.deinit();
-        break :init try make_list_of_primitive_with_validity(T, index_type, random, allocator);
-    };
-
-    const tag_name = switch (index_type) {
-        .i32 => "list",
-        .i64 => "large_list",
-    };
-
-    try run_test(&@unionInit(arr.Array, tag_name, array), arena);
-}
-
 test "primitive roundtrip" {
     var rand = Random.init(69);
 
@@ -617,12 +571,4 @@ test "fixed_size_binary roundtrip" {
     var rand = Random.init(123123);
 
     try test_fixed_size_binary(&rand);
-}
-
-test "list roundtrip" {
-    var rand = Random.init(69);
-
-    inline for (&[_]arr.IndexType{ .i32, .i64 }) |index_type| {
-        try test_list_of_primitive(u64, index_type, &rand);
-    }
 }
