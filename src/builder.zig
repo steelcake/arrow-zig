@@ -305,6 +305,47 @@ pub const FixedSizeBinaryBuilder = struct {
     }
 };
 
+pub fn DecimalBuilder(comptime int: arr.DecimalInt) type {
+    return struct {
+        const Self = @This();
+        const T = int.to_type();
+
+        inner: PrimitiveBuilder(T),
+        params: arr.DecimalParams,
+
+        pub fn with_capacity(params: arr.DecimalParams, capacity: u32, nullable: bool, allocator: Allocator) Error!Self {
+            return Self{
+                .inner = try PrimitiveBuilder(T).with_capacity(capacity, nullable, allocator),
+                .params = params,
+            };
+        }
+
+        pub fn finish(self: Self) Error!arr.DecimalArr(int) {
+            return arr.DecimalArr(int){
+                .inner = try self.inner.finish(),
+                .params = self.params,
+            };
+        }
+
+        pub fn append_option(self: *Self, val: ?T) Error!void {
+            self.inner.append_option(val);
+        }
+
+        pub fn append_value(self: *Self, val: T) Error!void {
+            self.inner.append_value(val);
+        }
+
+        pub fn append_null(self: *Self) Error!void {
+            self.inner.append_null();
+        }
+    };
+}
+
+pub const Decimal32Builder = DecimalBuilder(.i32);
+pub const Decimal64Builder = DecimalBuilder(.i64);
+pub const Decimal128Builder = DecimalBuilder(.i128);
+pub const Decimal256Builder = DecimalBuilder(.i256);
+
 test "bool nullable " {
     var arena = ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
