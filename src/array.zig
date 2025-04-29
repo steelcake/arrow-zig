@@ -90,15 +90,6 @@ pub fn PrimitiveArr(comptime T: type) type {
     };
 }
 
-pub const FixedSizeBinaryArray = struct {
-    data: []const u8,
-    validity: ?[]const u8,
-    byte_width: u32,
-    len: u32,
-    offset: u32,
-    null_count: u32,
-};
-
 pub const UInt8Array = PrimitiveArr(u8);
 pub const UInt16Array = PrimitiveArr(u16);
 pub const UInt32Array = PrimitiveArr(u32);
@@ -110,6 +101,15 @@ pub const Int64Array = PrimitiveArr(i64);
 pub const Float16Array = PrimitiveArr(f16);
 pub const Float32Array = PrimitiveArr(f32);
 pub const Float64Array = PrimitiveArr(f64);
+
+pub const FixedSizeBinaryArray = struct {
+    data: []const u8,
+    validity: ?[]const u8,
+    byte_width: u32,
+    len: u32,
+    offset: u32,
+    null_count: u32,
+};
 
 pub const DecimalInt = enum {
     i32,
