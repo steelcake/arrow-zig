@@ -117,7 +117,7 @@ fn PrimitiveBuilder(comptime T: type) type {
 
         pub fn with_capacity(capacity: u32, nullable: bool, allocator: Allocator) Error!Self {
             const values = try allocator.alloc(T, capacity);
-            @memset(values, 0);
+            @memset(@as([]u8, @ptrCast(values)), 0);
 
             const num_bytes = (capacity + 7) / 8;
             var validity: ?[]u8 = null;
@@ -495,6 +495,186 @@ pub fn GenericUtf8Builder(comptime index_type: arr.IndexType) type {
 
 pub const Utf8Builder = GenericUtf8Builder(.i32);
 pub const LargeUtf8Builder = GenericUtf8Builder(.i64);
+
+pub fn DateBuilder(comptime backing_t: arr.IndexType) type {
+    return struct {
+        const Self = @This();
+        const T = backing_t.to_type();
+
+        inner: PrimitiveBuilder(T),
+
+        pub fn with_capacity(capacity: u32, nullable: bool, allocator: Allocator) Error!Self {
+            return Self{
+                .inner = try PrimitiveBuilder(T).with_capacity(capacity, nullable, allocator),
+            };
+        }
+
+        pub fn finish(self: Self) Error!arr.DateArray(backing_t) {
+            return arr.DateArray(backing_t){
+                .inner = try self.inner.finish(),
+            };
+        }
+
+        pub fn append_option(self: *Self, val: ?T) Error!void {
+            try self.inner.append_option(val);
+        }
+
+        pub fn append_value(self: *Self, val: T) Error!void {
+            try self.inner.append_value(val);
+        }
+
+        pub fn append_null(self: *Self) Error!void {
+            try self.inner.append_null();
+        }
+    };
+}
+
+pub const Date32Builder = DateBuilder(.i32);
+pub const Date64Builder = DateBuilder(.i64);
+
+pub fn TimeBuilder(comptime backing_t: arr.IndexType) type {
+    return struct {
+        const Self = @This();
+        const Inner = arr.TimeArray(backing_t);
+        const T = backing_t.to_type();
+
+        inner: PrimitiveBuilder(T),
+        unit: Inner.Unit,
+
+        pub fn with_capacity(unit: Inner.Unit, capacity: u32, nullable: bool, allocator: Allocator) Error!Self {
+            return Self{
+                .inner = try PrimitiveBuilder(T).with_capacity(capacity, nullable, allocator),
+                .unit = unit,
+            };
+        }
+
+        pub fn finish(self: Self) Error!Inner {
+            return Inner{
+                .inner = try self.inner.finish(),
+                .unit = self.unit,
+            };
+        }
+
+        pub fn append_option(self: *Self, val: ?T) Error!void {
+            try self.inner.append_option(val);
+        }
+
+        pub fn append_value(self: *Self, val: T) Error!void {
+            try self.inner.append_value(val);
+        }
+
+        pub fn append_null(self: *Self) Error!void {
+            try self.inner.append_null();
+        }
+    };
+}
+
+pub const Time32Builder = TimeBuilder(.i32);
+pub const Time64Builder = TimeBuilder(.i64);
+
+pub const TimestampBuilder = struct {
+    const Self = @This();
+
+    inner: Int64Builder,
+    ts: arr.Timestamp,
+
+    pub fn with_capacity(ts: arr.Timestamp, capacity: u32, nullable: bool, allocator: Allocator) Error!Self {
+        return Self{
+            .inner = try Int64Builder.with_capacity(capacity, nullable, allocator),
+            .ts = ts,
+        };
+    }
+
+    pub fn finish(self: Self) Error!arr.TimestampArray {
+        return arr.TimestampArray{
+            .inner = try self.inner.finish(),
+            .ts = self.ts,
+        };
+    }
+
+    pub fn append_option(self: *Self, val: ?i64) Error!void {
+        try self.inner.append_option(val);
+    }
+
+    pub fn append_value(self: *Self, val: i64) Error!void {
+        try self.inner.append_value(val);
+    }
+
+    pub fn append_null(self: *Self) Error!void {
+        try self.inner.append_null();
+    }
+};
+
+pub fn IntervalBuilder(comptime interval_type: arr.IntervalType) type {
+    return struct {
+        const Self = @This();
+
+        const T = interval_type.to_type();
+
+        inner: PrimitiveBuilder(T),
+
+        pub fn with_capacity(capacity: u32, nullable: bool, allocator: Allocator) Error!Self {
+            return Self{
+                .inner = try PrimitiveBuilder(T).with_capacity(capacity, nullable, allocator),
+            };
+        }
+
+        pub fn finish(self: Self) Error!arr.IntervalArray(interval_type) {
+            return arr.IntervalArray(interval_type){
+                .inner = try self.inner.finish(),
+            };
+        }
+
+        pub fn append_option(self: *Self, val: ?T) Error!void {
+            try self.inner.append_option(val);
+        }
+
+        pub fn append_value(self: *Self, val: T) Error!void {
+            try self.inner.append_value(val);
+        }
+
+        pub fn append_null(self: *Self) Error!void {
+            try self.inner.append_null();
+        }
+    };
+}
+
+pub const IntervalDayTimeBuilder = IntervalBuilder(.day_time);
+pub const IntervalMonthDayNanoBuilder = IntervalBuilder(.month_day_nano);
+pub const IntervalYearMonthBuilder = IntervalBuilder(.year_month);
+
+pub const DurationBuilder = struct {
+    const Self = @This();
+
+    inner: Int64Builder,
+    unit: arr.TimestampUnit,
+
+    pub fn with_capacity(unit: arr.TimestampUnit, capacity: u32, nullable: bool, allocator: Allocator) Error!Self {
+        return Self{
+            .inner = try Int64Builder.with_capacity(capacity, nullable, allocator),
+            .unit = unit,
+        };
+    }
+
+    pub fn finish(self: Self) Error!arr.DurationArray {
+        return arr.DurationArray{
+            .inner = try self.inner.finish(),
+            .unit = self.unit,
+        };
+    }
+
+    pub fn append_option(self: *Self, val: ?i64) Error!void {
+        try self.inner.append_option(val);
+    }
+
+    pub fn append_value(self: *Self, val: i64) Error!void {
+        try self.inner.append_value(val);
+    }
+
+    pub fn append_null(self: *Self) Error!void {
+        try self.inner.append_null();
+    }
+};
 
 test "bool empty" {
     var arena = ArenaAllocator.init(testing.allocator);
@@ -938,6 +1118,85 @@ test "utf8 smoke" {
 
     try testing.expectEqual(Error.OutOfCapacity, builder.append_null());
     try testing.expectEqual(Error.OutOfCapacity, builder.append_value("12312312312"));
+    try testing.expectEqual(Error.OutOfCapacity, builder.append_option(null));
+
+    const array = try builder.finish();
+    _ = array;
+}
+
+test "date smoke" {
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var builder = try DateBuilder(.i32).with_capacity(0, true, allocator);
+
+    try testing.expectEqual(Error.OutOfCapacity, builder.append_null());
+    try testing.expectEqual(Error.OutOfCapacity, builder.append_value(21312));
+    try testing.expectEqual(Error.OutOfCapacity, builder.append_option(null));
+
+    const array = try builder.finish();
+    _ = array;
+}
+
+test "time smoke" {
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var builder = try TimeBuilder(.i32).with_capacity(.second, 0, true, allocator);
+
+    try testing.expectEqual(Error.OutOfCapacity, builder.append_null());
+    try testing.expectEqual(Error.OutOfCapacity, builder.append_value(21312));
+    try testing.expectEqual(Error.OutOfCapacity, builder.append_option(null));
+
+    const array = try builder.finish();
+    _ = array;
+}
+
+test "timestamp smoke" {
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var builder = try TimestampBuilder.with_capacity(arr.Timestamp{ .unit = .second, .timezone = "Europe/Paris" }, 0, true, allocator);
+
+    try testing.expectEqual(Error.OutOfCapacity, builder.append_null());
+    try testing.expectEqual(Error.OutOfCapacity, builder.append_value(21312));
+    try testing.expectEqual(Error.OutOfCapacity, builder.append_option(null));
+
+    const array = try builder.finish();
+    _ = array;
+}
+
+test "interval smoke" {
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var builder = try IntervalMonthDayNanoBuilder.with_capacity(0, true, allocator);
+
+    try testing.expectEqual(Error.OutOfCapacity, builder.append_null());
+    try testing.expectEqual(Error.OutOfCapacity, builder.append_value(arr.MonthDayNano{
+        .days = 69,
+        .months = 31,
+        .nanoseconds = 1131,
+    }));
+    try testing.expectEqual(Error.OutOfCapacity, builder.append_option(null));
+
+    const array = try builder.finish();
+    _ = array;
+}
+
+test "duration smoke" {
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var builder = try DurationBuilder.with_capacity(.second, 0, true, allocator);
+
+    try testing.expectEqual(Error.OutOfCapacity, builder.append_null());
+    try testing.expectEqual(Error.OutOfCapacity, builder.append_value(21312));
     try testing.expectEqual(Error.OutOfCapacity, builder.append_option(null));
 
     const array = try builder.finish();

@@ -252,12 +252,12 @@ pub const Date64Array = DateArray(.i64);
 pub fn TimeArray(comptime backing_t: IndexType) type {
     const T = backing_t.to_type();
 
-    const Unit = comptime switch (backing_t) {
-        .i32 => Time32Unit,
-        .i64 => Time64Unit,
-    };
-
     return struct {
+        pub const Unit = switch (backing_t) {
+            .i32 => Time32Unit,
+            .i64 => Time64Unit,
+        };
+
         inner: PrimitiveArray(T),
         unit: Unit,
     };
