@@ -5,6 +5,7 @@ const ArenaAllocator = std.heap.ArenaAllocator;
 
 const arr = @import("./array.zig");
 const bitmap = @import("./bitmap.zig");
+const length = @import("./length.zig").length;
 
 const Error = error{
     OutOfMemory,
@@ -326,15 +327,15 @@ pub fn DecimalBuilder(comptime int: arr.DecimalInt) type {
         }
 
         pub fn append_option(self: *Self, val: ?T) Error!void {
-            self.inner.append_option(val);
+            try self.inner.append_option(val);
         }
 
         pub fn append_value(self: *Self, val: T) Error!void {
-            self.inner.append_value(val);
+            try self.inner.append_value(val);
         }
 
         pub fn append_null(self: *Self) Error!void {
-            self.inner.append_null();
+            try self.inner.append_null();
         }
     };
 }
@@ -460,6 +461,41 @@ pub fn GenericBinaryBuilder(comptime index_type: arr.IndexType) type {
 pub const BinaryBuilder = GenericBinaryBuilder(.i32);
 pub const LargeBinaryBuilder = GenericBinaryBuilder(.i64);
 
+pub fn GenericUtf8Builder(comptime index_type: arr.IndexType) type {
+    return struct {
+        const Self = @This();
+
+        inner: GenericBinaryBuilder(index_type),
+
+        pub fn with_capacity(data_capacity: u32, capacity: u32, nullable: bool, allocator: Allocator) Error!Self {
+            return Self{
+                .inner = try GenericBinaryBuilder(index_type).with_capacity(data_capacity, capacity, nullable, allocator),
+            };
+        }
+
+        pub fn finish(self: Self) Error!arr.GenericUtf8Array(index_type) {
+            return arr.GenericUtf8Array(index_type){
+                .inner = try self.inner.finish(),
+            };
+        }
+
+        pub fn append_option(self: *Self, val: ?[]const u8) Error!void {
+            try self.inner.append_option(val);
+        }
+
+        pub fn append_value(self: *Self, val: []const u8) Error!void {
+            try self.inner.append_value(val);
+        }
+
+        pub fn append_null(self: *Self) Error!void {
+            try self.inner.append_null();
+        }
+    };
+}
+
+pub const Utf8Builder = GenericUtf8Builder(.i32);
+pub const LargeUtf8Builder = GenericUtf8Builder(.i64);
+
 test "bool empty" {
     var arena = ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
@@ -479,7 +515,7 @@ test "bool empty" {
     try testing.expectEqualDeep(&[_]u8{}, array.validity.?);
 }
 
-test "bool nullable " {
+test "bool nullable" {
     var arena = ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     const allocator = arena.allocator();
@@ -752,6 +788,21 @@ test "fixed-size-binary non-nullable" {
     try testing.expectEqual(byte_width, array.byte_width);
 }
 
+test "decimal smoke" {
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var builder = try DecimalBuilder(.i128).with_capacity(.{ .precision = 69, .scale = 31 }, 0, true, allocator);
+
+    try testing.expectEqual(Error.OutOfCapacity, builder.append_null());
+    try testing.expectEqual(Error.OutOfCapacity, builder.append_value(12312312312));
+    try testing.expectEqual(Error.OutOfCapacity, builder.append_option(null));
+
+    const array = try builder.finish();
+    _ = array;
+}
+
 fn test_binary_empty(comptime index_type: arr.IndexType) !void {
     var arena = ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
@@ -876,4 +927,19 @@ fn test_binary_non_nullable(comptime index_type: arr.IndexType) !void {
 test "binary non-nullable" {
     try test_binary_non_nullable(.i32);
     try test_binary_non_nullable(.i64);
+}
+
+test "utf8 smoke" {
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var builder = try Utf8Builder.with_capacity(0, 0, true, allocator);
+
+    try testing.expectEqual(Error.OutOfCapacity, builder.append_null());
+    try testing.expectEqual(Error.OutOfCapacity, builder.append_value("12312312312"));
+    try testing.expectEqual(Error.OutOfCapacity, builder.append_option(null));
+
+    const array = try builder.finish();
+    _ = array;
 }
