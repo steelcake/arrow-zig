@@ -764,6 +764,36 @@ pub const BinaryViewBuilder = struct {
     }
 };
 
+pub const Utf8ViewBuilder = struct {
+    const Self = @This();
+
+    inner: BinaryViewBuilder,
+
+    pub fn with_capacity(buffer_capacity: u32, capacity: u32, nullable: bool, allocator: Allocator) Error!Self {
+        return Self{
+            .inner = try BinaryViewBuilder.with_capacity(buffer_capacity, capacity, nullable, allocator),
+        };
+    }
+
+    pub fn finish(self: Self) Error!arr.Utf8ViewArray {
+        return arr.Utf8ViewArray{
+            .inner = try self.inner.finish(),
+        };
+    }
+
+    pub fn append_option(self: *Self, val: ?[]const u8) Error!void {
+        try self.inner.append_option(val);
+    }
+
+    pub fn append_value(self: *Self, val: []const u8) Error!void {
+        try self.inner.append_value(val);
+    }
+
+    pub fn append_null(self: *Self) Error!void {
+        try self.inner.append_null();
+    }
+};
+
 test "bool empty" {
     var arena = ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
@@ -1472,4 +1502,19 @@ test "binary-view non-nullable" {
         zero_view,
         zero_view,
     }, array.views);
+}
+
+test "utf8-view smoke" {
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var builder = try Utf8ViewBuilder.with_capacity(0, 0, true, allocator);
+
+    try testing.expectEqual(Error.OutOfCapacity, builder.append_null());
+    try testing.expectEqual(Error.OutOfCapacity, builder.append_value("12312312312"));
+    try testing.expectEqual(Error.OutOfCapacity, builder.append_option(null));
+
+    const array = try builder.finish();
+    _ = array;
 }
