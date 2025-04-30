@@ -113,7 +113,6 @@ fn PrimitiveBuilder(comptime T: type) type {
         validity: ?[]u8,
         null_count: u32,
         len: u32,
-        capacity: u32,
 
         pub fn with_capacity(capacity: u32, nullable: bool, allocator: Allocator) Error!Self {
             const values = try allocator.alloc(T, capacity);
@@ -132,18 +131,17 @@ fn PrimitiveBuilder(comptime T: type) type {
                 .validity = validity,
                 .null_count = 0,
                 .len = 0,
-                .capacity = capacity,
             };
         }
 
-        pub fn finish(self: Self) Error!arr.PrimitiveArr(T) {
+        pub fn finish(self: Self) Error!arr.PrimitiveArray(T) {
             std.debug.assert(self.validity != null or self.null_count == 0);
 
-            if (self.capacity != self.len) {
+            if (self.values.len != self.len) {
                 return Error.LenCapacityMismatch;
             }
 
-            return arr.PrimitiveArr(T){
+            return arr.PrimitiveArray(T){
                 .len = self.len,
                 .offset = 0,
                 .validity = self.validity,
@@ -153,7 +151,7 @@ fn PrimitiveBuilder(comptime T: type) type {
         }
 
         pub fn append_option(self: *Self, val: ?T) Error!void {
-            if (self.capacity == self.len) {
+            if (self.values.len == self.len) {
                 return Error.OutOfCapacity;
             }
 
@@ -169,7 +167,7 @@ fn PrimitiveBuilder(comptime T: type) type {
         }
 
         pub fn append_value(self: *Self, val: T) Error!void {
-            if (self.capacity == self.len) {
+            if (self.values.len == self.len) {
                 return Error.OutOfCapacity;
             }
 
@@ -182,7 +180,7 @@ fn PrimitiveBuilder(comptime T: type) type {
         }
 
         pub fn append_null(self: *Self) Error!void {
-            if (self.capacity == self.len) {
+            if (self.values.len == self.len) {
                 return Error.OutOfCapacity;
             }
             if (self.validity == null) {
@@ -320,8 +318,8 @@ pub fn DecimalBuilder(comptime int: arr.DecimalInt) type {
             };
         }
 
-        pub fn finish(self: Self) Error!arr.DecimalArr(int) {
-            return arr.DecimalArr(int){
+        pub fn finish(self: Self) Error!arr.DecimalArray(int) {
+            return arr.DecimalArray(int){
                 .inner = try self.inner.finish(),
                 .params = self.params,
             };
@@ -345,6 +343,141 @@ pub const Decimal32Builder = DecimalBuilder(.i32);
 pub const Decimal64Builder = DecimalBuilder(.i64);
 pub const Decimal128Builder = DecimalBuilder(.i128);
 pub const Decimal256Builder = DecimalBuilder(.i256);
+
+pub fn GenericBinaryBuilder(comptime index_type: arr.IndexType) type {
+    return struct {
+        const Self = @This();
+        const I = index_type.to_type();
+
+        data: []u8,
+        offsets: []I,
+        validity: ?[]u8,
+        null_count: u32,
+        len: u32,
+        data_len: u32,
+        capacity: u32,
+
+        pub fn with_capacity(data_capacity: u32, capacity: u32, nullable: bool, allocator: Allocator) Error!Self {
+            const data = try allocator.alloc(u8, data_capacity);
+            @memset(data, 0);
+
+            const num_bytes = (capacity + 7) / 8;
+            var validity: ?[]u8 = null;
+            if (nullable) {
+                const v = try allocator.alloc(u8, num_bytes);
+                @memset(v, 0);
+                validity = v;
+            }
+
+            const offsets = try allocator.alloc(I, capacity + 1);
+            @memset(offsets, 0);
+
+            return Self{
+                .data = data,
+                .validity = validity,
+                .null_count = 0,
+                .len = 0,
+                .data_len = 0,
+                .capacity = capacity,
+                .offsets = offsets,
+            };
+        }
+
+        pub fn finish(self: Self) Error!arr.GenericBinaryArray(index_type) {
+            std.debug.assert(self.validity != null or self.null_count == 0);
+
+            if (self.capacity != self.len) {
+                return Error.LenCapacityMismatch;
+            }
+            if (self.data.len != self.data_len) {
+                return Error.LenCapacityMismatch;
+            }
+
+            return arr.GenericBinaryArray(index_type){
+                .len = self.len,
+                .offset = 0,
+                .validity = self.validity,
+                .data = self.data,
+                .null_count = self.null_count,
+                .offsets = self.offsets,
+            };
+        }
+
+        pub fn append_option(self: *Self, val: ?[]const u8) Error!void {
+            if (self.capacity == self.len) {
+                return Error.OutOfCapacity;
+            }
+
+            const validity = self.validity orelse return Error.NonNullable;
+
+            if (val) |v| {
+                if (self.data.len < v.len + self.data_len) {
+                    return Error.OutOfCapacity;
+                }
+
+                bitmap.set(validity.ptr, self.len);
+                @memcpy(self.data[self.data_len..].ptr, v);
+                self.data_len += @intCast(v.len);
+            } else {
+                self.null_count += 1;
+            }
+            self.len += 1;
+            self.offsets[self.len] = @intCast(self.data_len);
+        }
+
+        pub fn append_value(self: *Self, val: []const u8) Error!void {
+            if (self.capacity == self.len) {
+                return Error.OutOfCapacity;
+            }
+            if (self.data.len < self.data_len + val.len) {
+                return Error.OutOfCapacity;
+            }
+            if (self.validity) |v| {
+                bitmap.set(v.ptr, self.len);
+            }
+
+            @memcpy(self.data[self.data_len..].ptr, val);
+            self.data_len += @intCast(val.len);
+            self.len += 1;
+            self.offsets[self.len] = @intCast(self.data_len);
+        }
+
+        pub fn append_null(self: *Self) Error!void {
+            if (self.capacity == self.len) {
+                return Error.OutOfCapacity;
+            }
+            if (self.validity == null) {
+                return Error.NonNullable;
+            }
+
+            self.null_count += 1;
+            self.len += 1;
+            self.offsets[self.len] = @intCast(self.data_len);
+        }
+    };
+}
+
+pub const BinaryBuilder = GenericBinaryBuilder(.i32);
+pub const LargeBinaryBuilder = GenericBinaryBuilder(.i64);
+
+test "bool empty" {
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var builder = try BoolBuilder.with_capacity(0, true, allocator);
+
+    try testing.expectEqual(Error.OutOfCapacity, builder.append_null());
+    try testing.expectEqual(Error.OutOfCapacity, builder.append_value(false));
+    try testing.expectEqual(Error.OutOfCapacity, builder.append_option(null));
+
+    const array = try builder.finish();
+    try testing.expectEqual(0, array.len);
+    try testing.expectEqual(0, array.null_count);
+    try testing.expectEqual(0, array.offset);
+    try testing.expectEqualDeep(&[_]u8{}, array.values);
+    try testing.expectEqualDeep(&[_]u8{}, array.validity.?);
+}
 
 test "bool nullable " {
     var arena = ArenaAllocator.init(testing.allocator);
@@ -413,6 +546,25 @@ test "bool non-nullable" {
     try testing.expectEqual(null, array.validity);
 }
 
+test "primitive empty" {
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var builder = try PrimitiveBuilder(i16).with_capacity(0, true, allocator);
+
+    try testing.expectEqual(Error.OutOfCapacity, builder.append_null());
+    try testing.expectEqual(Error.OutOfCapacity, builder.append_value(-69));
+    try testing.expectEqual(Error.OutOfCapacity, builder.append_option(null));
+
+    const array = try builder.finish();
+    try testing.expectEqual(0, array.len);
+    try testing.expectEqual(0, array.null_count);
+    try testing.expectEqual(0, array.offset);
+    try testing.expectEqualDeep(&[_]i16{}, array.values);
+    try testing.expectEqualDeep(&[_]u8{}, array.validity.?);
+}
+
 test "primitive nullable" {
     var arena = ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
@@ -459,6 +611,7 @@ test "primitive non-nullable" {
 
     try testing.expectEqual(Error.NonNullable, builder.append_null());
     try testing.expectEqual(Error.NonNullable, builder.append_option(null));
+    try testing.expectEqual(Error.NonNullable, builder.append_option(31));
 
     try builder.append_value(31);
     try builder.append_value(69);
@@ -478,6 +631,26 @@ test "primitive non-nullable" {
     try testing.expectEqual(0, array.offset);
     try testing.expectEqualDeep(&[_]u32{ 31, 69, 12, 12, 12, 12, 12, 12, 12, 12 }, array.values);
     try testing.expectEqual(null, array.validity);
+}
+
+test "fixed-size-binary empty" {
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var builder = try FixedSizeBinaryBuilder.with_capacity(11, 0, true, allocator);
+
+    try testing.expectEqual(Error.OutOfCapacity, builder.append_null());
+    try testing.expectEqual(Error.OutOfCapacity, builder.append_value("12312312312"));
+    try testing.expectEqual(Error.OutOfCapacity, builder.append_option(null));
+
+    const array = try builder.finish();
+    try testing.expectEqual(0, array.len);
+    try testing.expectEqual(0, array.null_count);
+    try testing.expectEqual(0, array.offset);
+    try testing.expectEqualDeep(&[_]u8{}, array.data);
+    try testing.expectEqualDeep(&[_]u8{}, array.validity.?);
+    try testing.expectEqual(11, array.byte_width);
 }
 
 test "fixed-size-binary nullable" {
@@ -545,6 +718,7 @@ test "fixed-size-binary non-nullable" {
 
     try testing.expectEqual(Error.NonNullable, builder.append_null());
     try testing.expectEqual(Error.NonNullable, builder.append_option(null));
+    try testing.expectEqual(Error.NonNullable, builder.append_option("123"));
 
     try builder.append_value("asd");
     try builder.append_value("qwe");
@@ -576,4 +750,130 @@ test "fixed-size-binary non-nullable" {
     }, array.data);
     try testing.expectEqual(null, array.validity);
     try testing.expectEqual(byte_width, array.byte_width);
+}
+
+fn test_binary_empty(comptime index_type: arr.IndexType) !void {
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var builder = try GenericBinaryBuilder(index_type).with_capacity(0, 0, true, allocator);
+
+    try testing.expectEqual(Error.OutOfCapacity, builder.append_null());
+    try testing.expectEqual(Error.OutOfCapacity, builder.append_value("12312312312"));
+    try testing.expectEqual(Error.OutOfCapacity, builder.append_option(null));
+
+    const array = try builder.finish();
+    try testing.expectEqual(0, array.len);
+    try testing.expectEqual(0, array.null_count);
+    try testing.expectEqual(0, array.offset);
+    try testing.expectEqualDeep(&[_]u8{}, array.data);
+    try testing.expectEqualDeep(&[_]u8{}, array.validity.?);
+    try testing.expectEqualDeep(&[_]index_type.to_type(){0}, array.offsets);
+}
+
+test "binary empty" {
+    try test_binary_empty(.i32);
+    try test_binary_empty(.i64);
+}
+
+fn test_binary_nullable(comptime index_type: arr.IndexType) !void {
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const len = 10;
+    const data_capacity = 30;
+
+    var builder = try GenericBinaryBuilder(index_type).with_capacity(data_capacity, len, true, allocator);
+
+    try builder.append_null();
+    try builder.append_value("asd");
+    try builder.append_value("");
+    try builder.append_option(null);
+    try builder.append_option("pppqwe");
+    try builder.append_option("xyz");
+
+    try testing.expectEqual(Error.LenCapacityMismatch, builder.finish());
+
+    try testing.expectEqual(Error.OutOfCapacity, builder.append_value("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
+
+    try builder.append_option("");
+    try builder.append_value("qweqweqweqweqweqwe");
+    try builder.append_option("");
+    try builder.append_null();
+
+    try testing.expectEqual(Error.OutOfCapacity, builder.append_null());
+    try testing.expectEqual(Error.OutOfCapacity, builder.append_value("asd"));
+    try testing.expectEqual(Error.OutOfCapacity, builder.append_option(null));
+    try testing.expectEqual(Error.OutOfCapacity, builder.append_option(""));
+
+    const array = try builder.finish();
+
+    try testing.expectEqual(len, array.len);
+    try testing.expectEqual(3, array.null_count);
+    try testing.expectEqual(0, array.offset);
+    try testing.expectEqualDeep(
+        "asdpppqwexyzqweqweqweqweqweqwe",
+        array.data,
+    );
+    try testing.expectEqualDeep(&[_]u8{ 0b11110110, 0b00000001 }, array.validity.?);
+    try testing.expectEqualDeep(&[_]index_type.to_type(){ 0, 0, 3, 3, 3, 9, 12, 12, 30, 30, 30 }, array.offsets);
+}
+
+test "binary nullable" {
+    try test_binary_nullable(.i32);
+    try test_binary_nullable(.i64);
+}
+
+fn test_binary_non_nullable(comptime index_type: arr.IndexType) !void {
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const len = 10;
+    const data_capacity = 30;
+
+    var builder = try GenericBinaryBuilder(index_type).with_capacity(data_capacity, len, false, allocator);
+
+    try testing.expectEqual(Error.NonNullable, builder.append_null());
+    try testing.expectEqual(Error.NonNullable, builder.append_option(null));
+    try testing.expectEqual(Error.NonNullable, builder.append_option("123"));
+    try testing.expectEqual(Error.NonNullable, builder.append_option(""));
+
+    try builder.append_value("");
+    try builder.append_value("asd");
+    try builder.append_value("");
+    try builder.append_value("");
+    try builder.append_value("pppqwe");
+    try builder.append_value("xyz");
+
+    try testing.expectEqual(Error.LenCapacityMismatch, builder.finish());
+
+    try testing.expectEqual(Error.OutOfCapacity, builder.append_value("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
+
+    try builder.append_value("");
+    try builder.append_value("qweqweqweqweqweqwe");
+    try builder.append_value("");
+    try builder.append_value("");
+
+    try testing.expectEqual(Error.OutOfCapacity, builder.append_value("asd"));
+    try testing.expectEqual(Error.OutOfCapacity, builder.append_value(""));
+
+    const array = try builder.finish();
+
+    try testing.expectEqual(len, array.len);
+    try testing.expectEqual(0, array.null_count);
+    try testing.expectEqual(0, array.offset);
+    try testing.expectEqualDeep(
+        "asdpppqwexyzqweqweqweqweqweqwe",
+        array.data,
+    );
+    try testing.expectEqual(null, array.validity);
+    try testing.expectEqualDeep(&[_]index_type.to_type(){ 0, 0, 3, 3, 3, 9, 12, 12, 30, 30, 30 }, array.offsets);
+}
+
+test "binary non-nullable" {
+    try test_binary_non_nullable(.i32);
+    try test_binary_non_nullable(.i64);
 }

@@ -80,7 +80,7 @@ pub const BoolArray = struct {
     null_count: u32,
 };
 
-pub fn PrimitiveArr(comptime T: type) type {
+pub fn PrimitiveArray(comptime T: type) type {
     return struct {
         values: []const T,
         validity: ?[]const u8,
@@ -90,17 +90,17 @@ pub fn PrimitiveArr(comptime T: type) type {
     };
 }
 
-pub const UInt8Array = PrimitiveArr(u8);
-pub const UInt16Array = PrimitiveArr(u16);
-pub const UInt32Array = PrimitiveArr(u32);
-pub const UInt64Array = PrimitiveArr(u64);
-pub const Int8Array = PrimitiveArr(i8);
-pub const Int16Array = PrimitiveArr(i16);
-pub const Int32Array = PrimitiveArr(i32);
-pub const Int64Array = PrimitiveArr(i64);
-pub const Float16Array = PrimitiveArr(f16);
-pub const Float32Array = PrimitiveArr(f32);
-pub const Float64Array = PrimitiveArr(f64);
+pub const UInt8Array = PrimitiveArray(u8);
+pub const UInt16Array = PrimitiveArray(u16);
+pub const UInt32Array = PrimitiveArray(u32);
+pub const UInt64Array = PrimitiveArray(u64);
+pub const Int8Array = PrimitiveArray(i8);
+pub const Int16Array = PrimitiveArray(i16);
+pub const Int32Array = PrimitiveArray(i32);
+pub const Int64Array = PrimitiveArray(i64);
+pub const Float16Array = PrimitiveArray(f16);
+pub const Float32Array = PrimitiveArray(f32);
+pub const Float64Array = PrimitiveArray(f64);
 
 pub const FixedSizeBinaryArray = struct {
     data: []const u8,
@@ -127,17 +127,17 @@ pub const DecimalInt = enum {
     }
 };
 
-pub fn DecimalArr(comptime int: DecimalInt) type {
+pub fn DecimalArray(comptime int: DecimalInt) type {
     return struct {
-        inner: PrimitiveArr(int.to_type()),
+        inner: PrimitiveArray(int.to_type()),
         params: DecimalParams,
     };
 }
 
-pub const Decimal32Array = DecimalArr(.i32);
-pub const Decimal64Array = DecimalArr(.i64);
-pub const Decimal128Array = DecimalArr(.i128);
-pub const Decimal256Array = DecimalArr(.i256);
+pub const Decimal32Array = DecimalArray(.i32);
+pub const Decimal64Array = DecimalArray(.i64);
+pub const Decimal128Array = DecimalArray(.i128);
+pub const Decimal256Array = DecimalArray(.i256);
 
 pub const DictArray = struct {
     keys: *const Array,
@@ -164,7 +164,7 @@ pub const IndexType = enum {
     }
 };
 
-pub fn BinaryArr(comptime index_type: IndexType) type {
+pub fn GenericBinaryArray(comptime index_type: IndexType) type {
     const I = index_type.to_type();
 
     return struct {
@@ -177,17 +177,17 @@ pub fn BinaryArr(comptime index_type: IndexType) type {
     };
 }
 
-pub const BinaryArray = BinaryArr(.i32);
-pub const LargeBinaryArray = BinaryArr(.i64);
+pub const BinaryArray = GenericBinaryArray(.i32);
+pub const LargeBinaryArray = GenericBinaryArray(.i64);
 
-pub fn Utf8Arr(comptime index_type: IndexType) type {
+pub fn GenericUtf8Array(comptime index_type: IndexType) type {
     return struct {
-        inner: BinaryArr(index_type),
+        inner: GenericBinaryArray(index_type),
     };
 }
 
-pub const Utf8Array = Utf8Arr(.i32);
-pub const LargeUtf8Array = Utf8Arr(.i64);
+pub const Utf8Array = GenericUtf8Array(.i32);
+pub const LargeUtf8Array = GenericUtf8Array(.i64);
 
 pub const StructArray = struct {
     field_names: []const [:0]const u8,
@@ -207,7 +207,7 @@ pub const FixedSizeListArray = struct {
     item_width: i32,
 };
 
-pub fn ListArr(comptime index_type: IndexType) type {
+pub fn GenericListArray(comptime index_type: IndexType) type {
     const I = index_type.to_type();
 
     return struct {
@@ -220,10 +220,10 @@ pub fn ListArr(comptime index_type: IndexType) type {
     };
 }
 
-pub const ListArray = ListArr(.i32);
-pub const LargeListArray = ListArr(.i64);
+pub const ListArray = GenericListArray(.i32);
+pub const LargeListArray = GenericListArray(.i64);
 
-pub const UnionArr = struct {
+pub const UnionArray = struct {
     type_id_set: []const i8,
     type_ids: []const i8,
     children: []const Array,
@@ -233,23 +233,23 @@ pub const UnionArr = struct {
 
 pub const DenseUnionArray = struct {
     offsets: []const i32,
-    inner: UnionArr,
+    inner: UnionArray,
 };
 
 pub const SparseUnionArray = struct {
-    inner: UnionArr,
+    inner: UnionArray,
 };
 
-pub fn DateArr(comptime backing_t: IndexType) type {
+pub fn DateArray(comptime backing_t: IndexType) type {
     return struct {
-        inner: PrimitiveArr(backing_t.to_type()),
+        inner: PrimitiveArray(backing_t.to_type()),
     };
 }
 
-pub const Date32Array = DateArr(.i32);
-pub const Date64Array = DateArr(.i64);
+pub const Date32Array = DateArray(.i32);
+pub const Date64Array = DateArray(.i64);
 
-pub fn TimeArr(comptime backing_t: IndexType) type {
+pub fn TimeArray(comptime backing_t: IndexType) type {
     const T = backing_t.to_type();
 
     const Unit = comptime switch (backing_t) {
@@ -258,13 +258,13 @@ pub fn TimeArr(comptime backing_t: IndexType) type {
     };
 
     return struct {
-        inner: PrimitiveArr(T),
+        inner: PrimitiveArray(T),
         unit: Unit,
     };
 }
 
-pub const Time32Array = TimeArr(.i32);
-pub const Time64Array = TimeArr(.i64);
+pub const Time32Array = TimeArray(.i32);
+pub const Time64Array = TimeArray(.i64);
 
 pub const TimestampArray = struct {
     inner: Int64Array,
@@ -291,15 +291,15 @@ pub const IntervalType = enum {
     }
 };
 
-pub fn IntervalArr(comptime interval_type: IntervalType) type {
+pub fn IntervalArray(comptime interval_type: IntervalType) type {
     return struct {
-        inner: PrimitiveArr(interval_type.to_type()),
+        inner: PrimitiveArray(interval_type.to_type()),
     };
 }
 
-pub const IntervalDayTimeArray = IntervalArr(.day_time);
-pub const IntervalMonthDayNanoArray = IntervalArr(.month_day_nano);
-pub const IntervalYearMonthArray = IntervalArr(.year_month);
+pub const IntervalDayTimeArray = IntervalArray(.day_time);
+pub const IntervalMonthDayNanoArray = IntervalArray(.month_day_nano);
+pub const IntervalYearMonthArray = IntervalArray(.year_month);
 
 pub const DurationArray = struct {
     inner: Int64Array,
@@ -330,7 +330,7 @@ pub const Utf8ViewArray = struct {
     inner: BinaryViewArray,
 };
 
-pub fn ListViewArr(comptime index_type: IndexType) type {
+pub fn GenericListViewArray(comptime index_type: IndexType) type {
     const I = index_type.to_type();
 
     return struct {
@@ -344,8 +344,8 @@ pub fn ListViewArr(comptime index_type: IndexType) type {
     };
 }
 
-pub const ListViewArray = ListViewArr(.i32);
-pub const LargeListViewArray = ListViewArr(.i64);
+pub const ListViewArray = GenericListViewArray(.i32);
+pub const LargeListViewArray = GenericListViewArray(.i64);
 
 pub const MapArray = struct {
     entries: *const StructArray,

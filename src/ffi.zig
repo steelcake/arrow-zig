@@ -55,7 +55,7 @@ fn import_validity(flags: abi.Flags, buf: ?*const anyopaque, size: u32) ?[]const
     }
 }
 
-fn import_primitive(comptime T: type, array: *const FFI_Array) arr.PrimitiveArr(T) {
+fn import_primitive(comptime T: type, array: *const FFI_Array) arr.PrimitiveArray(T) {
     const buffers = array.array.buffers orelse unreachable;
 
     std.debug.assert(array.array.n_buffers == 2);
@@ -76,7 +76,7 @@ fn import_primitive(comptime T: type, array: *const FFI_Array) arr.PrimitiveArr(
     };
 }
 
-fn import_binary(comptime index_type: arr.IndexType, array: *const FFI_Array) arr.BinaryArr(index_type) {
+fn import_binary(comptime index_type: arr.IndexType, array: *const FFI_Array) arr.GenericBinaryArray(index_type) {
     const buffers = array.array.buffers orelse unreachable;
 
     std.debug.assert(array.array.n_buffers == 3);
@@ -217,7 +217,7 @@ fn import_timestamp(format: []const u8, unit: arr.TimestampUnit, array: *const F
     };
 }
 
-fn import_list(comptime index_type: arr.IndexType, array: *const FFI_Array, allocator: Allocator) Error!arr.ListArr(index_type) {
+fn import_list(comptime index_type: arr.IndexType, array: *const FFI_Array, allocator: Allocator) Error!arr.GenericListArray(index_type) {
     const buffers = array.array.buffers orelse unreachable;
 
     std.debug.assert(array.array.n_buffers == 2);
@@ -246,7 +246,7 @@ fn import_list(comptime index_type: arr.IndexType, array: *const FFI_Array, allo
     };
 }
 
-fn import_list_view(comptime index_type: arr.IndexType, array: *const FFI_Array, allocator: Allocator) Error!arr.ListViewArr(index_type) {
+fn import_list_view(comptime index_type: arr.IndexType, array: *const FFI_Array, allocator: Allocator) Error!arr.GenericListViewArray(index_type) {
     const buffers = array.array.buffers orelse unreachable;
 
     std.debug.assert(array.array.n_buffers == 3);
@@ -1249,7 +1249,7 @@ fn export_fixed_size_list(array: *const arr.FixedSizeListArray, private_data: *P
     };
 }
 
-fn export_list_view(comptime index_type: arr.IndexType, array: *const arr.ListViewArr(index_type), private_data: *PrivateData) Error!FFI_Array {
+fn export_list_view(comptime index_type: arr.IndexType, array: *const arr.GenericListViewArray(index_type), private_data: *PrivateData) Error!FFI_Array {
     const n_buffers = 3;
     const n_children = 1;
 
@@ -1300,7 +1300,7 @@ fn export_list_view(comptime index_type: arr.IndexType, array: *const arr.ListVi
     };
 }
 
-fn export_list(comptime index_type: arr.IndexType, array: *const arr.ListArr(index_type), private_data: *PrivateData) Error!FFI_Array {
+fn export_list(comptime index_type: arr.IndexType, array: *const arr.GenericListArray(index_type), private_data: *PrivateData) Error!FFI_Array {
     const n_buffers = 2;
     const n_children = 1;
 
@@ -1449,7 +1449,7 @@ fn export_binary_view(array: *const arr.BinaryViewArray, format: [:0]const u8, p
     };
 }
 
-fn export_binary(comptime index_type: arr.IndexType, array: *const arr.BinaryArr(index_type), format: [:0]const u8, private_data: *PrivateData) Error!FFI_Array {
+fn export_binary(comptime index_type: arr.IndexType, array: *const arr.GenericBinaryArray(index_type), format: [:0]const u8, private_data: *PrivateData) Error!FFI_Array {
     const n_buffers = 3;
 
     const allocator = private_data.arena.allocator();
@@ -1520,7 +1520,7 @@ fn export_bool(array: *const arr.BoolArray, private_data: *PrivateData) Error!FF
     };
 }
 
-fn export_primitive(comptime T: type, array: *const arr.PrimitiveArr(T), format: [:0]const u8, private_data: *PrivateData) Error!FFI_Array {
+fn export_primitive(comptime T: type, array: *const arr.PrimitiveArray(T), format: [:0]const u8, private_data: *PrivateData) Error!FFI_Array {
     const n_buffers = 2;
 
     const allocator = private_data.arena.allocator();
