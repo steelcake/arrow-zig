@@ -61,21 +61,11 @@ pub const BoolBuilder = struct {
     }
 
     pub fn append_option(self: *BoolBuilder, val: ?bool) Error!void {
-        if (self.capacity == self.len) {
-            return Error.OutOfCapacity;
-        }
-
-        const validity = self.validity orelse return Error.NonNullable;
-
-        if (val) |b| {
-            bitmap.set(validity.ptr, self.len);
-            if (b) {
-                bitmap.set(self.values.ptr, self.len);
-            }
+        if (val) |v| {
+            try self.append_value(v);
         } else {
-            self.null_count += 1;
+            try self.append_null();
         }
-        self.len += 1;
     }
 
     pub fn append_value(self: *BoolBuilder, val: bool) Error!void {
@@ -152,19 +142,11 @@ fn PrimitiveBuilder(comptime T: type) type {
         }
 
         pub fn append_option(self: *Self, val: ?T) Error!void {
-            if (self.values.len == self.len) {
-                return Error.OutOfCapacity;
-            }
-
-            const validity = self.validity orelse return Error.NonNullable;
-
             if (val) |v| {
-                bitmap.set(validity.ptr, self.len);
-                self.values.ptr[self.len] = v;
+                try self.append_value(v);
             } else {
-                self.null_count += 1;
+                try self.append_null();
             }
-            self.len += 1;
         }
 
         pub fn append_value(self: *Self, val: T) Error!void {
@@ -256,23 +238,11 @@ pub const FixedSizeBinaryBuilder = struct {
     }
 
     pub fn append_option(self: *Self, val: ?[]const u8) Error!void {
-        if (self.capacity == self.len) {
-            return Error.OutOfCapacity;
-        }
-
-        const validity = self.validity orelse return Error.NonNullable;
-
         if (val) |v| {
-            if (v.len != self.byte_width) {
-                return Error.InvalidSliceLength;
-            }
-
-            bitmap.set(validity.ptr, self.len);
-            @memcpy(self.data[self.byte_width * self.len ..].ptr, v);
+            try self.append_value(v);
         } else {
-            self.null_count += 1;
+            try self.append_null();
         }
-        self.len += 1;
     }
 
     pub fn append_value(self: *Self, val: []const u8) Error!void {
@@ -405,25 +375,11 @@ pub fn GenericBinaryBuilder(comptime index_type: arr.IndexType) type {
         }
 
         pub fn append_option(self: *Self, val: ?[]const u8) Error!void {
-            if (self.capacity == self.len) {
-                return Error.OutOfCapacity;
-            }
-
-            const validity = self.validity orelse return Error.NonNullable;
-
             if (val) |v| {
-                if (self.data.len < v.len + self.data_len) {
-                    return Error.OutOfCapacity;
-                }
-
-                bitmap.set(validity.ptr, self.len);
-                @memcpy(self.data[self.data_len..].ptr, v);
-                self.data_len += @intCast(v.len);
+                try self.append_value(v);
             } else {
-                self.null_count += 1;
+                try self.append_null();
             }
-            self.len += 1;
-            self.offsets[self.len] = @intCast(self.data_len);
         }
 
         pub fn append_value(self: *Self, val: []const u8) Error!void {
@@ -676,6 +632,138 @@ pub const DurationBuilder = struct {
     }
 };
 
+pub const BinaryViewBuilder = struct {
+    const Self = @This();
+
+    buffers: [][*]const u8,
+    buffer: []u8,
+    buffer_len: u32,
+    validity: ?[]u8,
+    null_count: u32,
+    views: []arr.BinaryView,
+    len: u32,
+
+    pub fn with_capacity(buffer_capacity: u32, capacity: u32, nullable: bool, allocator: Allocator) Error!Self {
+        const buffer = try allocator.alloc(u8, buffer_capacity);
+        @memset(buffer, 0);
+
+        const buffers = try allocator.alloc([*]const u8, 1);
+        buffers[0] = &.{};
+
+        const num_bytes = (capacity + 7) / 8;
+        var validity: ?[]u8 = null;
+        if (nullable) {
+            const v = try allocator.alloc(u8, num_bytes);
+            @memset(v, 0);
+            validity = v;
+        }
+
+        const views = try allocator.alloc(arr.BinaryView, capacity);
+        @memset(@as([]u8, @ptrCast(views)), 0);
+
+        return Self{
+            .buffers = buffers,
+            .buffer = buffer,
+            .buffer_len = 0,
+            .validity = validity,
+            .null_count = 0,
+            .views = views,
+            .len = 0,
+        };
+    }
+
+    pub fn finish(self: Self) Error!arr.BinaryViewArray {
+        std.debug.assert(self.validity != null or self.null_count == 0);
+
+        if (self.views.len != self.len) {
+            return Error.LenCapacityMismatch;
+        }
+        if (self.buffer.len != self.buffer_len) {
+            return Error.LenCapacityMismatch;
+        }
+
+        self.buffers[0] = self.buffer.ptr;
+
+        return arr.BinaryViewArray{
+            .views = self.views,
+            .buffers = self.buffers,
+            .len = self.len,
+            .offset = 0,
+            .validity = self.validity,
+            .null_count = self.null_count,
+        };
+    }
+
+    pub fn append_option(self: *Self, val: ?[]const u8) Error!void {
+        if (val) |v| {
+            try self.append_value(v);
+        } else {
+            try self.append_null();
+        }
+    }
+
+    pub fn append_value(self: *Self, val: []const u8) Error!void {
+        if (self.views.len == self.len) {
+            return Error.OutOfCapacity;
+        }
+        if (self.validity) |v| {
+            bitmap.set(v.ptr, self.len);
+        }
+
+        const len: u32 = @intCast(val.len);
+
+        if (val.len <= 12) {
+            var data: [12]u8 = .{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+            for (0..val.len) |i| {
+                data[i] = val[i];
+            }
+            const view = arr.BinaryViewShort{
+                .length = len,
+                .data = data,
+            };
+            self.views[self.len] = @bitCast(view);
+        } else {
+            if (len + self.buffer_len > self.buffer.len) {
+                return Error.OutOfCapacity;
+            }
+
+            const view = arr.BinaryView{
+                .length = len,
+                .prefix = .{ val.ptr[0], val.ptr[1], val.ptr[2], val.ptr[3] },
+                .buffer_idx = 0,
+                .offset = self.buffer_len,
+            };
+
+            @memcpy(self.buffer[self.buffer_len..].ptr, val);
+
+            self.buffer_len += len;
+            self.views[self.len] = view;
+        }
+
+        self.len += 1;
+    }
+
+    pub fn append_null(self: *Self) Error!void {
+        if (self.views.len == self.len) {
+            return Error.OutOfCapacity;
+        }
+        if (self.validity == null) {
+            return Error.NonNullable;
+        }
+
+        self.null_count += 1;
+
+        self.views[self.len] = arr.BinaryView{
+            .length = 0,
+            .prefix = .{ 0, 0, 0, 0 },
+            .buffer_idx = 0,
+            .offset = 0,
+        };
+
+        self.len += 1;
+    }
+};
+
 test "bool empty" {
     var arena = ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
@@ -743,7 +831,7 @@ test "bool non-nullable" {
     try testing.expectEqual(Error.NonNullable, builder.append_option(null));
 
     try builder.append_value(false);
-    try builder.append_value(true);
+    try builder.append_option(true);
 
     try testing.expectEqual(Error.LenCapacityMismatch, builder.finish());
 
@@ -827,10 +915,9 @@ test "primitive non-nullable" {
 
     try testing.expectEqual(Error.NonNullable, builder.append_null());
     try testing.expectEqual(Error.NonNullable, builder.append_option(null));
-    try testing.expectEqual(Error.NonNullable, builder.append_option(31));
 
     try builder.append_value(31);
-    try builder.append_value(69);
+    try builder.append_option(69);
 
     try testing.expectEqual(Error.LenCapacityMismatch, builder.finish());
 
@@ -934,10 +1021,9 @@ test "fixed-size-binary non-nullable" {
 
     try testing.expectEqual(Error.NonNullable, builder.append_null());
     try testing.expectEqual(Error.NonNullable, builder.append_option(null));
-    try testing.expectEqual(Error.NonNullable, builder.append_option("123"));
 
     try builder.append_value("asd");
-    try builder.append_value("qwe");
+    try builder.append_option("qwe");
 
     try testing.expectEqual(Error.LenCapacityMismatch, builder.finish());
 
@@ -1069,15 +1155,13 @@ fn test_binary_non_nullable(comptime index_type: arr.IndexType) !void {
 
     try testing.expectEqual(Error.NonNullable, builder.append_null());
     try testing.expectEqual(Error.NonNullable, builder.append_option(null));
-    try testing.expectEqual(Error.NonNullable, builder.append_option("123"));
-    try testing.expectEqual(Error.NonNullable, builder.append_option(""));
 
     try builder.append_value("");
     try builder.append_value("asd");
     try builder.append_value("");
     try builder.append_value("");
     try builder.append_value("pppqwe");
-    try builder.append_value("xyz");
+    try builder.append_option("xyz");
 
     try testing.expectEqual(Error.LenCapacityMismatch, builder.finish());
 
@@ -1201,4 +1285,191 @@ test "duration smoke" {
 
     const array = try builder.finish();
     _ = array;
+}
+
+test "binary-view empty" {
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var builder = try BinaryViewBuilder.with_capacity(0, 0, true, allocator);
+
+    try testing.expectEqual(Error.OutOfCapacity, builder.append_null());
+    try testing.expectEqual(Error.OutOfCapacity, builder.append_value("12312312312"));
+    try testing.expectEqual(Error.OutOfCapacity, builder.append_option(null));
+
+    const array = try builder.finish();
+    try testing.expectEqual(0, array.len);
+    try testing.expectEqual(0, array.null_count);
+    try testing.expectEqual(0, array.offset);
+    try testing.expectEqual(1, array.buffers.len);
+    try testing.expectEqualDeep(&[_]u8{}, array.validity.?);
+    try testing.expectEqualDeep(&[_]arr.BinaryView{}, array.views);
+}
+
+test "binary-view nullable" {
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const len = 10;
+    const buffer_capacity = 30;
+
+    var builder = try BinaryViewBuilder.with_capacity(buffer_capacity, len, true, allocator);
+
+    try builder.append_null();
+    try builder.append_value("asd");
+    try builder.append_value("");
+    try builder.append_option(null);
+    try builder.append_option("pppqwe");
+    try builder.append_option("xyz");
+
+    try testing.expectEqual(Error.LenCapacityMismatch, builder.finish());
+
+    try testing.expectEqual(Error.OutOfCapacity, builder.append_value("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
+
+    try builder.append_option("1234561234567");
+    try builder.append_value("qweqweqweqweqweqw");
+    try builder.append_option("");
+    try builder.append_null();
+
+    try testing.expectEqual(Error.OutOfCapacity, builder.append_null());
+    try testing.expectEqual(Error.OutOfCapacity, builder.append_value("asd"));
+    try testing.expectEqual(Error.OutOfCapacity, builder.append_option(null));
+    try testing.expectEqual(Error.OutOfCapacity, builder.append_option(""));
+
+    const array = try builder.finish();
+
+    try testing.expectEqual(len, array.len);
+    try testing.expectEqual(3, array.null_count);
+    try testing.expectEqual(0, array.offset);
+    try testing.expectEqual(1, array.buffers.len);
+    try testing.expectEqualDeep(
+        "1234561234567qweqweqweqweqweqw",
+        array.buffers[0][0..30],
+    );
+    try testing.expectEqualDeep(&[_]u8{ 0b11110110, 0b00000001 }, array.validity.?);
+
+    const zero_view = arr.BinaryView{
+        .length = 0,
+        .prefix = .{ 0, 0, 0, 0 },
+        .buffer_idx = 0,
+        .offset = 0,
+    };
+
+    try testing.expectEqualDeep(&[_]arr.BinaryView{
+        zero_view,
+        @bitCast(arr.BinaryViewShort{
+            .length = 3,
+            .data = .{ 'a', 's', 'd', 0, 0, 0, 0, 0, 0, 0, 0, 0 },
+        }),
+        zero_view,
+        zero_view,
+        @bitCast(arr.BinaryViewShort{
+            .length = 6,
+            .data = .{ 'p', 'p', 'p', 'q', 'w', 'e', 0, 0, 0, 0, 0, 0 },
+        }),
+        @bitCast(arr.BinaryViewShort{
+            .length = 3,
+            .data = .{ 'x', 'y', 'z', 0, 0, 0, 0, 0, 0, 0, 0, 0 },
+        }),
+        arr.BinaryView{
+            .length = 13,
+            .prefix = .{ '1', '2', '3', '4' },
+            .buffer_idx = 0,
+            .offset = 0,
+        },
+        arr.BinaryView{
+            .length = 17,
+            .prefix = .{ 'q', 'w', 'e', 'q' },
+            .buffer_idx = 0,
+            .offset = 13,
+        },
+        zero_view,
+        zero_view,
+    }, array.views);
+}
+
+test "binary-view non-nullable" {
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const len = 10;
+    const buffer_capacity = 30;
+
+    var builder = try BinaryViewBuilder.with_capacity(buffer_capacity, len, false, allocator);
+
+    try testing.expectEqual(Error.NonNullable, builder.append_null());
+    try testing.expectEqual(Error.NonNullable, builder.append_option(null));
+
+    try builder.append_value("");
+    try builder.append_value("asd");
+    try builder.append_value("");
+    try builder.append_value("");
+    try builder.append_option("pppqwe");
+    try builder.append_option("xyz");
+
+    try testing.expectEqual(Error.LenCapacityMismatch, builder.finish());
+
+    try testing.expectEqual(Error.OutOfCapacity, builder.append_value("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
+
+    try builder.append_value("1234561234567");
+    try builder.append_option("qweqweqweqweqweqw");
+    try builder.append_value("");
+    try builder.append_value("");
+
+    try testing.expectEqual(Error.OutOfCapacity, builder.append_value("asd"));
+    try testing.expectEqual(Error.OutOfCapacity, builder.append_value(""));
+
+    const array = try builder.finish();
+
+    try testing.expectEqual(len, array.len);
+    try testing.expectEqual(0, array.null_count);
+    try testing.expectEqual(0, array.offset);
+    try testing.expectEqual(1, array.buffers.len);
+    try testing.expectEqualDeep(
+        "1234561234567qweqweqweqweqweqw",
+        array.buffers[0][0..30],
+    );
+    try testing.expectEqual(null, array.validity);
+
+    const zero_view = arr.BinaryView{
+        .length = 0,
+        .prefix = .{ 0, 0, 0, 0 },
+        .buffer_idx = 0,
+        .offset = 0,
+    };
+
+    try testing.expectEqualDeep(&[_]arr.BinaryView{
+        zero_view,
+        @bitCast(arr.BinaryViewShort{
+            .length = 3,
+            .data = .{ 'a', 's', 'd', 0, 0, 0, 0, 0, 0, 0, 0, 0 },
+        }),
+        zero_view,
+        zero_view,
+        @bitCast(arr.BinaryViewShort{
+            .length = 6,
+            .data = .{ 'p', 'p', 'p', 'q', 'w', 'e', 0, 0, 0, 0, 0, 0 },
+        }),
+        @bitCast(arr.BinaryViewShort{
+            .length = 3,
+            .data = .{ 'x', 'y', 'z', 0, 0, 0, 0, 0, 0, 0, 0, 0 },
+        }),
+        arr.BinaryView{
+            .length = 13,
+            .prefix = .{ '1', '2', '3', '4' },
+            .buffer_idx = 0,
+            .offset = 0,
+        },
+        arr.BinaryView{
+            .length = 17,
+            .prefix = .{ 'q', 'w', 'e', 'q' },
+            .buffer_idx = 0,
+            .offset = 13,
+        },
+        zero_view,
+        zero_view,
+    }, array.views);
 }

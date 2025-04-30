@@ -312,9 +312,14 @@ pub const NullArray = struct {
 
 pub const BinaryView = extern struct {
     length: u32,
-    prefix: u32,
+    prefix: [4]u8,
     buffer_idx: u32,
     offset: u32,
+};
+
+pub const BinaryViewShort = extern struct {
+    length: u32,
+    data: [12]u8,
 };
 
 pub const BinaryViewArray = struct {
