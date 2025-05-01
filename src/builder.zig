@@ -1923,52 +1923,53 @@ test "list-view nullable" {
     try test_list_view_nullable(.i64);
 }
 
-// fn test_list_non_nullable(comptime index_type: arr.IndexType) !void {
-//     var arena = ArenaAllocator.init(testing.allocator);
-//     defer arena.deinit();
-//     const allocator = arena.allocator();
+fn test_list_view_non_nullable(comptime index_type: arr.IndexType) !void {
+    const I = index_type.to_type();
 
-//     var inner_builder = try UInt16Builder.with_capacity(15, true, allocator);
-//     for (0..15) |i| {
-//         try inner_builder.append_value(@intCast(i));
-//     }
-//     const inner = try allocator.create(arr.Array);
-//     inner.* = .{ .u16 = try inner_builder.finish() };
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
 
-//     const len = 10;
+    const inner = try make_list_inner(69, allocator);
+    const short_inner = try make_list_inner(2, allocator);
 
-//     var builder = try GenericListBuilder(index_type).with_capacity(len, false, allocator);
+    const len = 10;
 
-//     try testing.expectEqual(Error.NonNullable, builder.append_null());
-//     try testing.expectEqual(Error.NonNullable, builder.append_option(null));
+    var builder = try GenericListViewBuilder(index_type).with_capacity(len, false, allocator);
 
-//     try builder.append_item(0);
-//     try builder.append_item(3);
-//     try builder.append_item(0);
-//     try builder.append_item(0);
-//     try builder.append_item(6);
-//     try builder.append_option(0);
+    try testing.expectEqual(Error.NonNullable, builder.append_null());
+    try testing.expectEqual(Error.NonNullable, builder.append_option(null));
 
-//     try testing.expectEqual(Error.LenCapacityMismatch, builder.finish(inner));
+    try builder.append_item(0, 0);
+    try builder.append_item(66, 3);
+    try builder.append_item(69, 0);
+    try builder.append_item(0, 0);
+    try builder.append_item(3, 3);
+    try builder.append_option(.{ 0, 0 });
 
-//     try builder.append_option(0);
-//     try builder.append_item(2);
-//     try builder.append_option(0);
-//     try builder.append_item(0);
+    try testing.expectEqual(Error.LenCapacityMismatch, builder.finish(inner));
 
-//     try testing.expectEqual(Error.OutOfCapacity, builder.append_item(3));
-//     try testing.expectEqual(Error.OutOfCapacity, builder.append_item(0));
+    try builder.append_option(.{ 0, 0 });
+    try builder.append_item(18, 2);
+    try builder.append_option(.{ 0, 15 });
+    try builder.append_option(.{ 0, 0 });
 
-//     const array = try builder.finish(inner);
+    try testing.expectEqual(Error.OutOfCapacity, builder.append_item(11, 11));
+    try testing.expectEqual(Error.OutOfCapacity, builder.append_item(0, 0));
 
-//     try testing.expectEqual(len, array.len);
-//     try testing.expectEqual(0, array.null_count);
-//     try testing.expectEqual(0, array.offset);
-//     try testing.expectEqual(null, array.validity);
-//     try testing.expectEqualDeep(&[_]index_type.to_type(){ 0, 0, 3, 3, 3, 9, 9, 9, 11, 11, 11 }, array.offsets);
-// }
+    try testing.expectEqual(Error.ChildLength, builder.finish(short_inner));
 
-// test "list non-nullable" {
-//     try test_list_non_nullable(.i32);
-//     try test_list_non_nullable(.i64);
-// }
+    const array = try builder.finish(inner);
+
+    try testing.expectEqual(len, array.len);
+    try testing.expectEqual(0, array.null_count);
+    try testing.expectEqual(0, array.offset);
+    try testing.expectEqual(null, array.validity);
+    try testing.expectEqualDeep(&[_]I{ 0, 66, 69, 0, 3, 0, 0, 18, 0, 0 }, array.offsets);
+    try testing.expectEqualDeep(&[_]I{ 0, 3, 0, 0, 3, 0, 0, 2, 15, 0 }, array.sizes);
+}
+
+test "list-view non-nullable" {
+    try test_list_view_non_nullable(.i32);
+    try test_list_view_non_nullable(.i64);
+}
