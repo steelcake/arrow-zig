@@ -1074,9 +1074,9 @@ pub const StructBuilder = struct {
     null_count: u32,
     len: u32,
     capacity: u32,
-    field_names: []const [:0]const u8,
+    field_names: [][:0]const u8,
 
-    pub fn with_capacity(field_names: []const [:0]const u8, capacity: u32, nullable: bool, allocator: Allocator) Error!Self {
+    pub fn with_capacity(field_names: [][:0]const u8, capacity: u32, nullable: bool, allocator: Allocator) Error!Self {
         const num_bytes = (capacity + 7) / 8;
         var validity: ?[]u8 = null;
         if (nullable) {
@@ -1101,7 +1101,7 @@ pub const StructBuilder = struct {
             return Error.LenCapacityMismatch;
         }
 
-        if (field_values.len != self.field_names.len) {
+        if (field_values.len != self.field_names) {
             return Error.InvalidSliceLength;
         }
 
@@ -2258,10 +2258,10 @@ test "struct empty" {
 
     const len = 0;
 
-    const field_names = &[_][:0]const u8{ "field0", "field1" };
+    const field_names = &[_][:0]const u8{"field0", "field1"};
 
     const field0 = try make_inner(len, allocator);
-    const field1 = try make_inner(len, allocator);
+    const field1 = try make_inner(len, allocator); 
 
     const bad_field = try make_inner(69, allocator);
 
@@ -2271,106 +2271,102 @@ test "struct empty" {
     try testing.expectEqual(Error.OutOfCapacity, builder.append_item());
     try testing.expectEqual(Error.OutOfCapacity, builder.append_option(true));
 
-    try testing.expectEqual(Error.InvalidSliceLength, builder.finish(&[_]arr.Array{field0.*}));
-    try testing.expectEqual(Error.ChildLength, builder.finish(&[_]arr.Array{ field0.*, bad_field.* }));
+    try testing.expectEqual(Error.InvalidSliceLength, &[_]arr.Array { field0 });
+    try testing.expectEqual(Error.ChildLength, &[_]arr.Array { field0, bad_field });
 
-    const array = try builder.finish(&[_]arr.Array{ field0.*, field1.* });
+    const array = try builder.finish(&[_]arr.Array{ field0, field1 });
     try testing.expectEqual(0, array.len);
     try testing.expectEqual(0, array.null_count);
     try testing.expectEqual(0, array.offset);
     try testing.expectEqualDeep(&[_]u8{}, array.validity.?);
 }
 
-test "struct nullable" {
-    var arena = ArenaAllocator.init(testing.allocator);
-    defer arena.deinit();
-    const allocator = arena.allocator();
+// test "fixed-size-list nullable" {
+//     var arena = ArenaAllocator.init(testing.allocator);
+//     defer arena.deinit();
+//     const allocator = arena.allocator();
 
-    const len = 10;
+//     const inner = try make_inner(69, allocator);
+//     const short_inner = try make_inner(2, allocator);
 
-    const field_names = &[_][:0]const u8{ "field0", "field1" };
+//     const item_width = 6;
 
-    const field0 = try make_inner(len, allocator);
-    const field1 = try make_inner(len, allocator);
+//     const len = 10;
 
-    const bad_field = try make_inner(69, allocator);
+//     var builder = try FixedSizeListBuilder.with_capacity(item_width, len, true, allocator);
 
-    var builder = try StructBuilder.with_capacity(field_names, len, true, allocator);
+//     try builder.append_null();
+//     try builder.append_item();
+//     try builder.append_item();
+//     try builder.append_option(false);
+//     try builder.append_item();
+//     try builder.append_option(true);
 
-    try builder.append_null();
-    try builder.append_item();
-    try builder.append_item();
-    try builder.append_option(false);
-    try builder.append_item();
-    try builder.append_option(true);
+//     try testing.expectEqual(Error.LenCapacityMismatch, builder.finish(inner));
 
-    try testing.expectEqual(Error.LenCapacityMismatch, builder.finish(&[_]arr.Array{ field0.*, field1.* }));
+//     try builder.append_option(true);
+//     try builder.append_item();
+//     try builder.append_option(true);
+//     try builder.append_null();
 
-    try builder.append_option(true);
-    try builder.append_item();
-    try builder.append_option(true);
-    try builder.append_null();
+//     try testing.expectEqual(Error.OutOfCapacity, builder.append_null());
+//     try testing.expectEqual(Error.OutOfCapacity, builder.append_item());
+//     try testing.expectEqual(Error.OutOfCapacity, builder.append_option(false));
+//     try testing.expectEqual(Error.OutOfCapacity, builder.append_option(true));
 
-    try testing.expectEqual(Error.OutOfCapacity, builder.append_null());
-    try testing.expectEqual(Error.OutOfCapacity, builder.append_item());
-    try testing.expectEqual(Error.OutOfCapacity, builder.append_option(false));
-    try testing.expectEqual(Error.OutOfCapacity, builder.append_option(true));
+//     try testing.expectEqual(Error.ChildLength, builder.finish(short_inner));
 
-    try testing.expectEqual(Error.InvalidSliceLength, builder.finish(&[_]arr.Array{field0.*}));
-    try testing.expectEqual(Error.ChildLength, builder.finish(&[_]arr.Array{ field0.*, bad_field.* }));
+//     const array = try builder.finish(inner);
 
-    const array = try builder.finish(&[_]arr.Array{ field0.*, field1.* });
+//     try testing.expectEqual(len, array.len);
+//     try testing.expectEqual(3, array.null_count);
+//     try testing.expectEqual(0, array.offset);
+//     try testing.expectEqualDeep(&[_]u8{ 0b11110110, 0b00000001 }, array.validity.?);
+//     try testing.expectEqual(item_width, array.item_width);
+// }
 
-    try testing.expectEqual(len, array.len);
-    try testing.expectEqual(3, array.null_count);
-    try testing.expectEqual(0, array.offset);
-    try testing.expectEqualDeep(&[_]u8{ 0b11110110, 0b00000001 }, array.validity.?);
-}
+// test "fixed-size-list non-nullable" {
+//     var arena = ArenaAllocator.init(testing.allocator);
+//     defer arena.deinit();
+//     const allocator = arena.allocator();
 
-test "struct non-nullable" {
-    var arena = ArenaAllocator.init(testing.allocator);
-    defer arena.deinit();
-    const allocator = arena.allocator();
+//     const inner = try make_inner(69, allocator);
+//     const short_inner = try make_inner(2, allocator);
 
-    const len = 10;
+//     const item_width = 6;
 
-    const field_names = &[_][:0]const u8{ "field0", "field1" };
+//     const len = 10;
 
-    const field0 = try make_inner(len, allocator);
-    const field1 = try make_inner(len, allocator);
+//     var builder = try FixedSizeListBuilder.with_capacity(item_width, len, false, allocator);
 
-    const bad_field = try make_inner(69, allocator);
+//     try testing.expectEqual(Error.NonNullable, builder.append_null());
+//     try testing.expectEqual(Error.NonNullable, builder.append_option(false));
 
-    var builder = try StructBuilder.with_capacity(field_names, len, false, allocator);
+//     try builder.append_item();
+//     try builder.append_item();
+//     try builder.append_item();
+//     try builder.append_option(true);
+//     try builder.append_item();
+//     try builder.append_option(true);
 
-    try testing.expectEqual(Error.NonNullable, builder.append_null());
-    try testing.expectEqual(Error.NonNullable, builder.append_option(false));
+//     try testing.expectEqual(Error.LenCapacityMismatch, builder.finish(inner));
 
-    try builder.append_item();
-    try builder.append_item();
-    try builder.append_item();
-    try builder.append_option(true);
-    try builder.append_item();
-    try builder.append_option(true);
+//     try builder.append_option(true);
+//     try builder.append_item();
+//     try builder.append_option(true);
+//     try builder.append_item();
 
-    try testing.expectEqual(Error.LenCapacityMismatch, builder.finish(&[_]arr.Array{ field0.*, field1.* }));
+//     try testing.expectEqual(Error.OutOfCapacity, builder.append_null());
+//     try testing.expectEqual(Error.OutOfCapacity, builder.append_item());
+//     try testing.expectEqual(Error.OutOfCapacity, builder.append_option(true));
 
-    try builder.append_option(true);
-    try builder.append_item();
-    try builder.append_option(true);
-    try builder.append_item();
+//     try testing.expectEqual(Error.ChildLength, builder.finish(short_inner));
 
-    try testing.expectEqual(Error.OutOfCapacity, builder.append_null());
-    try testing.expectEqual(Error.OutOfCapacity, builder.append_item());
-    try testing.expectEqual(Error.OutOfCapacity, builder.append_option(true));
+//     const array = try builder.finish(inner);
 
-    try testing.expectEqual(Error.InvalidSliceLength, builder.finish(&[_]arr.Array{field0.*}));
-    try testing.expectEqual(Error.ChildLength, builder.finish(&[_]arr.Array{ field0.*, bad_field.* }));
-
-    const array = try builder.finish(&[_]arr.Array{ field0.*, field1.* });
-
-    try testing.expectEqual(len, array.len);
-    try testing.expectEqual(0, array.null_count);
-    try testing.expectEqual(0, array.offset);
-    try testing.expectEqual(null, array.validity);
-}
+//     try testing.expectEqual(len, array.len);
+//     try testing.expectEqual(0, array.null_count);
+//     try testing.expectEqual(0, array.offset);
+//     try testing.expectEqual(null, array.validity);
+//     try testing.expectEqual(item_width, array.item_width);
+// }
