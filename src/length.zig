@@ -123,7 +123,7 @@ pub fn length(array: *const arr.Array) u32 {
             return a.len;
         },
         .dense_union => |*a| {
-            return a.offsets.len;
+            return a.inner.len;
         },
         .sparse_union => |*a| {
             return a.inner.len;
