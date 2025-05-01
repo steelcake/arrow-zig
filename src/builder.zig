@@ -852,13 +852,13 @@ pub fn GenericListBuilder(comptime index_type: arr.IndexType) type {
 
         pub fn append_option(self: *Self, val: ?I) Error!void {
             if (val) |v| {
-                try self.append_length(v);
+                try self.append_item(v);
             } else {
                 try self.append_null();
             }
         }
 
-        pub fn append_length(self: *Self, len: I) Error!void {
+        pub fn append_item(self: *Self, len: I) Error!void {
             if (self.capacity == self.len) {
                 return Error.OutOfCapacity;
             }
@@ -887,6 +887,106 @@ pub fn GenericListBuilder(comptime index_type: arr.IndexType) type {
 
 pub const ListBuilder = GenericListBuilder(.i32);
 pub const LargeListBuilder = GenericListBuilder(.i64);
+
+pub fn GenericListViewBuilder(comptime index_type: arr.IndexType) type {
+    return struct {
+        const Self = @This();
+        const I = index_type.to_type();
+
+        offsets: []I,
+        sizes: []I,
+        validity: ?[]u8,
+        null_count: u32,
+        len: u32,
+        capacity: u32,
+
+        pub fn with_capacity(capacity: u32, nullable: bool, allocator: Allocator) Error!Self {
+            const num_bytes = (capacity + 7) / 8;
+            var validity: ?[]u8 = null;
+            if (nullable) {
+                const v = try allocator.alloc(u8, num_bytes);
+                @memset(v, 0);
+                validity = v;
+            }
+
+            const offsets = try allocator.alloc(I, capacity);
+            @memset(offsets, 0);
+            const sizes = try allocator.alloc(I, capacity);
+            @memset(sizes, 0);
+
+            return Self{
+                .validity = validity,
+                .null_count = 0,
+                .len = 0,
+                .offsets = offsets,
+                .sizes = sizes,
+                .capacity = capacity,
+            };
+        }
+
+        pub fn finish(self: Self, inner: *const arr.Array) Error!arr.GenericListViewArray(index_type) {
+            std.debug.assert(self.validity != null or self.null_count == 0);
+
+            if (self.capacity != self.len) {
+                return Error.LenCapacityMismatch;
+            }
+
+            const inner_len: I = @intCast(length(inner));
+            var i: u32 = 0;
+            while (i < self.len) : (i += 1) {
+                if (self.offsets[i] + self.sizes[i] > inner_len) {
+                    return Error.ChildLength;
+                }
+            }
+
+            return arr.GenericListViewArray(index_type){
+                .len = self.len,
+                .offset = 0,
+                .validity = self.validity,
+                .null_count = self.null_count,
+                .offsets = self.offsets,
+                .sizes = self.sizes,
+                .inner = inner,
+            };
+        }
+
+        pub fn append_option(self: *Self, val: ?struct { I, I }) Error!void {
+            if (val) |v| {
+                try self.append_item(v.@"0", v.@"1");
+            } else {
+                try self.append_null();
+            }
+        }
+
+        pub fn append_item(self: *Self, offset: I, size: I) Error!void {
+            if (self.capacity == self.len) {
+                return Error.OutOfCapacity;
+            }
+            if (self.validity) |v| {
+                bitmap.set(v.ptr, self.len);
+            }
+
+            self.offsets[self.len] = offset;
+            self.sizes[self.len] = size;
+            self.len += 1;
+        }
+
+        pub fn append_null(self: *Self) Error!void {
+            if (self.capacity == self.len) {
+                return Error.OutOfCapacity;
+            }
+            if (self.validity == null) {
+                return Error.NonNullable;
+            }
+
+            self.null_count += 1;
+            self.len += 1;
+        }
+    };
+}
+
+pub const ListViewBuilder = GenericListViewBuilder(.i32);
+pub const LargeListViewBuilder = GenericListViewBuilder(.i64);
 
 test "bool empty" {
     var arena = ArenaAllocator.init(testing.allocator);
@@ -1613,6 +1713,16 @@ test "utf8-view smoke" {
     _ = array;
 }
 
+fn make_list_inner(len: u32, allocator: Allocator) !*const arr.Array {
+    var inner_builder = try UInt16Builder.with_capacity(len, true, allocator);
+    for (0..len) |_| {
+        try inner_builder.append_value(69);
+    }
+    const inner = try allocator.create(arr.Array);
+    inner.* = .{ .u16 = try inner_builder.finish() };
+    return inner;
+}
+
 fn test_list_empty(comptime index_type: arr.IndexType) !void {
     var arena = ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
@@ -1621,12 +1731,10 @@ fn test_list_empty(comptime index_type: arr.IndexType) !void {
     var builder = try GenericListBuilder(index_type).with_capacity(0, true, allocator);
 
     try testing.expectEqual(Error.OutOfCapacity, builder.append_null());
-    try testing.expectEqual(Error.OutOfCapacity, builder.append_length(123123123));
+    try testing.expectEqual(Error.OutOfCapacity, builder.append_item(123123123));
     try testing.expectEqual(Error.OutOfCapacity, builder.append_option(null));
 
-    const inner_builder = try UInt16Builder.with_capacity(0, true, allocator);
-    const inner = try allocator.create(arr.Array);
-    inner.* = .{ .u16 = try inner_builder.finish() };
+    const inner = try make_list_inner(0, allocator);
 
     const array = try builder.finish(inner);
     try testing.expectEqual(0, array.len);
@@ -1646,35 +1754,33 @@ fn test_list_nullable(comptime index_type: arr.IndexType) !void {
     defer arena.deinit();
     const allocator = arena.allocator();
 
-    var inner_builder = try UInt16Builder.with_capacity(15, true, allocator);
-    for (0..15) |i| {
-        try inner_builder.append_value(@intCast(i));
-    }
-    const inner = try allocator.create(arr.Array);
-    inner.* = .{ .u16 = try inner_builder.finish() };
+    const inner = try make_list_inner(30, allocator);
+    const short_inner = try make_list_inner(2, allocator);
 
     const len = 10;
 
     var builder = try GenericListBuilder(index_type).with_capacity(len, true, allocator);
 
     try builder.append_null();
-    try builder.append_length(3);
-    try builder.append_length(0);
+    try builder.append_item(3);
+    try builder.append_item(0);
     try builder.append_option(null);
-    try builder.append_length(6);
+    try builder.append_item(6);
     try builder.append_option(0);
 
     try testing.expectEqual(Error.LenCapacityMismatch, builder.finish(inner));
 
     try builder.append_option(0);
-    try builder.append_length(2);
+    try builder.append_item(2);
     try builder.append_option(0);
     try builder.append_null();
 
     try testing.expectEqual(Error.OutOfCapacity, builder.append_null());
-    try testing.expectEqual(Error.OutOfCapacity, builder.append_length(69));
+    try testing.expectEqual(Error.OutOfCapacity, builder.append_item(69));
     try testing.expectEqual(Error.OutOfCapacity, builder.append_option(null));
     try testing.expectEqual(Error.OutOfCapacity, builder.append_option(69));
+
+    try testing.expectEqual(Error.ChildLength, builder.finish(short_inner));
 
     const array = try builder.finish(inner);
 
@@ -1695,12 +1801,8 @@ fn test_list_non_nullable(comptime index_type: arr.IndexType) !void {
     defer arena.deinit();
     const allocator = arena.allocator();
 
-    var inner_builder = try UInt16Builder.with_capacity(15, true, allocator);
-    for (0..15) |i| {
-        try inner_builder.append_value(@intCast(i));
-    }
-    const inner = try allocator.create(arr.Array);
-    inner.* = .{ .u16 = try inner_builder.finish() };
+    const inner = try make_list_inner(30, allocator);
+    const short_inner = try make_list_inner(2, allocator);
 
     const len = 10;
 
@@ -1709,22 +1811,24 @@ fn test_list_non_nullable(comptime index_type: arr.IndexType) !void {
     try testing.expectEqual(Error.NonNullable, builder.append_null());
     try testing.expectEqual(Error.NonNullable, builder.append_option(null));
 
-    try builder.append_length(0);
-    try builder.append_length(3);
-    try builder.append_length(0);
-    try builder.append_length(0);
-    try builder.append_length(6);
+    try builder.append_item(0);
+    try builder.append_item(3);
+    try builder.append_item(0);
+    try builder.append_item(0);
+    try builder.append_item(6);
     try builder.append_option(0);
 
     try testing.expectEqual(Error.LenCapacityMismatch, builder.finish(inner));
 
     try builder.append_option(0);
-    try builder.append_length(2);
+    try builder.append_item(2);
     try builder.append_option(0);
-    try builder.append_length(0);
+    try builder.append_item(0);
 
-    try testing.expectEqual(Error.OutOfCapacity, builder.append_length(3));
-    try testing.expectEqual(Error.OutOfCapacity, builder.append_length(0));
+    try testing.expectEqual(Error.OutOfCapacity, builder.append_item(3));
+    try testing.expectEqual(Error.OutOfCapacity, builder.append_item(0));
+
+    try testing.expectEqual(Error.ChildLength, builder.finish(short_inner));
 
     const array = try builder.finish(inner);
 
@@ -1739,3 +1843,132 @@ test "list non-nullable" {
     try test_list_non_nullable(.i32);
     try test_list_non_nullable(.i64);
 }
+
+fn test_list_view_empty(comptime index_type: arr.IndexType) !void {
+    const I = index_type.to_type();
+
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const inner = try make_list_inner(0, allocator);
+
+    var builder = try GenericListViewBuilder(index_type).with_capacity(0, true, allocator);
+
+    try testing.expectEqual(Error.OutOfCapacity, builder.append_null());
+    try testing.expectEqual(Error.OutOfCapacity, builder.append_item(31, 69));
+    try testing.expectEqual(Error.OutOfCapacity, builder.append_option(null));
+
+    const array = try builder.finish(inner);
+    try testing.expectEqual(0, array.len);
+    try testing.expectEqual(0, array.null_count);
+    try testing.expectEqual(0, array.offset);
+    try testing.expectEqualDeep(&[_]u8{}, array.validity.?);
+    try testing.expectEqualDeep(&[_]I{}, array.offsets);
+    try testing.expectEqualDeep(&[_]I{}, array.sizes);
+}
+
+test "list-view empty" {
+    try test_list_view_empty(.i32);
+    try test_list_view_empty(.i64);
+}
+
+fn test_list_view_nullable(comptime index_type: arr.IndexType) !void {
+    const I = index_type.to_type();
+
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const inner = try make_list_inner(69, allocator);
+    const short_inner = try make_list_inner(2, allocator);
+
+    const len = 10;
+
+    var builder = try GenericListViewBuilder(index_type).with_capacity(len, true, allocator);
+
+    try builder.append_null();
+    try builder.append_item(66, 3);
+    try builder.append_item(69, 0);
+    try builder.append_option(null);
+    try builder.append_item(3, 3);
+    try builder.append_option(.{ 0, 0 });
+
+    try testing.expectEqual(Error.LenCapacityMismatch, builder.finish(inner));
+
+    try builder.append_option(.{ 0, 0 });
+    try builder.append_item(18, 2);
+    try builder.append_option(.{ 0, 15 });
+    try builder.append_null();
+
+    try testing.expectEqual(Error.OutOfCapacity, builder.append_null());
+    try testing.expectEqual(Error.OutOfCapacity, builder.append_item(64, 69));
+    try testing.expectEqual(Error.OutOfCapacity, builder.append_option(null));
+    try testing.expectEqual(Error.OutOfCapacity, builder.append_option(.{ 64, 69 }));
+
+    try testing.expectEqual(Error.ChildLength, builder.finish(short_inner));
+
+    const array = try builder.finish(inner);
+
+    try testing.expectEqual(len, array.len);
+    try testing.expectEqual(3, array.null_count);
+    try testing.expectEqual(0, array.offset);
+    try testing.expectEqualDeep(&[_]u8{ 0b11110110, 0b00000001 }, array.validity.?);
+    try testing.expectEqualDeep(&[_]I{ 0, 66, 69, 0, 3, 0, 0, 18, 0, 0 }, array.offsets);
+    try testing.expectEqualDeep(&[_]I{ 0, 3, 0, 0, 3, 0, 0, 2, 15, 0 }, array.sizes);
+}
+
+test "list-view nullable" {
+    try test_list_view_nullable(.i32);
+    try test_list_view_nullable(.i64);
+}
+
+// fn test_list_non_nullable(comptime index_type: arr.IndexType) !void {
+//     var arena = ArenaAllocator.init(testing.allocator);
+//     defer arena.deinit();
+//     const allocator = arena.allocator();
+
+//     var inner_builder = try UInt16Builder.with_capacity(15, true, allocator);
+//     for (0..15) |i| {
+//         try inner_builder.append_value(@intCast(i));
+//     }
+//     const inner = try allocator.create(arr.Array);
+//     inner.* = .{ .u16 = try inner_builder.finish() };
+
+//     const len = 10;
+
+//     var builder = try GenericListBuilder(index_type).with_capacity(len, false, allocator);
+
+//     try testing.expectEqual(Error.NonNullable, builder.append_null());
+//     try testing.expectEqual(Error.NonNullable, builder.append_option(null));
+
+//     try builder.append_item(0);
+//     try builder.append_item(3);
+//     try builder.append_item(0);
+//     try builder.append_item(0);
+//     try builder.append_item(6);
+//     try builder.append_option(0);
+
+//     try testing.expectEqual(Error.LenCapacityMismatch, builder.finish(inner));
+
+//     try builder.append_option(0);
+//     try builder.append_item(2);
+//     try builder.append_option(0);
+//     try builder.append_item(0);
+
+//     try testing.expectEqual(Error.OutOfCapacity, builder.append_item(3));
+//     try testing.expectEqual(Error.OutOfCapacity, builder.append_item(0));
+
+//     const array = try builder.finish(inner);
+
+//     try testing.expectEqual(len, array.len);
+//     try testing.expectEqual(0, array.null_count);
+//     try testing.expectEqual(0, array.offset);
+//     try testing.expectEqual(null, array.validity);
+//     try testing.expectEqualDeep(&[_]index_type.to_type(){ 0, 0, 3, 3, 3, 9, 9, 9, 11, 11, 11 }, array.offsets);
+// }
+
+// test "list non-nullable" {
+//     try test_list_non_nullable(.i32);
+//     try test_list_non_nullable(.i64);
+// }
