@@ -411,6 +411,14 @@ fn import_union(format: []const u8, array: *const FFI_Array, allocator: Allocato
     const n_fields: u32 = @intCast(array.array.n_children);
     std.debug.assert(n_fields == type_id_set.len);
 
+    const schema_children = array.schema.children orelse unreachable;
+    const field_names = try allocator.alloc([:0]const u8, n_fields);
+    for (0..n_fields) |i| {
+        const child = schema_children[i] orelse unreachable;
+        const name = child.name orelse unreachable;
+        field_names[i] = std.mem.span(name);
+    }
+
     const children = try allocator.alloc(arr.Array, n_fields);
     for (0..n_fields) |i| {
         const child = array.get_child(i);
@@ -419,18 +427,21 @@ fn import_union(format: []const u8, array: *const FFI_Array, allocator: Allocato
 
     const type_ids = import_buffer(i8, buffers[0], size);
 
+    const inner = arr.UnionArray{
+        .type_id_set = type_id_set,
+        .children = children,
+        .type_ids = type_ids,
+        .len = len,
+        .offset = offset,
+        .field_names = field_names,
+    };
+
     switch (format[2]) {
         'd' => {
             std.debug.assert(array.array.n_buffers == 2);
 
             return .{ .dense_union = arr.DenseUnionArray{
-                .inner = .{
-                    .type_id_set = type_id_set,
-                    .children = children,
-                    .type_ids = type_ids,
-                    .len = len,
-                    .offset = offset,
-                },
+                .inner = inner,
                 .offsets = import_buffer(i32, buffers[1], size),
             } };
         },
@@ -438,13 +449,7 @@ fn import_union(format: []const u8, array: *const FFI_Array, allocator: Allocato
             std.debug.assert(array.array.n_buffers == 1);
 
             return .{ .sparse_union = arr.SparseUnionArray{
-                .inner = .{
-                    .type_id_set = type_id_set,
-                    .children = children,
-                    .type_ids = type_ids,
-                    .len = len,
-                    .offset = offset,
-                },
+                .inner = inner,
             } };
         },
         else => unreachable,
@@ -1055,7 +1060,9 @@ fn export_union(array: *const arr.UnionArr, offsets: ?[]const i32, format_base: 
 
     const children = try allocator.alloc(FFI_Array, n_fields);
     for (0..n_fields) |i| {
-        children[i] = try export_array_impl(&array.children[i], private_data.increment());
+        var out = try export_array_impl(&array.children[i], private_data.increment());
+        out.schema.name = array.field_names[i].ptr;
+        children[i] = out;
     }
 
     const array_children = try allocator.alloc(?*abi.ArrowArray, n_fields);

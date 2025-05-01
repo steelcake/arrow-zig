@@ -225,6 +225,7 @@ pub const LargeListArray = GenericListArray(.i64);
 
 pub const UnionArray = struct {
     type_id_set: []const i8,
+    field_names: []const [:0]const u8,
     type_ids: []const i8,
     children: []const Array,
     len: u32,
