@@ -988,6 +988,85 @@ pub fn GenericListViewBuilder(comptime index_type: arr.IndexType) type {
 pub const ListViewBuilder = GenericListViewBuilder(.i32);
 pub const LargeListViewBuilder = GenericListViewBuilder(.i64);
 
+pub const FixedSizeListBuilder = struct {
+    const Self = @This();
+
+    validity: ?[]u8,
+    null_count: u32,
+    len: u32,
+    capacity: u32,
+    item_width: i32,
+
+    pub fn with_capacity(item_width: i32, capacity: u32, nullable: bool, allocator: Allocator) Error!Self {
+        const num_bytes = (capacity + 7) / 8;
+        var validity: ?[]u8 = null;
+        if (nullable) {
+            const v = try allocator.alloc(u8, num_bytes);
+            @memset(v, 0);
+            validity = v;
+        }
+
+        return Self{
+            .validity = validity,
+            .null_count = 0,
+            .len = 0,
+            .capacity = capacity,
+            .item_width = item_width,
+        };
+    }
+
+    pub fn finish(self: Self, inner: *const arr.Array) Error!arr.FixedSizeListArray {
+        std.debug.assert(self.validity != null or self.null_count == 0);
+
+        if (self.capacity != self.len) {
+            return Error.LenCapacityMismatch;
+        }
+
+        if (length(inner) < self.len * @as(u32, @intCast(self.item_width))) {
+            return Error.ChildLength;
+        }
+
+        return arr.FixedSizeListArray{
+            .len = self.len,
+            .offset = 0,
+            .validity = self.validity,
+            .null_count = self.null_count,
+            .inner = inner,
+            .item_width = self.item_width,
+        };
+    }
+
+    pub fn append_option(self: *Self, val: bool) Error!void {
+        if (val) {
+            try self.append_item();
+        } else {
+            try self.append_null();
+        }
+    }
+
+    pub fn append_item(self: *Self) Error!void {
+        if (self.capacity == self.len) {
+            return Error.OutOfCapacity;
+        }
+        if (self.validity) |v| {
+            bitmap.set(v.ptr, self.len);
+        }
+        self.len += 1;
+    }
+
+    pub fn append_null(self: *Self) Error!void {
+        if (self.capacity == self.len) {
+            return Error.OutOfCapacity;
+        }
+        if (self.validity == null) {
+            return Error.NonNullable;
+        }
+
+        self.null_count += 1;
+        self.len += 1;
+    }
+};
+
 test "bool empty" {
     var arena = ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
@@ -1972,4 +2051,117 @@ fn test_list_view_non_nullable(comptime index_type: arr.IndexType) !void {
 test "list-view non-nullable" {
     try test_list_view_non_nullable(.i32);
     try test_list_view_non_nullable(.i64);
+}
+
+test "fixed-size-list empty" {
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const inner = try make_list_inner(0, allocator);
+
+    const item_width = 69;
+
+    var builder = try FixedSizeListBuilder.with_capacity(item_width, 0, true, allocator);
+
+    try testing.expectEqual(Error.OutOfCapacity, builder.append_null());
+    try testing.expectEqual(Error.OutOfCapacity, builder.append_item());
+    try testing.expectEqual(Error.OutOfCapacity, builder.append_option(true));
+
+    const array = try builder.finish(inner);
+    try testing.expectEqual(0, array.len);
+    try testing.expectEqual(0, array.null_count);
+    try testing.expectEqual(0, array.offset);
+    try testing.expectEqualDeep(&[_]u8{}, array.validity.?);
+    try testing.expectEqual(item_width, array.item_width);
+}
+
+test "fixed-size-list nullable" {
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const inner = try make_list_inner(69, allocator);
+    const short_inner = try make_list_inner(2, allocator);
+
+    const item_width = 6;
+
+    const len = 10;
+
+    var builder = try FixedSizeListBuilder.with_capacity(item_width, len, true, allocator);
+
+    try builder.append_null();
+    try builder.append_item();
+    try builder.append_item();
+    try builder.append_option(false);
+    try builder.append_item();
+    try builder.append_option(true);
+
+    try testing.expectEqual(Error.LenCapacityMismatch, builder.finish(inner));
+
+    try builder.append_option(true);
+    try builder.append_item();
+    try builder.append_option(true);
+    try builder.append_null();
+
+    try testing.expectEqual(Error.OutOfCapacity, builder.append_null());
+    try testing.expectEqual(Error.OutOfCapacity, builder.append_item());
+    try testing.expectEqual(Error.OutOfCapacity, builder.append_option(false));
+    try testing.expectEqual(Error.OutOfCapacity, builder.append_option(true));
+
+    try testing.expectEqual(Error.ChildLength, builder.finish(short_inner));
+
+    const array = try builder.finish(inner);
+
+    try testing.expectEqual(len, array.len);
+    try testing.expectEqual(3, array.null_count);
+    try testing.expectEqual(0, array.offset);
+    try testing.expectEqualDeep(&[_]u8{ 0b11110110, 0b00000001 }, array.validity.?);
+    try testing.expectEqual(item_width, array.item_width);
+}
+
+test "fixed-size-list non-nullable" {
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const inner = try make_list_inner(69, allocator);
+    const short_inner = try make_list_inner(2, allocator);
+
+    const item_width = 6;
+
+    const len = 10;
+
+    var builder = try FixedSizeListBuilder.with_capacity(item_width, len, false, allocator);
+
+    try testing.expectEqual(Error.NonNullable, builder.append_null());
+    try testing.expectEqual(Error.NonNullable, builder.append_option(false));
+
+    try builder.append_item();
+    try builder.append_item();
+    try builder.append_item();
+    try builder.append_option(true);
+    try builder.append_item();
+    try builder.append_option(true);
+
+    try testing.expectEqual(Error.LenCapacityMismatch, builder.finish(inner));
+
+    try builder.append_option(true);
+    try builder.append_item();
+    try builder.append_option(true);
+    try builder.append_item();
+
+    try testing.expectEqual(Error.OutOfCapacity, builder.append_null());
+    try testing.expectEqual(Error.OutOfCapacity, builder.append_item());
+    try testing.expectEqual(Error.OutOfCapacity, builder.append_option(true));
+
+    try testing.expectEqual(Error.ChildLength, builder.finish(short_inner));
+
+    const array = try builder.finish(inner);
+
+    try testing.expectEqual(len, array.len);
+    try testing.expectEqual(0, array.null_count);
+    try testing.expectEqual(0, array.offset);
+    try testing.expectEqual(null, array.validity);
+    try testing.expectEqual(item_width, array.item_width);
 }
