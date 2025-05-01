@@ -1224,6 +1224,91 @@ pub const SparseUnionBuilder = struct {
     }
 };
 
+pub const DenseUnionBuilder = struct {
+    const Self = @This();
+
+    field_names: []const [:0]const u8,
+    type_id_set: []const i8,
+    type_ids: []i8,
+    offsets: []i32,
+    len: u32,
+    capacity: u32,
+
+    pub fn with_capacity(field_names: []const [:0]const u8, type_id_set: []const i8, capacity: u32, allocator: Allocator) Error!Self {
+        if (field_names.len != type_id_set.len) {
+            return Error.InvalidSliceLength;
+        }
+
+        const type_ids = try allocator.alloc(i8, capacity);
+        @memset(type_ids, 0);
+
+        const offsets = try allocator.alloc(i32, capacity);
+        @memset(offsets, 0);
+
+        return Self{
+            .field_names = field_names,
+            .type_id_set = type_id_set,
+            .type_ids = type_ids,
+            .offsets = offsets,
+            .len = 0,
+            .capacity = capacity,
+        };
+    }
+
+    fn field_index(self: *const Self, type_id: i8) ?usize {
+        for (self.type_id_set, 0..) |t_id, i| {
+            if (t_id == type_id) {
+                return i;
+            }
+        }
+        return null;
+    }
+
+    pub fn finish(self: Self, children: []const arr.Array) Error!arr.DenseUnionArray {
+        if (self.capacity != self.len) {
+            return Error.LenCapacityMismatch;
+        }
+
+        if (children.len != self.field_names.len) {
+            return Error.InvalidSliceLength;
+        }
+
+        for (self.type_ids, self.offsets) |tid, offset| {
+            const field_idx = self.field_index(tid) orelse unreachable;
+
+            if (length(&children[field_idx]) <= @as(u32, @intCast(offset))) {
+                return error.ChildLength;
+            }
+        }
+
+        return arr.DenseUnionArray{
+            .inner = arr.UnionArray{
+                .len = self.len,
+                .offset = 0,
+                .field_names = self.field_names,
+                .children = children,
+                .type_ids = self.type_ids,
+                .type_id_set = self.type_id_set,
+            },
+            .offsets = self.offsets,
+        };
+    }
+
+    pub fn append(self: *Self, type_id: i8, offset: i32) Error!void {
+        if (self.capacity == self.len) {
+            return Error.OutOfCapacity;
+        }
+
+        if (self.field_index(type_id) == null) {
+            return Error.UnknownTypeId;
+        }
+
+        self.type_ids[self.len] = type_id;
+        self.offsets[self.len] = offset;
+        self.len += 1;
+    }
+};
+
 test "bool empty" {
     var arena = ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
@@ -2525,4 +2610,80 @@ test "sparse-union" {
     try testing.expectEqualDeep(field_names, array.inner.field_names);
     try testing.expectEqualDeep(type_id_set, array.inner.type_id_set);
     try testing.expectEqualDeep(&[_]i8{ 69, 69, -69, -69, -69, 69, 69, 69, 69, -69 }, array.inner.type_ids);
+}
+
+test "dense-union empty" {
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const len = 0;
+
+    const field_names = &[_][:0]const u8{ "field0", "field1" };
+    const type_id_set = &[_]i8{ 69, -69 };
+
+    const field0 = try make_inner(len, allocator);
+    const field1 = try make_inner(len, allocator);
+
+    var builder = try DenseUnionBuilder.with_capacity(field_names, type_id_set, len, allocator);
+
+    try testing.expectEqual(Error.OutOfCapacity, builder.append(69, 1));
+    try testing.expectEqual(Error.OutOfCapacity, builder.append(-69, 1));
+
+    try testing.expectEqual(Error.InvalidSliceLength, builder.finish(&[_]arr.Array{field0.*}));
+
+    const array = try builder.finish(&[_]arr.Array{ field0.*, field1.* });
+    try testing.expectEqual(0, array.inner.len);
+    try testing.expectEqual(0, array.inner.offset);
+    try testing.expectEqualDeep(field_names, array.inner.field_names);
+    try testing.expectEqualDeep(type_id_set, array.inner.type_id_set);
+    try testing.expectEqualDeep(&[_]i8{}, array.inner.type_ids);
+    try testing.expectEqualDeep(&[_]i32{}, array.offsets);
+}
+
+test "dense-union" {
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const len = 10;
+
+    const field_names = &[_][:0]const u8{ "field0", "field1" };
+    const type_id_set = &[_]i8{ 69, -69 };
+
+    const field0 = try make_inner(31, allocator);
+    const field1 = try make_inner(31, allocator);
+
+    const bad_field = try make_inner(10, allocator);
+
+    var builder = try DenseUnionBuilder.with_capacity(field_names, type_id_set, len, allocator);
+
+    try builder.append(69, 0);
+    try builder.append(69, 30);
+    try builder.append(-69, 30);
+    try builder.append(-69, 2);
+    try builder.append(-69, 2);
+    try builder.append(69, 2);
+
+    try testing.expectEqual(Error.LenCapacityMismatch, builder.finish(&[_]arr.Array{ field0.*, field1.* }));
+
+    try testing.expectEqual(Error.UnknownTypeId, builder.append(113, 69));
+
+    try builder.append(69, 9);
+    try builder.append(69, 1);
+    try builder.append(69, 1);
+    try builder.append(-69, 3);
+
+    try testing.expectEqual(Error.OutOfCapacity, builder.append(69, 10));
+
+    try testing.expectEqual(Error.InvalidSliceLength, builder.finish(&[_]arr.Array{field0.*}));
+    try testing.expectEqual(Error.ChildLength, builder.finish(&[_]arr.Array{ field0.*, bad_field.* }));
+
+    const array = try builder.finish(&[_]arr.Array{ field0.*, field1.* });
+    try testing.expectEqual(len, array.inner.len);
+    try testing.expectEqual(0, array.inner.offset);
+    try testing.expectEqualDeep(field_names, array.inner.field_names);
+    try testing.expectEqualDeep(type_id_set, array.inner.type_id_set);
+    try testing.expectEqualDeep(&[_]i8{ 69, 69, -69, -69, -69, 69, 69, 69, 69, -69 }, array.inner.type_ids);
+    try testing.expectEqualDeep(&[_]i32{ 0, 30, 30, 2, 2, 2, 9, 1, 1, 3 }, array.offsets);
 }
