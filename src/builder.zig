@@ -14,6 +14,7 @@ const Error = error{
     LenCapacityMismatch,
     InvalidSliceLength,
     ChildLength,
+    UnknownTypeId,
 };
 
 pub const BoolBuilder = struct {
@@ -1152,6 +1153,77 @@ pub const StructBuilder = struct {
     }
 };
 
+pub const SparseUnionBuilder = struct {
+    const Self = @This();
+
+    field_names: []const [:0]const u8,
+    type_id_set: []const i8,
+    type_ids: []i8,
+    len: u32,
+    capacity: u32,
+
+    pub fn with_capacity(field_names: []const [:0]const u8, type_id_set: []const i8, capacity: u32, allocator: Allocator) Error!Self {
+        if (field_names.len != type_id_set.len) {
+            return Error.InvalidSliceLength;
+        }
+
+        const type_ids = try allocator.alloc(i8, capacity);
+        @memset(type_ids, 0);
+
+        return Self{
+            .field_names = field_names,
+            .type_id_set = type_id_set,
+            .type_ids = type_ids,
+            .len = 0,
+            .capacity = capacity,
+        };
+    }
+
+    pub fn finish(self: Self, children: []const arr.Array) Error!arr.SparseUnionArray {
+        if (self.capacity != self.len) {
+            return Error.LenCapacityMismatch;
+        }
+
+        if (children.len != self.field_names.len) {
+            return Error.InvalidSliceLength;
+        }
+
+        for (children) |*c| {
+            if (length(c) != self.len) {
+                return Error.ChildLength;
+            }
+        }
+
+        return arr.SparseUnionArray{
+            .inner = arr.UnionArray{
+                .len = self.len,
+                .offset = 0,
+                .field_names = self.field_names,
+                .children = children,
+                .type_ids = self.type_ids,
+                .type_id_set = self.type_id_set,
+            },
+        };
+    }
+
+    pub fn append(self: *Self, type_id: i8) Error!void {
+        if (self.capacity == self.len) {
+            return Error.OutOfCapacity;
+        }
+
+        for (self.type_id_set) |t_id| {
+            if (t_id == type_id) {
+                break;
+            }
+        } else {
+            return Error.UnknownTypeId;
+        }
+
+        self.type_ids[self.len] = type_id;
+        self.len += 1;
+    }
+};
+
 test "bool empty" {
     var arena = ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
@@ -2279,6 +2351,7 @@ test "struct empty" {
     try testing.expectEqual(0, array.null_count);
     try testing.expectEqual(0, array.offset);
     try testing.expectEqualDeep(&[_]u8{}, array.validity.?);
+    try testing.expectEqualDeep(field_names, array.field_names);
 }
 
 test "struct nullable" {
@@ -2325,6 +2398,7 @@ test "struct nullable" {
     try testing.expectEqual(3, array.null_count);
     try testing.expectEqual(0, array.offset);
     try testing.expectEqualDeep(&[_]u8{ 0b11110110, 0b00000001 }, array.validity.?);
+    try testing.expectEqualDeep(field_names, array.field_names);
 }
 
 test "struct non-nullable" {
@@ -2373,4 +2447,82 @@ test "struct non-nullable" {
     try testing.expectEqual(0, array.null_count);
     try testing.expectEqual(0, array.offset);
     try testing.expectEqual(null, array.validity);
+    try testing.expectEqualDeep(field_names, array.field_names);
+}
+
+test "sparse-union empty" {
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const len = 0;
+
+    const field_names = &[_][:0]const u8{ "field0", "field1" };
+    const type_id_set = &[_]i8{ 69, -69 };
+
+    const field0 = try make_inner(len, allocator);
+    const field1 = try make_inner(len, allocator);
+
+    const bad_field = try make_inner(69, allocator);
+
+    var builder = try SparseUnionBuilder.with_capacity(field_names, type_id_set, len, allocator);
+
+    try testing.expectEqual(Error.OutOfCapacity, builder.append(69));
+    try testing.expectEqual(Error.OutOfCapacity, builder.append(-69));
+
+    try testing.expectEqual(Error.InvalidSliceLength, builder.finish(&[_]arr.Array{field0.*}));
+    try testing.expectEqual(Error.ChildLength, builder.finish(&[_]arr.Array{ field0.*, bad_field.* }));
+
+    const array = try builder.finish(&[_]arr.Array{ field0.*, field1.* });
+    try testing.expectEqual(0, array.inner.len);
+    try testing.expectEqual(0, array.inner.offset);
+    try testing.expectEqualDeep(field_names, array.inner.field_names);
+    try testing.expectEqualDeep(type_id_set, array.inner.type_id_set);
+    try testing.expectEqualDeep(&[_]i8{}, array.inner.type_ids);
+}
+
+test "sparse-union" {
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const len = 10;
+
+    const field_names = &[_][:0]const u8{ "field0", "field1" };
+    const type_id_set = &[_]i8{ 69, -69 };
+
+    const field0 = try make_inner(len, allocator);
+    const field1 = try make_inner(len, allocator);
+
+    const bad_field = try make_inner(69, allocator);
+
+    var builder = try SparseUnionBuilder.with_capacity(field_names, type_id_set, len, allocator);
+
+    try builder.append(69);
+    try builder.append(69);
+    try builder.append(-69);
+    try builder.append(-69);
+    try builder.append(-69);
+    try builder.append(69);
+
+    try testing.expectEqual(Error.LenCapacityMismatch, builder.finish(&[_]arr.Array{ field0.*, field1.* }));
+
+    try testing.expectEqual(Error.UnknownTypeId, builder.append(113));
+
+    try builder.append(69);
+    try builder.append(69);
+    try builder.append(69);
+    try builder.append(-69);
+
+    try testing.expectEqual(Error.OutOfCapacity, builder.append(69));
+
+    try testing.expectEqual(Error.InvalidSliceLength, builder.finish(&[_]arr.Array{field0.*}));
+    try testing.expectEqual(Error.ChildLength, builder.finish(&[_]arr.Array{ field0.*, bad_field.* }));
+
+    const array = try builder.finish(&[_]arr.Array{ field0.*, field1.* });
+    try testing.expectEqual(len, array.inner.len);
+    try testing.expectEqual(0, array.inner.offset);
+    try testing.expectEqualDeep(field_names, array.inner.field_names);
+    try testing.expectEqualDeep(type_id_set, array.inner.type_id_set);
+    try testing.expectEqualDeep(&[_]i8{ 69, 69, -69, -69, -69, 69, 69, 69, 69, -69 }, array.inner.type_ids);
 }
