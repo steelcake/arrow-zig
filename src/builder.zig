@@ -1309,6 +1309,94 @@ pub const DenseUnionBuilder = struct {
     }
 };
 
+pub const MapBuilder = struct {
+    const Self = @This();
+
+    offsets: []i32,
+    validity: ?[]u8,
+    null_count: u32,
+    len: u32,
+    capacity: u32,
+    keys_are_sorted: bool,
+
+    pub fn with_capacity(keys_are_sorted: bool, capacity: u32, nullable: bool, allocator: Allocator) Error!Self {
+        const num_bytes = (capacity + 7) / 8;
+        var validity: ?[]u8 = null;
+        if (nullable) {
+            const v = try allocator.alloc(u8, num_bytes);
+            @memset(v, 0);
+            validity = v;
+        }
+
+        const offsets = try allocator.alloc(i32, capacity + 1);
+        @memset(offsets, 0);
+
+        return Self{
+            .validity = validity,
+            .null_count = 0,
+            .len = 0,
+            .offsets = offsets,
+            .capacity = capacity,
+            .keys_are_sorted = keys_are_sorted,
+        };
+    }
+
+    pub fn finish(self: Self, entries: *const arr.StructArray) Error!arr.MapArray {
+        std.debug.assert(self.validity != null or self.null_count == 0);
+
+        if (self.capacity != self.len) {
+            return Error.LenCapacityMismatch;
+        }
+
+        if (entries.len < self.offsets[self.len]) {
+            return Error.ChildLength;
+        }
+
+        return arr.MapArray{
+            .len = self.len,
+            .offset = 0,
+            .validity = self.validity,
+            .null_count = self.null_count,
+            .offsets = self.offsets,
+            .entries = entries,
+            .keys_are_sorted = self.keys_are_sorted,
+        };
+    }
+
+    pub fn append_option(self: *Self, val: ?i32) Error!void {
+        if (val) |v| {
+            try self.append_item(v);
+        } else {
+            try self.append_null();
+        }
+    }
+
+    pub fn append_item(self: *Self, len: i32) Error!void {
+        if (self.capacity == self.len) {
+            return Error.OutOfCapacity;
+        }
+        if (self.validity) |v| {
+            bitmap.set(v.ptr, self.len);
+        }
+
+        self.len += 1;
+        self.offsets[self.len] = self.offsets[self.len - 1] + len;
+    }
+
+    pub fn append_null(self: *Self) Error!void {
+        if (self.capacity == self.len) {
+            return Error.OutOfCapacity;
+        }
+        if (self.validity == null) {
+            return Error.NonNullable;
+        }
+
+        self.null_count += 1;
+        self.len += 1;
+        self.offsets[self.len] = self.offsets[self.len - 1];
+    }
+};
+
 test "bool empty" {
     var arena = ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
@@ -2686,4 +2774,139 @@ test "dense-union" {
     try testing.expectEqualDeep(type_id_set, array.inner.type_id_set);
     try testing.expectEqualDeep(&[_]i8{ 69, 69, -69, -69, -69, 69, 69, 69, 69, -69 }, array.inner.type_ids);
     try testing.expectEqualDeep(&[_]i32{ 0, 30, 30, 2, 2, 2, 9, 1, 1, 3 }, array.offsets);
+}
+
+fn make_inner_struct(len: u32, allocator: Allocator) !*const arr.StructArray {
+    const field_names = &[_][:0]const u8{ "field0", "field1" };
+
+    const field0 = try make_inner(len, allocator);
+    const field1 = try make_inner(len, allocator);
+
+    var builder = try StructBuilder.with_capacity(field_names, len, false, allocator);
+
+    for (0..len) |_| {
+        try builder.append_item();
+    }
+
+    const array = try allocator.create(arr.StructArray);
+    array.* = try builder.finish(&[_]arr.Array{ field0.*, field1.* });
+
+    return array;
+}
+
+test "map empty" {
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const entries = try make_inner_struct(0, allocator);
+
+    const keys_are_sorted = true;
+
+    var builder = try MapBuilder.with_capacity(keys_are_sorted, 0, true, allocator);
+
+    try testing.expectEqual(Error.OutOfCapacity, builder.append_null());
+    try testing.expectEqual(Error.OutOfCapacity, builder.append_item(123123123));
+    try testing.expectEqual(Error.OutOfCapacity, builder.append_option(null));
+
+    const array = try builder.finish(entries);
+    try testing.expectEqual(0, array.len);
+    try testing.expectEqual(0, array.null_count);
+    try testing.expectEqual(0, array.offset);
+    try testing.expectEqualDeep(&[_]u8{}, array.validity.?);
+    try testing.expectEqualDeep(&[_]i32{0}, array.offsets);
+    try testing.expectEqual(keys_are_sorted, array.keys_are_sorted);
+}
+
+test "map nullable" {
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const entries = try make_inner_struct(30, allocator);
+
+    const short_entries = try make_inner_struct(10, allocator);
+
+    const keys_are_sorted = true;
+
+    const len = 10;
+
+    var builder = try MapBuilder.with_capacity(keys_are_sorted, len, true, allocator);
+
+    try builder.append_null();
+    try builder.append_item(3);
+    try builder.append_item(0);
+    try builder.append_option(null);
+    try builder.append_item(6);
+    try builder.append_option(0);
+
+    try testing.expectEqual(Error.LenCapacityMismatch, builder.finish(entries));
+
+    try builder.append_option(0);
+    try builder.append_item(2);
+    try builder.append_option(0);
+    try builder.append_null();
+
+    try testing.expectEqual(Error.OutOfCapacity, builder.append_null());
+    try testing.expectEqual(Error.OutOfCapacity, builder.append_item(69));
+    try testing.expectEqual(Error.OutOfCapacity, builder.append_option(null));
+    try testing.expectEqual(Error.OutOfCapacity, builder.append_option(69));
+
+    try testing.expectEqual(Error.ChildLength, builder.finish(short_entries));
+
+    const array = try builder.finish(entries);
+
+    try testing.expectEqual(len, array.len);
+    try testing.expectEqual(3, array.null_count);
+    try testing.expectEqual(0, array.offset);
+    try testing.expectEqualDeep(&[_]u8{ 0b11110110, 0b00000001 }, array.validity.?);
+    try testing.expectEqualDeep(&[_]i32{ 0, 0, 3, 3, 3, 9, 9, 9, 11, 11, 11 }, array.offsets);
+    try testing.expectEqual(keys_are_sorted, array.keys_are_sorted);
+}
+
+test "map non-nullable" {
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const entries = try make_inner_struct(30, allocator);
+
+    const short_entries = try make_inner_struct(10, allocator);
+
+    const keys_are_sorted = true;
+
+    const len = 10;
+
+    var builder = try MapBuilder.with_capacity(keys_are_sorted, len, false, allocator);
+
+    try testing.expectEqual(Error.NonNullable, builder.append_null());
+    try testing.expectEqual(Error.NonNullable, builder.append_option(null));
+
+    try builder.append_item(0);
+    try builder.append_item(3);
+    try builder.append_item(0);
+    try builder.append_item(0);
+    try builder.append_item(6);
+    try builder.append_option(0);
+
+    try testing.expectEqual(Error.LenCapacityMismatch, builder.finish(entries));
+
+    try builder.append_option(0);
+    try builder.append_item(2);
+    try builder.append_option(0);
+    try builder.append_item(0);
+
+    try testing.expectEqual(Error.OutOfCapacity, builder.append_item(3));
+    try testing.expectEqual(Error.OutOfCapacity, builder.append_item(0));
+
+    try testing.expectEqual(Error.ChildLength, builder.finish(short_entries));
+
+    const array = try builder.finish(entries);
+
+    try testing.expectEqual(len, array.len);
+    try testing.expectEqual(0, array.null_count);
+    try testing.expectEqual(0, array.offset);
+    try testing.expectEqual(null, array.validity);
+    try testing.expectEqualDeep(&[_]i32{ 0, 0, 3, 3, 3, 9, 9, 9, 11, 11, 11 }, array.offsets);
+    try testing.expectEqual(keys_are_sorted, array.keys_are_sorted);
 }
