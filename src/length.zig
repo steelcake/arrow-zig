@@ -132,7 +132,32 @@ pub fn length(array: *const arr.Array) u32 {
             return a.len;
         },
         .dict => |*a| {
-            return length(a.keys);
+            switch (a.keys) {
+                .i8 => |*i| {
+                    return i.len;
+                },
+                .i16 => |*i| {
+                    return i.len;
+                },
+                .i32 => |*i| {
+                    return i.len;
+                },
+                .i64 => |*i| {
+                    return i.len;
+                },
+                .u8 => |*i| {
+                    return i.len;
+                },
+                .u16 => |*i| {
+                    return i.len;
+                },
+                .u32 => |*i| {
+                    return i.len;
+                },
+                .u64 => |*i| {
+                    return i.len;
+                },
+            }
         },
     }
 }

@@ -139,8 +139,19 @@ pub const Decimal64Array = DecimalArray(.i64);
 pub const Decimal128Array = DecimalArray(.i128);
 pub const Decimal256Array = DecimalArray(.i256);
 
+pub const DictKeys = union(enum) {
+    i8: Int8Array,
+    i16: Int16Array,
+    i32: Int32Array,
+    i64: Int64Array,
+    u8: UInt8Array,
+    u16: UInt16Array,
+    u32: UInt32Array,
+    u64: UInt64Array,
+};
+
 pub const DictArray = struct {
-    keys: *const Array,
+    keys: DictKeys,
     values: *const Array,
     is_ordered: bool,
 };
