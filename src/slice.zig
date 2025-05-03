@@ -1,5 +1,12 @@
+const std = @import("std");
+const testing = std.testing;
+const ArenaAllocator = std.heap.ArenaAllocator;
+
 const arr = @import("./array.zig");
 const bitmap = @import("./bitmap.zig");
+
+// for  testing
+const builder = @import("./builder.zig");
 
 const OffsetLen = struct {
     null_count: u32,
@@ -12,7 +19,7 @@ fn slice_impl(validity: ?[]const u8, base: OffsetLen, offset: u32, len: u32) Off
         unreachable;
     }
 
-    var out = OffsetLen{ .offset = base.offset + offset, .len = base.len - len, .null_count = 0 };
+    var out = OffsetLen{ .offset = base.offset + offset, .len = len, .null_count = 0 };
     if (base.null_count > 0) {
         const v = validity orelse unreachable;
         out.null_count = bitmap.count_nulls(v, out.offset, out.len);
@@ -22,11 +29,11 @@ fn slice_impl(validity: ?[]const u8, base: OffsetLen, offset: u32, len: u32) Off
 }
 
 pub fn slice_null(array: *const arr.NullArray, offset: u32, len: u32) arr.NullArray {
-    const offset_len = slice_impl(null, .{ .offset = array.offset, .len = array.len }, offset, len);
+    const offset_len = slice_impl(null, .{ .offset = 0, .len = array.len, .null_count = 0 }, offset, len);
     return arr.NullArray{ .len = offset_len.len };
 }
 
-pub fn slice_primitive(comptime T: type, array: *const arr.PrimitiveArray(T), offset: u32, len: u32) arr.PrimitiveArray {
+pub fn slice_primitive(comptime T: type, array: *const arr.PrimitiveArray(T), offset: u32, len: u32) arr.PrimitiveArray(T) {
     const offset_len = slice_impl(array.validity, .{ .offset = array.offset, .len = array.len, .null_count = array.null_count }, offset, len);
     return arr.PrimitiveArray(T){
         .values = array.values,
@@ -159,7 +166,7 @@ pub fn slice_union(array: *const arr.UnionArray, offset: u32, len: u32) arr.Unio
 }
 
 pub fn slice_sparse_union(array: *const arr.SparseUnionArray, offset: u32, len: u32) arr.SparseUnionArray {
-    return arr.SparseUnionArray{ .inner = slice_union(&array.innner, offset, len) };
+    return arr.SparseUnionArray{ .inner = slice_union(&array.inner, offset, len) };
 }
 
 pub fn slice_dense_union(array: *const arr.DenseUnionArray, offset: u32, len: u32) arr.DenseUnionArray {
@@ -221,10 +228,10 @@ pub fn slice(array: *const arr.Array, offset: u32, len: u32) arr.Array {
             return .{ .large_binary = slice_binary(.i64, a, offset, len) };
         },
         .utf8 => |*a| {
-            return .{ .utf8 = .{ .inner = slice_binary(.i32, a, offset, len) } };
+            return .{ .utf8 = .{ .inner = slice_binary(.i32, &a.inner, offset, len) } };
         },
         .large_utf8 => |*a| {
-            return .{ .large_uf8 = .{ .inner = slice_binary(.i64, &a.inner, offset, len) } };
+            return .{ .large_utf8 = .{ .inner = slice_binary(.i64, &a.inner, offset, len) } };
         },
         .bool => |*a| {
             return .{ .bool = slice_bool(a, offset, len) };
@@ -236,16 +243,16 @@ pub fn slice(array: *const arr.Array, offset: u32, len: u32) arr.Array {
             return .{ .utf8_view = .{ .inner = slice_binary_view(&a.inner, offset, len) } };
         },
         .decimal32 => |*a| {
-            return .{ .decimal32 = .{ .inner = slice_primitive(i32, &a.inner, offset, len) } };
+            return .{ .decimal32 = .{ .inner = slice_primitive(i32, &a.inner, offset, len), .params = a.params } };
         },
         .decimal64 => |*a| {
-            return .{ .decimal64 = .{ .inner = slice_primitive(i64, &a.inner, offset, len) } };
+            return .{ .decimal64 = .{ .inner = slice_primitive(i64, &a.inner, offset, len), .params = a.params } };
         },
         .decimal128 => |*a| {
-            return .{ .decimal128 = .{ .inner = slice_primitive(i128, &a.inner, offset, len) } };
+            return .{ .decimal128 = .{ .inner = slice_primitive(i128, &a.inner, offset, len), .params = a.params } };
         },
         .decimal256 => |*a| {
-            return .{ .decimal256 = .{ .inner = slice_primitive(i256, &a.inner, offset, len) } };
+            return .{ .decimal256 = .{ .inner = slice_primitive(i256, &a.inner, offset, len), .params = a.params } };
         },
         .fixed_size_binary => |*a| {
             return .{ .fixed_size_binary = slice_fixed_size_binary(a, offset, len) };
@@ -266,7 +273,7 @@ pub fn slice(array: *const arr.Array, offset: u32, len: u32) arr.Array {
             return .{ .timestamp = .{ .inner = slice_primitive(i64, &a.inner, offset, len), .ts = a.ts } };
         },
         .duration => |*a| {
-            return .{ .duration = .{ .inner = slice_primitive(i64, &a.inner, offset, len) } };
+            return .{ .duration = .{ .inner = slice_primitive(i64, &a.inner, offset, len), .unit = a.unit } };
         },
         .interval_year_month => |*a| {
             return .{ .interval_year_month = .{ .inner = slice_primitive(i32, &a.inner, offset, len) } };
@@ -336,4 +343,33 @@ pub fn slice(array: *const arr.Array, offset: u32, len: u32) arr.Array {
             }
         },
     }
+}
+
+test slice {
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var b = try builder.Int16Builder.with_capacity(4, true, allocator);
+
+    try b.append_null();
+    try b.append_value(69);
+    try b.append_option(-69);
+    try b.append_null();
+
+    const array = arr.Array{ .i16 = try b.finish() };
+
+    const sliced = slice(&array, 1, 3).i16;
+
+    try testing.expectEqual(1, sliced.null_count);
+    try testing.expectEqual(3, sliced.len);
+    try testing.expectEqual(1, sliced.offset);
+
+    const array2 = arr.Array{ .i16 = sliced };
+
+    const sliced2 = slice(&array2, 0, 1).i16;
+
+    try testing.expectEqual(0, sliced2.null_count);
+    try testing.expectEqual(1, sliced2.len);
+    try testing.expectEqual(1, sliced2.offset);
 }

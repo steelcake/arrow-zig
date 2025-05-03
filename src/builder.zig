@@ -98,7 +98,7 @@ pub const BoolBuilder = struct {
     }
 };
 
-fn PrimitiveBuilder(comptime T: type) type {
+pub fn PrimitiveBuilder(comptime T: type) type {
     return struct {
         const Self = @This();
 

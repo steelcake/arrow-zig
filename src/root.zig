@@ -11,4 +11,5 @@ test {
     _ = bitmap;
     _ = builder;
     _ = length;
+    _ = slice;
 }
