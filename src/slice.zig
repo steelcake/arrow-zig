@@ -4,8 +4,6 @@ const ArenaAllocator = std.heap.ArenaAllocator;
 
 const arr = @import("./array.zig");
 const bitmap = @import("./bitmap.zig");
-
-// for  testing
 const builder = @import("./builder.zig");
 
 const OffsetLen = struct {
@@ -56,6 +54,10 @@ pub fn slice_binary(comptime index_type: arr.IndexType, array: *const arr.Generi
     };
 }
 
+pub fn slice_utf8(comptime index_type: arr.IndexType, array: *const arr.GenericUtf8Array(index_type), offset: u32, len: u32) arr.GenericUtf8Array(index_type) {
+    return .{ .inner = slice_binary(index_type, &array.inner, offset, len) };
+}
+
 pub fn slice_bool(array: *const arr.BoolArray, offset: u32, len: u32) arr.BoolArray {
     const offset_len = slice_impl(array.validity, .{ .offset = array.offset, .len = array.len, .null_count = array.null_count }, offset, len);
     return arr.BoolArray{
@@ -77,6 +79,10 @@ pub fn slice_binary_view(array: *const arr.BinaryViewArray, offset: u32, len: u3
         .offset = offset_len.offset,
         .null_count = offset_len.null_count,
     };
+}
+
+pub fn slice_utf8_view(array: *const arr.Utf8ViewArray, offset: u32, len: u32) arr.Utf8ViewArray {
+    return .{ .inner = slice_binary_view(&array.inner, offset, len) };
 }
 
 pub fn slice_fixed_size_binary(array: *const arr.FixedSizeBinaryArray, offset: u32, len: u32) arr.FixedSizeBinaryArray {
@@ -183,166 +189,92 @@ pub fn slice_run_end_encoded(array: *const arr.RunEndArray, offset: u32, len: u3
     };
 }
 
+pub fn slice_decimal(comptime int: arr.DecimalInt, array: *const arr.DecimalArray(int), offset: u32, len: u32) arr.DecimalArray(int) {
+    return .{ .inner = slice_primitive(int.to_type(), &array.inner, offset, len), .params = array.params };
+}
+
+pub fn slice_date(comptime backing_t: arr.IndexType, array: *const arr.DateArray(backing_t), offset: u32, len: u32) arr.DateArray(backing_t) {
+    return .{ .inner = slice_primitive(backing_t.to_type(), &array.inner, offset, len) };
+}
+
+pub fn slice_time(comptime backing_t: arr.IndexType, array: *const arr.TimeArray(backing_t), offset: u32, len: u32) arr.TimeArray(backing_t) {
+    return .{ .inner = slice_primitive(backing_t.to_type(), &array.inner, offset, len), .unit = array.unit };
+}
+
+pub fn slice_timestamp(array: *const arr.TimestampArray, offset: u32, len: u32) arr.TimestampArray {
+    return .{ .inner = slice_primitive(i64, &array.inner, offset, len), .ts = array.ts };
+}
+
+pub fn slice_duration(array: *const arr.DurationArray, offset: u32, len: u32) arr.DurationArray {
+    return .{ .inner = slice_primitive(i64, &array.inner, offset, len), .unit = array.unit };
+}
+
+pub fn slice_interval(comptime interval_t: arr.IntervalType, array: *const arr.IntervalArray(interval_t), offset: u32, len: u32) arr.IntervalArray(interval_t) {
+    return .{ .inner = slice_primitive(interval_t.to_type(), &array.inner, offset, len) };
+}
+
+pub fn slice_dict(array: *const arr.DictArray, offset: u32, len: u32) arr.DictArray {
+    const keys: arr.DictKeys = switch (array.keys) {
+        .i8 => |*i| .{ .i8 = slice_primitive(i8, i, offset, len) },
+        .i16 => |*i| .{ .i16 = slice_primitive(i16, i, offset, len) },
+        .i32 => |*i| .{ .i32 = slice_primitive(i32, i, offset, len) },
+        .i64 => |*i| .{ .i64 = slice_primitive(i64, i, offset, len) },
+        .u8 => |*i| .{ .u8 = slice_primitive(u8, i, offset, len) },
+        .u16 => |*i| .{ .u16 = slice_primitive(u16, i, offset, len) },
+        .u32 => |*i| .{ .u32 = slice_primitive(u32, i, offset, len) },
+        .u64 => |*i| .{ .u64 = slice_primitive(u64, i, offset, len) },
+    };
+
+    return arr.DictArray{ .keys = keys, .values = array.values, .is_ordered = array.is_ordered };
+}
+
 pub fn slice(array: *const arr.Array, offset: u32, len: u32) arr.Array {
-    switch (array.*) {
-        .null => |*a| {
-            return .{ .null = slice_null(a, offset, len) };
-        },
-        .i8 => |*a| {
-            return .{ .i8 = slice_primitive(i8, a, offset, len) };
-        },
-        .i16 => |*a| {
-            return .{ .i16 = slice_primitive(i16, a, offset, len) };
-        },
-        .i32 => |*a| {
-            return .{ .i32 = slice_primitive(i32, a, offset, len) };
-        },
-        .i64 => |*a| {
-            return .{ .i64 = slice_primitive(i64, a, offset, len) };
-        },
-        .u8 => |*a| {
-            return .{ .u8 = slice_primitive(u8, a, offset, len) };
-        },
-        .u16 => |*a| {
-            return .{ .u16 = slice_primitive(u16, a, offset, len) };
-        },
-        .u32 => |*a| {
-            return .{ .u32 = slice_primitive(u32, a, offset, len) };
-        },
-        .u64 => |*a| {
-            return .{ .u64 = slice_primitive(u64, a, offset, len) };
-        },
-        .f16 => |*a| {
-            return .{ .f16 = slice_primitive(f16, a, offset, len) };
-        },
-        .f32 => |*a| {
-            return .{ .f32 = slice_primitive(f32, a, offset, len) };
-        },
-        .f64 => |*a| {
-            return .{ .f64 = slice_primitive(f64, a, offset, len) };
-        },
-        .binary => |*a| {
-            return .{ .binary = slice_binary(.i32, a, offset, len) };
-        },
-        .large_binary => |*a| {
-            return .{ .large_binary = slice_binary(.i64, a, offset, len) };
-        },
-        .utf8 => |*a| {
-            return .{ .utf8 = .{ .inner = slice_binary(.i32, &a.inner, offset, len) } };
-        },
-        .large_utf8 => |*a| {
-            return .{ .large_utf8 = .{ .inner = slice_binary(.i64, &a.inner, offset, len) } };
-        },
-        .bool => |*a| {
-            return .{ .bool = slice_bool(a, offset, len) };
-        },
-        .binary_view => |*a| {
-            return .{ .binary_view = slice_binary_view(a, offset, len) };
-        },
-        .utf8_view => |*a| {
-            return .{ .utf8_view = .{ .inner = slice_binary_view(&a.inner, offset, len) } };
-        },
-        .decimal32 => |*a| {
-            return .{ .decimal32 = .{ .inner = slice_primitive(i32, &a.inner, offset, len), .params = a.params } };
-        },
-        .decimal64 => |*a| {
-            return .{ .decimal64 = .{ .inner = slice_primitive(i64, &a.inner, offset, len), .params = a.params } };
-        },
-        .decimal128 => |*a| {
-            return .{ .decimal128 = .{ .inner = slice_primitive(i128, &a.inner, offset, len), .params = a.params } };
-        },
-        .decimal256 => |*a| {
-            return .{ .decimal256 = .{ .inner = slice_primitive(i256, &a.inner, offset, len), .params = a.params } };
-        },
-        .fixed_size_binary => |*a| {
-            return .{ .fixed_size_binary = slice_fixed_size_binary(a, offset, len) };
-        },
-        .date32 => |*a| {
-            return .{ .date32 = .{ .inner = slice_primitive(i32, &a.inner, offset, len) } };
-        },
-        .date64 => |*a| {
-            return .{ .date64 = .{ .inner = slice_primitive(i64, &a.inner, offset, len) } };
-        },
-        .time32 => |*a| {
-            return .{ .time32 = .{ .inner = slice_primitive(i32, &a.inner, offset, len), .unit = a.unit } };
-        },
-        .time64 => |*a| {
-            return .{ .time64 = .{ .inner = slice_primitive(i64, &a.inner, offset, len), .unit = a.unit } };
-        },
-        .timestamp => |*a| {
-            return .{ .timestamp = .{ .inner = slice_primitive(i64, &a.inner, offset, len), .ts = a.ts } };
-        },
-        .duration => |*a| {
-            return .{ .duration = .{ .inner = slice_primitive(i64, &a.inner, offset, len), .unit = a.unit } };
-        },
-        .interval_year_month => |*a| {
-            return .{ .interval_year_month = .{ .inner = slice_primitive(i32, &a.inner, offset, len) } };
-        },
-        .interval_day_time => |*a| {
-            return .{ .interval_day_time = .{ .inner = slice_primitive([2]i32, &a.inner, offset, len) } };
-        },
-        .interval_month_day_nano => |*a| {
-            return .{ .interval_month_day_nano = .{ .inner = slice_primitive(arr.MonthDayNano, &a.inner, offset, len) } };
-        },
-        .list => |*a| {
-            return .{ .list = slice_list(.i32, a, offset, len) };
-        },
-        .large_list => |*a| {
-            return .{ .large_list = slice_list(.i64, a, offset, len) };
-        },
-        .list_view => |*a| {
-            return .{ .list_view = slice_list_view(.i32, a, offset, len) };
-        },
-        .large_list_view => |*a| {
-            return .{ .large_list_view = slice_list_view(.i64, a, offset, len) };
-        },
-        .fixed_size_list => |*a| {
-            return .{ .fixed_size_list = slice_fixed_size_list(a, offset, len) };
-        },
-        .struct_ => |*a| {
-            return .{ .struct_ = slice_struct(a, offset, len) };
-        },
-        .map => |*a| {
-            return .{ .map = slice_map(a, offset, len) };
-        },
-        .dense_union => |*a| {
-            return .{ .dense_union = slice_dense_union(a, offset, len) };
-        },
-        .sparse_union => |*a| {
-            return .{ .sparse_union = slice_sparse_union(a, offset, len) };
-        },
-        .run_end_encoded => |*a| {
-            return .{ .run_end_encoded = slice_run_end_encoded(a, offset, len) };
-        },
-        .dict => |*a| {
-            switch (a.keys) {
-                .i8 => |*i| {
-                    return .{ .i8 = slice_primitive(i8, i, offset, len) };
-                },
-                .i16 => |*i| {
-                    return .{ .i16 = slice_primitive(i16, i, offset, len) };
-                },
-                .i32 => |*i| {
-                    return .{ .i32 = slice_primitive(i32, i, offset, len) };
-                },
-                .i64 => |*i| {
-                    return .{ .i64 = slice_primitive(i64, i, offset, len) };
-                },
-                .u8 => |*i| {
-                    return .{ .u8 = slice_primitive(u8, i, offset, len) };
-                },
-                .u16 => |*i| {
-                    return .{ .u16 = slice_primitive(u16, i, offset, len) };
-                },
-                .u32 => |*i| {
-                    return .{ .u32 = slice_primitive(u32, i, offset, len) };
-                },
-                .u64 => |*i| {
-                    return .{ .u64 = slice_primitive(u64, i, offset, len) };
-                },
-            }
-        },
-    }
+    return switch (array.*) {
+        .null => |*a| .{ .null = slice_null(a, offset, len) },
+        .i8 => |*a| .{ .i8 = slice_primitive(i8, a, offset, len) },
+        .i16 => |*a| .{ .i16 = slice_primitive(i16, a, offset, len) },
+        .i32 => |*a| .{ .i32 = slice_primitive(i32, a, offset, len) },
+        .i64 => |*a| .{ .i64 = slice_primitive(i64, a, offset, len) },
+        .u8 => |*a| .{ .u8 = slice_primitive(u8, a, offset, len) },
+        .u16 => |*a| .{ .u16 = slice_primitive(u16, a, offset, len) },
+        .u32 => |*a| .{ .u32 = slice_primitive(u32, a, offset, len) },
+        .u64 => |*a| .{ .u64 = slice_primitive(u64, a, offset, len) },
+        .f16 => |*a| .{ .f16 = slice_primitive(f16, a, offset, len) },
+        .f32 => |*a| .{ .f32 = slice_primitive(f32, a, offset, len) },
+        .f64 => |*a| .{ .f64 = slice_primitive(f64, a, offset, len) },
+        .binary => |*a| .{ .binary = slice_binary(.i32, a, offset, len) },
+        .large_binary => |*a| .{ .large_binary = slice_binary(.i64, a, offset, len) },
+        .utf8 => |*a| .{ .utf8 = slice_utf8(.i32, a, offset, len) },
+        .large_utf8 => |*a| .{ .large_utf8 = slice_utf8(.i64, a, offset, len) },
+        .bool => |*a| .{ .bool = slice_bool(a, offset, len) },
+        .binary_view => |*a| .{ .binary_view = slice_binary_view(a, offset, len) },
+        .utf8_view => |*a| .{ .utf8_view = slice_utf8_view(a, offset, len) },
+        .decimal32 => |*a| .{ .decimal32 = slice_decimal(.i32, a, offset, len) },
+        .decimal64 => |*a| .{ .decimal64 = slice_decimal(.i64, a, offset, len) },
+        .decimal128 => |*a| .{ .decimal128 = slice_decimal(.i128, a, offset, len) },
+        .decimal256 => |*a| .{ .decimal256 = slice_decimal(.i256, a, offset, len) },
+        .fixed_size_binary => |*a| .{ .fixed_size_binary = slice_fixed_size_binary(a, offset, len) },
+        .date32 => |*a| .{ .date32 = slice_date(.i32, a, offset, len) },
+        .date64 => |*a| .{ .date64 = slice_date(.i64, a, offset, len) },
+        .time32 => |*a| .{ .time32 = slice_time(.i32, a, offset, len) },
+        .time64 => |*a| .{ .time64 = slice_time(.i64, a, offset, len) },
+        .timestamp => |*a| .{ .timestamp = slice_timestamp(a, offset, len) },
+        .duration => |*a| .{ .duration = slice_duration(a, offset, len) },
+        .interval_year_month => |*a| .{ .interval_year_month = slice_interval(.year_month, a, offset, len) },
+        .interval_day_time => |*a| .{ .interval_day_time = slice_interval(.day_time, a, offset, len) },
+        .interval_month_day_nano => |*a| .{ .interval_month_day_nano = slice_interval(.month_day_nano, a, offset, len) },
+        .list => |*a| .{ .list = slice_list(.i32, a, offset, len) },
+        .large_list => |*a| .{ .large_list = slice_list(.i64, a, offset, len) },
+        .list_view => |*a| .{ .list_view = slice_list_view(.i32, a, offset, len) },
+        .large_list_view => |*a| .{ .large_list_view = slice_list_view(.i64, a, offset, len) },
+        .fixed_size_list => |*a| .{ .fixed_size_list = slice_fixed_size_list(a, offset, len) },
+        .struct_ => |*a| .{ .struct_ = slice_struct(a, offset, len) },
+        .map => |*a| .{ .map = slice_map(a, offset, len) },
+        .dense_union => |*a| .{ .dense_union = slice_dense_union(a, offset, len) },
+        .sparse_union => |*a| .{ .sparse_union = slice_sparse_union(a, offset, len) },
+        .run_end_encoded => |*a| .{ .run_end_encoded = slice_run_end_encoded(a, offset, len) },
+        .dict => |*a| .{ .dict = slice_dict(a, offset, len) },
+    };
 }
 
 test slice {

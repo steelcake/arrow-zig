@@ -4,6 +4,7 @@ pub const bitmap = @import("./bitmap.zig");
 pub const builder = @import("./builder.zig");
 pub const length = @import("./length.zig");
 pub const slice = @import("./slice.zig");
+pub const equals = @import("./equals.zig");
 
 test {
     _ = array;
@@ -12,4 +13,5 @@ test {
     _ = builder;
     _ = length;
     _ = slice;
+    _ = equals;
 }
