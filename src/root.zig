@@ -5,6 +5,7 @@ pub const builder = @import("./builder.zig");
 pub const length = @import("./length.zig");
 pub const slice = @import("./slice.zig");
 pub const equals = @import("./equals.zig");
+// pub const concat = @import("./concat.zig");
 
 test {
     _ = array;
@@ -14,4 +15,5 @@ test {
     _ = length;
     _ = slice;
     _ = equals;
+    // _ = concat;
 }

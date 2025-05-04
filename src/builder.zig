@@ -719,19 +719,22 @@ pub const BinaryViewBuilder = struct {
             for (0..val.len) |i| {
                 data[i] = val[i];
             }
-            const view = arr.BinaryViewShort{
+            const datas: [3]u32 = @bitCast(data);
+            self.views[self.len] = arr.BinaryView{
                 .length = len,
-                .data = data,
+                .prefix = datas[0],
+                .buffer_idx = datas[1],
+                .offset = datas[2],
             };
-            self.views[self.len] = @bitCast(view);
         } else {
             if (len + self.buffer_len > self.buffer.len) {
                 return Error.OutOfCapacity;
             }
 
+            const prefix: [4]u8 = .{ val.ptr[0], val.ptr[1], val.ptr[2], val.ptr[3] };
             const view = arr.BinaryView{
                 .length = len,
-                .prefix = .{ val.ptr[0], val.ptr[1], val.ptr[2], val.ptr[3] },
+                .prefix = @bitCast(prefix),
                 .buffer_idx = 0,
                 .offset = self.buffer_len,
             };
@@ -757,7 +760,7 @@ pub const BinaryViewBuilder = struct {
 
         self.views[self.len] = arr.BinaryView{
             .length = 0,
-            .prefix = .{ 0, 0, 0, 0 },
+            .prefix = 0,
             .buffer_idx = 0,
             .offset = 0,
         };
@@ -1985,36 +1988,42 @@ test "binary-view nullable" {
 
     const zero_view = arr.BinaryView{
         .length = 0,
-        .prefix = .{ 0, 0, 0, 0 },
+        .prefix = 0,
         .buffer_idx = 0,
         .offset = 0,
     };
 
     try testing.expectEqualDeep(&[_]arr.BinaryView{
         zero_view,
-        @bitCast(arr.BinaryViewShort{
+        arr.BinaryView{
             .length = 3,
-            .data = .{ 'a', 's', 'd', 0, 0, 0, 0, 0, 0, 0, 0, 0 },
-        }),
+            .prefix = @bitCast([4]u8{ 'a', 's', 'd', 0 }),
+            .buffer_idx = 0,
+            .offset = 0,
+        },
         zero_view,
         zero_view,
-        @bitCast(arr.BinaryViewShort{
+        arr.BinaryView{
             .length = 6,
-            .data = .{ 'p', 'p', 'p', 'q', 'w', 'e', 0, 0, 0, 0, 0, 0 },
-        }),
-        @bitCast(arr.BinaryViewShort{
+            .prefix = @bitCast([4]u8{ 'p', 'p', 'p', 'q' }),
+            .buffer_idx = @bitCast([4]u8{ 'w', 'e', 0, 0 }),
+            .offset = 0,
+        },
+        arr.BinaryView{
             .length = 3,
-            .data = .{ 'x', 'y', 'z', 0, 0, 0, 0, 0, 0, 0, 0, 0 },
-        }),
+            .prefix = @bitCast([4]u8{ 'x', 'y', 'z', 0 }),
+            .buffer_idx = 0,
+            .offset = 0,
+        },
         arr.BinaryView{
             .length = 13,
-            .prefix = .{ '1', '2', '3', '4' },
+            .prefix = @bitCast([4]u8{ '1', '2', '3', '4' }),
             .buffer_idx = 0,
             .offset = 0,
         },
         arr.BinaryView{
             .length = 17,
-            .prefix = .{ 'q', 'w', 'e', 'q' },
+            .prefix = @bitCast([4]u8{ 'q', 'w', 'e', 'q' }),
             .buffer_idx = 0,
             .offset = 13,
         },
@@ -2069,36 +2078,42 @@ test "binary-view non-nullable" {
 
     const zero_view = arr.BinaryView{
         .length = 0,
-        .prefix = .{ 0, 0, 0, 0 },
+        .prefix = 0,
         .buffer_idx = 0,
         .offset = 0,
     };
 
     try testing.expectEqualDeep(&[_]arr.BinaryView{
         zero_view,
-        @bitCast(arr.BinaryViewShort{
+        arr.BinaryView{
             .length = 3,
-            .data = .{ 'a', 's', 'd', 0, 0, 0, 0, 0, 0, 0, 0, 0 },
-        }),
+            .prefix = @bitCast([4]u8{ 'a', 's', 'd', 0 }),
+            .buffer_idx = 0,
+            .offset = 0,
+        },
         zero_view,
         zero_view,
-        @bitCast(arr.BinaryViewShort{
+        arr.BinaryView{
             .length = 6,
-            .data = .{ 'p', 'p', 'p', 'q', 'w', 'e', 0, 0, 0, 0, 0, 0 },
-        }),
-        @bitCast(arr.BinaryViewShort{
+            .prefix = @bitCast([4]u8{ 'p', 'p', 'p', 'q' }),
+            .buffer_idx = @bitCast([4]u8{ 'w', 'e', 0, 0 }),
+            .offset = 0,
+        },
+        arr.BinaryView{
             .length = 3,
-            .data = .{ 'x', 'y', 'z', 0, 0, 0, 0, 0, 0, 0, 0, 0 },
-        }),
+            .prefix = @bitCast([4]u8{ 'x', 'y', 'z', 0 }),
+            .buffer_idx = 0,
+            .offset = 0,
+        },
         arr.BinaryView{
             .length = 13,
-            .prefix = .{ '1', '2', '3', '4' },
+            .prefix = @bitCast([4]u8{ '1', '2', '3', '4' }),
             .buffer_idx = 0,
             .offset = 0,
         },
         arr.BinaryView{
             .length = 17,
-            .prefix = .{ 'q', 'w', 'e', 'q' },
+            .prefix = @bitCast([4]u8{ 'q', 'w', 'e', 'q' }),
             .buffer_idx = 0,
             .offset = 13,
         },
