@@ -285,6 +285,12 @@ pub fn equals_struct(l: *const arr.StructArray, r: *const arr.StructArray) Error
         return Error.NotEqual;
     }
 
+    for (0..l.field_names.len) |i| {
+        if (!std.mem.eql(u8, l.field_names[i], r.field_names[i])) {
+            return Error.NotEqual;
+        }
+    }
+
     try equals_impl(arr.StructArray, l, r, struct_impl);
 }
 
@@ -297,6 +303,97 @@ fn map_impl(l: *const arr.MapArray, r: *const arr.MapArray, li: u32, ri: u32) Er
 
 pub fn equals_map(l: *const arr.MapArray, r: *const arr.MapArray) Error!void {
     try equals_impl(arr.MapArray, l, r, map_impl);
+}
+
+pub fn equals_sparse_union(l: *const arr.SparseUnionArray, r: *const arr.SparseUnionArray) Error!void {
+    if (l.inner.len != r.inner.len) {
+        return Error.NotEqual;
+    }
+
+    if (!std.mem.eql(i8, l.inner.type_id_set, r.inner.type_id_set)) {
+        return Error.NotEqual;
+    }
+
+    if (l.inner.field_names.len != r.inner.field_names.len) {
+        return Error.NotEqual;
+    }
+
+    for (0..l.inner.field_names.len) |i| {
+        if (!std.mem.eql(u8, l.inner.field_names[i], r.inner.field_names[i])) {
+            return Error.NotEqual;
+        }
+    }
+
+    var li: u32 = l.inner.offset;
+    var ri: u32 = r.inner.offset;
+    for (0..l.inner.len) |_| {
+        const ltype_id = l.inner.type_ids.ptr[li];
+        const rtype_id = r.inner.type_ids.ptr[ri];
+
+        if (ltype_id != rtype_id) {
+            return Error.NotEqual;
+        }
+
+        const child_idx = for (0..l.inner.children.len) |i| {
+            if (l.inner.type_id_set.ptr[i] == ltype_id) {
+                break i;
+            }
+        } else unreachable;
+
+        const lval = slice(&l.inner.children.ptr[child_idx], li, 1);
+        const rval = slice(&r.inner.children.ptr[child_idx], ri, 1);
+        try equals(&lval, &rval);
+
+        li += 1;
+        ri += 1;
+    }
+}
+
+pub fn equals_dense_union(l: *const arr.DenseUnionArray, r: *const arr.DenseUnionArray) Error!void {
+    if (l.inner.len != r.inner.len) {
+        return Error.NotEqual;
+    }
+
+    if (!std.mem.eql(i8, l.inner.type_id_set, r.inner.type_id_set)) {
+        return Error.NotEqual;
+    }
+
+    if (l.inner.field_names.len != r.inner.field_names.len) {
+        return Error.NotEqual;
+    }
+
+    for (0..l.inner.field_names.len) |i| {
+        if (!std.mem.eql(u8, l.inner.field_names[i], r.inner.field_names[i])) {
+            return Error.NotEqual;
+        }
+    }
+
+    var li: u32 = l.inner.offset;
+    var ri: u32 = r.inner.offset;
+    for (0..l.inner.len) |_| {
+        const ltype_id = l.inner.type_ids.ptr[li];
+        const rtype_id = r.inner.type_ids.ptr[ri];
+
+        if (ltype_id != rtype_id) {
+            return Error.NotEqual;
+        }
+
+        const child_idx = for (0..l.inner.children.len) |i| {
+            if (l.inner.type_id_set.ptr[i] == ltype_id) {
+                break i;
+            }
+        } else unreachable;
+
+        const loffset: u32 = @bitCast(l.offsets.ptr[li]);
+        const roffset: u32 = @bitCast(r.offsets.ptr[ri]);
+
+        const lval = slice(&l.inner.children.ptr[child_idx], loffset, 1);
+        const rval = slice(&r.inner.children.ptr[child_idx], roffset, 1);
+        try equals(&lval, &rval);
+
+        li += 1;
+        ri += 1;
+    }
 }
 
 /// Checks if two arrays are logically equal.
@@ -364,8 +461,8 @@ pub fn equals(left: *const arr.Array, right: *const arr.Array) Error!void {
         .fixed_size_list => |*l| try equals_fixed_size_list(l, &right.fixed_size_list),
         .struct_ => |*l| try equals_struct(l, &right.struct_),
         .map => |*l| try equals_map(l, &right.map),
-        .dense_union => unreachable,
-        .sparse_union => unreachable,
+        .dense_union => |*l| try equals_dense_union(l, &right.dense_union),
+        .sparse_union => |*l| try equals_sparse_union(l, &right.sparse_union),
         .run_end_encoded => unreachable,
         .dict => unreachable,
     }
