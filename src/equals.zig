@@ -396,6 +396,73 @@ pub fn equals_dense_union(l: *const arr.DenseUnionArray, r: *const arr.DenseUnio
     }
 }
 
+fn dict_impl(comptime keys_t: type, l: *const keys_t, r: *const keys_t, l_values: *const arr.Array, r_values: *const arr.Array) Error!void {
+    if (l.len != r.len or r.null_count != l.null_count) {
+        return Error.NotEqual;
+    }
+
+    if (l.len == 0) {
+        return;
+    }
+
+    if (l.null_count > 0) {
+        const lv = l.validity orelse unreachable;
+        const rv = r.validity orelse unreachable;
+
+        var li: u32 = l.offset;
+        var ri: u32 = r.offset;
+        for (0..l.len) |_| {
+            const lvalid = bitmap.get(lv.ptr, li);
+            const rvalid = bitmap.get(rv.ptr, ri);
+
+            if (lvalid != rvalid) {
+                return Error.NotEqual;
+            }
+
+            if (lvalid) {
+                const larr = &slice(l_values, @intCast(l.values.ptr[li]), 1);
+                const rarr = &slice(r_values, @intCast(r.values.ptr[ri]), 1);
+                try equals(larr, rarr);
+            }
+
+            li += 1;
+            ri += 1;
+        }
+    } else {
+        var li: u32 = l.offset;
+        var ri: u32 = r.offset;
+        for (0..l.len) |_| {
+            const larr = &slice(l_values, @intCast(l.values.ptr[li]), 1);
+            const rarr = &slice(r_values, @intCast(r.values.ptr[ri]), 1);
+            try equals(larr, rarr);
+
+            li += 1;
+            ri += 1;
+        }
+    }
+}
+
+pub fn equals_dict(l: *const arr.DictArray, r: *const arr.DictArray) Error!void {
+    if (@intFromEnum(l.values.*) != @intFromEnum(r.values.*)) {
+        return Error.NotEqual;
+    }
+
+    if (@intFromEnum(l.keys) != @intFromEnum(r.keys)) {
+        return Error.NotEqual;
+    }
+
+    switch (l.keys) {
+        .i8 => |*lk| try dict_impl(arr.Int8Array, lk, &r.keys.i8, l.values, r.values),
+        .i16 => |*lk| try dict_impl(arr.Int16Array, lk, &r.keys.i16, l.values, r.values),
+        .i32 => |*lk| try dict_impl(arr.Int32Array, lk, &r.keys.i32, l.values, r.values),
+        .i64 => |*lk| try dict_impl(arr.Int64Array, lk, &r.keys.i64, l.values, r.values),
+        .u8 => |*lk| try dict_impl(arr.UInt8Array, lk, &r.keys.u8, l.values, r.values),
+        .u16 => |*lk| try dict_impl(arr.UInt16Array, lk, &r.keys.u16, l.values, r.values),
+        .u32 => |*lk| try dict_impl(arr.UInt32Array, lk, &r.keys.u32, l.values, r.values),
+        .u64 => |*lk| try dict_impl(arr.UInt64Array, lk, &r.keys.u64, l.values, r.values),
+    }
+}
+
 /// Checks if two arrays are logically equal.
 ///
 /// Two arrays are logically equal iff:
@@ -464,7 +531,7 @@ pub fn equals(left: *const arr.Array, right: *const arr.Array) Error!void {
         .dense_union => |*l| try equals_dense_union(l, &right.dense_union),
         .sparse_union => |*l| try equals_sparse_union(l, &right.sparse_union),
         .run_end_encoded => unreachable,
-        .dict => unreachable,
+        .dict => |*l| try equals_dict(l, &right.dict),
     }
 }
 
