@@ -252,7 +252,7 @@ pub fn equals_list_view(comptime index_type: arr.IndexType, l: *const arr.Generi
     try equals_impl(arr.GenericListViewArray(index_type), l, r, ListViewImpl(index_type).eq);
 }
 
-pub fn fixed_size_list_impl(l: *const arr.FixedSizeListArray, r: *const arr.FixedSizeListArray, li: u32, ri: u32) Error!void {
+fn fixed_size_list_impl(l: *const arr.FixedSizeListArray, r: *const arr.FixedSizeListArray, li: u32, ri: u32) Error!void {
     const lvalue = get.get_fixed_size_list(l.inner, l.item_width, li);
     const rvalue = get.get_fixed_size_list(r.inner, r.item_width, ri);
 
@@ -269,6 +269,34 @@ pub fn equals_fixed_size_list(l: *const arr.FixedSizeListArray, r: *const arr.Fi
     }
 
     try equals_impl(arr.FixedSizeListArray, l, r, fixed_size_list_impl);
+}
+
+fn struct_impl(l: *const arr.StructArray, r: *const arr.StructArray, li: u32, ri: u32) Error!void {
+    for (0..l.field_names.len) |field_index| {
+        const larr = &l.field_values[field_index];
+        const rarr = &r.field_values[field_index];
+
+        try equals(&slice(larr, li, 1), &slice(rarr, ri, 1));
+    }
+}
+
+pub fn equals_struct(l: *const arr.StructArray, r: *const arr.StructArray) Error!void {
+    if (l.field_names.len != r.field_names.len) {
+        return Error.NotEqual;
+    }
+
+    try equals_impl(arr.StructArray, l, r, struct_impl);
+}
+
+fn map_impl(l: *const arr.MapArray, r: *const arr.MapArray, li: u32, ri: u32) Error!void {
+    const larr = get.get_map(l.entries, l.offsets.ptr, li);
+    const rarr = get.get_map(r.entries, r.offsets.ptr, ri);
+
+    try equals_struct(&larr, &rarr);
+}
+
+pub fn equals_map(l: *const arr.MapArray, r: *const arr.MapArray) Error!void {
+    try equals_impl(arr.MapArray, l, r, map_impl);
 }
 
 /// Checks if two arrays are logically equal.
@@ -334,7 +362,12 @@ pub fn equals(left: *const arr.Array, right: *const arr.Array) Error!void {
         .list_view => |*l| try equals_list_view(.i32, l, &right.list_view),
         .large_list_view => |*l| try equals_list_view(.i64, l, &right.large_list_view),
         .fixed_size_list => |*l| try equals_fixed_size_list(l, &right.fixed_size_list),
-        else => unreachable,
+        .struct_ => |*l| try equals_struct(l, &right.struct_),
+        .map => |*l| try equals_map(l, &right.map),
+        .dense_union => unreachable,
+        .sparse_union => unreachable,
+        .run_end_encoded => unreachable,
+        .dict => unreachable,
     }
 }
 

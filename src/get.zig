@@ -1,6 +1,8 @@
 const arr = @import("./array.zig");
 const bitmap = @import("./bitmap.zig");
-const slice = @import("./slice.zig").slice;
+const slice_mod = @import("./slice.zig");
+const slice = slice_mod.slice;
+const slice_struct = slice_mod.slice_struct;
 
 pub fn get_bool(values: [*]const u8, index: u32) bool {
     return bitmap.get(values, index);
@@ -115,4 +117,10 @@ pub fn get_fixed_size_list_opt(inner: *const arr.Array, item_width: i32, validit
         get_fixed_size_list(inner, item_width, index)
     else
         null;
+}
+
+pub fn get_map(entries: *const arr.StructArray, offsets: [*]const i32, index: u32) arr.StructArray {
+    const start: u32 = @intCast(index_cast(.i32, offsets[index]));
+    const end: u32 = @intCast(index_cast(.i32, offsets[index +% 1]));
+    return slice_struct(entries, start, end -% start);
 }
