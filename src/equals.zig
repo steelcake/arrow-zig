@@ -16,7 +16,7 @@ pub fn equals_null(l: *const arr.NullArray, r: *const arr.NullArray) Error!void 
     }
 }
 
-pub fn equals_bool(l: *const arr.BoolArray, r: *const arr.BoolArray) Error!void {
+fn equals_impl(comptime array_t: type, l: *const array_t, r: *const array_t, comptime equals_fn: fn (l: *const array_t, r: *const array_t, li: u32, ri: u32) Error!void) Error!void {
     if (l.len != r.len or r.null_count != l.null_count) {
         return Error.NotEqual;
     }
@@ -32,8 +32,15 @@ pub fn equals_bool(l: *const arr.BoolArray, r: *const arr.BoolArray) Error!void 
         var li: u32 = l.offset;
         var ri: u32 = r.offset;
         for (0..l.len) |_| {
-            if (get.get_bool_opt(l.values.ptr, lv.ptr, li) != get.get_bool_opt(r.values.ptr, rv.ptr, ri)) {
+            const lvalid = bitmap.get(lv.ptr, li);
+            const rvalid = bitmap.get(rv.ptr, ri);
+
+            if (lvalid != rvalid) {
                 return Error.NotEqual;
+            }
+
+            if (lvalid) {
+                try equals_fn(l, r, li, ri);
             }
 
             li += 1;
@@ -43,9 +50,7 @@ pub fn equals_bool(l: *const arr.BoolArray, r: *const arr.BoolArray) Error!void 
         var li: u32 = l.offset;
         var ri: u32 = r.offset;
         for (0..l.len) |_| {
-            if (get.get_bool(l.values.ptr, li) != get.get_bool(r.values.ptr, ri)) {
-                return Error.NotEqual;
-            }
+            try equals_fn(l, r, li, ri);
 
             li += 1;
             ri += 1;
@@ -53,75 +58,45 @@ pub fn equals_bool(l: *const arr.BoolArray, r: *const arr.BoolArray) Error!void 
     }
 }
 
-pub fn equals_primitive(comptime T: type, l: *const arr.PrimitiveArray(T), r: *const arr.PrimitiveArray(T)) Error!void {
-    if (l.len != r.len or r.null_count != l.null_count) {
+fn bool_impl(l: *const arr.BoolArray, r: *const arr.BoolArray, li: u32, ri: u32) Error!void {
+    if (get.get_bool(l.values.ptr, li) != get.get_bool(r.values.ptr, ri)) {
         return Error.NotEqual;
     }
-    if (l.len == 0) {
-        return;
-    }
-    if (l.null_count > 0) {
-        const lv = l.validity orelse unreachable;
-        const rv = r.validity orelse unreachable;
+}
 
-        var li: u32 = l.offset;
-        var ri: u32 = r.offset;
-        for (0..l.len) |_| {
-            if (get.get_primitive_opt(T, l.values.ptr, lv.ptr, li) != get.get_primitive_opt(T, r.values.ptr, rv.ptr, ri)) {
-                return Error.NotEqual;
-            }
+pub fn equals_bool(l: *const arr.BoolArray, r: *const arr.BoolArray) Error!void {
+    try equals_impl(arr.BoolArray, l, r, bool_impl);
+}
 
-            li += 1;
-            ri += 1;
-        }
-    } else {
-        var li: u32 = l.offset;
-        var ri: u32 = r.offset;
-        for (0..l.len) |_| {
+fn PrimitiveImpl(comptime T: type) type {
+    return struct {
+        fn eq(l: *const arr.PrimitiveArray(T), r: *const arr.PrimitiveArray(T), li: u32, ri: u32) Error!void {
             if (get.get_primitive(T, l.values.ptr, li) != get.get_primitive(T, r.values.ptr, ri)) {
                 return Error.NotEqual;
             }
-
-            li += 1;
-            ri += 1;
         }
-    }
+    };
+}
+
+pub fn equals_primitive(comptime T: type, l: *const arr.PrimitiveArray(T), r: *const arr.PrimitiveArray(T)) Error!void {
+    try equals_impl(arr.PrimitiveArray(T), l, r, PrimitiveImpl(T).eq);
+}
+
+fn BinaryImpl(comptime index_type: arr.IndexType) type {
+    return struct {
+        fn eq(l: *const arr.GenericBinaryArray(index_type), r: *const arr.GenericBinaryArray(index_type), li: u32, ri: u32) Error!void {
+            const lvalue = get.get_binary(index_type, l.data.ptr, l.offsets.ptr, li);
+            const rvalue = get.get_binary(index_type, r.data.ptr, r.offsets.ptr, ri);
+
+            if (!std.mem.eql(u8, lvalue, rvalue)) {
+                return Error.NotEqual;
+            }
+        }
+    };
 }
 
 pub fn equals_binary(comptime index_type: arr.IndexType, l: *const arr.GenericBinaryArray(index_type), r: *const arr.GenericBinaryArray(index_type)) Error!void {
-    if (l.len != r.len or r.null_count != l.null_count) {
-        return Error.NotEqual;
-    }
-    if (l.len == 0) {
-        return;
-    }
-
-    if (l.null_count > 0) {
-        const lv = l.validity orelse unreachable;
-        const rv = r.validity orelse unreachable;
-
-        var li: u32 = l.offset;
-        var ri: u32 = r.offset;
-        for (0..l.len) |_| {
-            if (get.get_binary_opt(index_type, l.data.ptr, l.offsets.ptr, lv.ptr, li) != get.get_binary_opt(index_type, r.data.ptr, r.offsets.ptr, rv.ptr, ri)) {
-                return Error.NotEqual;
-            }
-
-            li += 1;
-            ri += 1;
-        }
-    } else {
-        var li: u32 = l.offset;
-        var ri: u32 = r.offset;
-        for (0..l.len) |_| {
-            if (get.get_binary(index_type, l.values.ptr, l.offsets.ptr, li) != get.get_binary(index_type, r.values.ptr, r.offsets.ptr, ri)) {
-                return Error.NotEqual;
-            }
-
-            li += 1;
-            ri += 1;
-        }
-    }
+    try equals_impl(arr.GenericBinaryArray(index_type), l, r, BinaryImpl(index_type).eq);
 }
 
 pub fn equals_utf8(comptime index_type: arr.IndexType, l: *const arr.GenericUtf8Array(index_type), r: *const arr.GenericUtf8Array(index_type)) Error!void {
@@ -136,80 +111,38 @@ pub fn equals_decimal(comptime int: arr.DecimalInt, left: *const arr.DecimalArra
     try equals_primitive(int.to_type(), &left.inner, &right.inner);
 }
 
-pub fn equals_binary_view(l: *const arr.BinaryViewArray, r: *const arr.BinaryViewArray) Error!void {
-    if (l.len != r.len or r.null_count != l.null_count) {
+fn binary_view_impl(l: *const arr.BinaryViewArray, r: *const arr.BinaryViewArray, li: u32, ri: u32) Error!void {
+    const lvalue = get.get_binary_view(l.buffers.ptr, l.views.ptr, li);
+    const rvalue = get.get_binary_view(r.buffers.ptr, r.views.ptr, ri);
+
+    if (!std.mem.eql(u8, lvalue, rvalue)) {
         return Error.NotEqual;
     }
-    if (l.len == 0) {
-        return;
-    }
+}
 
-    if (l.null_count > 0) {
-        const lv = l.validity orelse unreachable;
-        const rv = r.validity orelse unreachable;
-
-        var li: u32 = l.offset;
-        var ri: u32 = r.offset;
-        for (0..l.len) |_| {
-            if (get.get_binary_view_opt(l.buffers.ptr, l.views.ptr, lv.ptr, li) != get.get_binary_view_opt(r.buffers.ptr, r.views.ptr, rv.ptr, ri)) {
-                return Error.NotEqual;
-            }
-
-            li += 1;
-            ri += 1;
-        }
-    } else {
-        var li: u32 = l.offset;
-        var ri: u32 = r.offset;
-        for (0..l.len) |_| {
-            if (get.get_binary_view(l.buffers.ptr, l.views.ptr, li) != get.get_binary_view(r.buffers.ptr, r.views.ptr, ri)) {
-                return Error.NotEqual;
-            }
-
-            li += 1;
-            ri += 1;
-        }
-    }
+pub fn equals_binary_view(l: *const arr.BinaryViewArray, r: *const arr.BinaryViewArray) Error!void {
+    try equals_impl(arr.BinaryViewArray, l, r, binary_view_impl);
 }
 
 pub fn equals_utf8_view(l: *const arr.Utf8ViewArray, r: *const arr.Utf8ViewArray) Error!void {
     try equals_binary_view(&l.inner, &r.inner);
 }
 
+fn fixed_size_binary_impl(l: *const arr.FixedSizeBinaryArray, r: *const arr.FixedSizeBinaryArray, li: u32, ri: u32) Error!void {
+    const lvalue = get.get_fixed_size_binary(l.data.ptr, l.byte_width, li);
+    const rvalue = get.get_fixed_size_binary(r.data.ptr, r.byte_width, ri);
+
+    if (!std.mem.eql(u8, lvalue, rvalue)) {
+        return Error.NotEqual;
+    }
+}
+
 pub fn equals_fixed_size_binary(l: *const arr.FixedSizeBinaryArray, r: *const arr.FixedSizeBinaryArray) Error!void {
-    if (l.len != r.len or r.null_count != l.null_count or r.byte_width != l.byte_width) {
-        return false;
-    }
-    if (l.len == 0) {
-        return;
+    if (l.byte_width != r.byte_width) {
+        return Error.NotEqual;
     }
 
-    if (l.null_count > 0) {
-        const lv = l.validity orelse unreachable;
-        const rv = r.validity orelse unreachable;
-
-        var li: u32 = l.offset;
-        var ri: u32 = r.offset;
-        for (0..l.len) |_| {
-            if (get.get_fixed_size_binary_opt(l.data.ptr, l.byte_width, lv.ptr, li) != get.get_binary_view_opt(r.data.ptr, r.byte_width, rv.ptr, ri)) {
-                return Error.NotEqual;
-            }
-
-            li += 1;
-            ri += 1;
-        }
-    } else {
-        var li: u32 = l.offset;
-        var ri: u32 = r.offset;
-        for (0..l.len) |_| {
-            if (get.get_fixed_size_binary(l.data.ptr, l.byte_width, li) != get.get_fixed_size_binary(r.data.ptr, r.byte_width, ri)) {
-                return Error.NotEqual;
-            }
-
-            li += 1;
-            ri += 1;
-        }
-    }
+    try equals_impl(arr.FixedSizeBinaryArray, l, r, fixed_size_binary_impl);
 }
 
 pub fn equals_date(comptime backing_t: arr.IndexType, l: *const arr.DateArray(backing_t), r: *const arr.DateArray(backing_t)) Error!void {
@@ -251,92 +184,72 @@ pub fn equals_duration(l: *const arr.DurationArray, r: *const arr.DurationArray)
     try equals_primitive(i64, &l.inner, &r.inner);
 }
 
-pub fn equals_interval(comptime interval_t: arr.IntervalType, l: *const arr.IntervalArray(interval_t), r: *const arr.IntervalArray(interval_t)) Error!void {
-    try equals_primitive(interval_t.to_type(), &l.inner, &r.inner);
+fn interval_day_time_impl(l: *const arr.PrimitiveArray([2]i32), r: *const arr.PrimitiveArray([2]i32), li: u32, ri: u32) Error!void {
+    const lvalue = get.get_primitive([2]i32, l.values.ptr, li);
+    const rvalue = get.get_primitive([2]i32, r.values.ptr, ri);
+
+    if (lvalue[0] != rvalue[0] or lvalue[1] != rvalue[0]) {
+        return Error.NotEqual;
+    }
+}
+
+fn interval_month_day_nano_impl(l: *const arr.PrimitiveArray(arr.MonthDayNano), r: *const arr.PrimitiveArray(arr.MonthDayNano), li: u32, ri: u32) Error!void {
+    const lvalue = get.get_primitive(arr.MonthDayNano, l.values.ptr, li);
+    const rvalue = get.get_primitive(arr.MonthDayNano, r.values.ptr, ri);
+
+    if (lvalue.months != rvalue.months or lvalue.days != rvalue.days or lvalue.nanoseconds != rvalue.nanoseconds) {
+        return Error.NotEqual;
+    }
+}
+
+pub fn equals_interval_month_day_nano(l: *const arr.IntervalMonthDayNanoArray, r: *const arr.IntervalMonthDayNanoArray) Error!void {
+    try equals_impl(arr.PrimitiveArray(arr.MonthDayNano), &l.inner, &r.inner, interval_month_day_nano_impl);
+}
+
+pub fn equals_interval_day_time(l: *const arr.IntervalDayTimeArray, r: *const arr.IntervalDayTimeArray) Error!void {
+    try equals_impl(arr.PrimitiveArray([2]i32), &l.inner, &r.inner, interval_day_time_impl);
+}
+
+pub fn equals_interval_year_month(l: *const arr.IntervalYearMonthArray, r: *const arr.IntervalYearMonthArray) Error!void {
+    try equals_primitive(i32, &l.inner, &r.inner);
+}
+
+fn ListImpl(comptime index_type: arr.IndexType) type {
+    return struct {
+        fn eq(l: *const arr.GenericListArray(index_type), r: *const arr.GenericListArray(index_type), li: u32, ri: u32) Error!void {
+            const lvalue = get.get_list(index_type, l.inner, l.offsets.ptr, li);
+            const rvalue = get.get_list(index_type, r.inner, r.offsets.ptr, ri);
+
+            try equals(&lvalue, &rvalue);
+        }
+    };
 }
 
 pub fn equals_list(comptime index_type: arr.IndexType, l: *const arr.GenericListArray(index_type), r: *const arr.GenericListArray(index_type)) Error!void {
-    if (l.len != r.len or r.null_count != l.null_count) {
+    if (@intFromEnum(l.inner.*) != @intFromEnum(r.inner.*)) {
         return Error.NotEqual;
     }
-    if (l.len == 0) {
-        return;
-    }
 
-    if (l.null_count > 0) {
-        const lv = l.validity orelse unreachable;
-        const rv = r.validity orelse unreachable;
+    try equals_impl(arr.GenericListArray(index_type), l, r, ListImpl(index_type).eq);
+}
 
-        var li: u32 = l.offset;
-        var ri: u32 = r.offset;
-        for (0..l.len) |_| {
-            const l_inner = get.get_list_opt(index_type, &l.inner, l.offsets.ptr, lv.ptr, li);
-            const r_inner = get.get_list_opt(index_type, &r.inner, r.offsets.ptr, rv.ptr, ri);
+fn ListViewImpl(comptime index_type: arr.IndexType) type {
+    return struct {
+        fn eq(l: *const arr.GenericListViewArray(index_type), r: *const arr.GenericListViewArray(index_type), li: u32, ri: u32) Error!void {
+            const lvalue = get.get_list_view(index_type, l.inner, l.offsets.ptr, l.sizes.ptr, li);
+            const rvalue = get.get_list_view(index_type, r.inner, r.offsets.ptr, r.sizes.ptr, ri);
 
-            if (l_inner) |linner| {
-                const rinner = r_inner orelse return Error.NotEqual;
-                try equals(&linner, &rinner);
-            } else if (r_inner != null) {
-                return Error.NotEqual;
-            }
-
-            li += 1;
-            ri += 1;
+            try equals(&lvalue, &rvalue);
         }
-    } else {
-        var li: u32 = l.offset;
-        var ri: u32 = r.offset;
-        for (0..l.len) |_| {
-            const l_inner = get.get_list(index_type, &l.inner, l.offsets.ptr, li);
-            const r_inner = get.get_list(index_type, &r.inner, r.offsets.ptr, ri);
-            try equals(&l_inner, &r_inner);
-
-            li += 1;
-            ri += 1;
-        }
-    }
+    };
 }
 
 pub fn equals_list_view(comptime index_type: arr.IndexType, l: *const arr.GenericListViewArray(index_type), r: *const arr.GenericListViewArray(index_type)) Error!void {
-    if (l.len != r.len or r.null_count != l.null_count) {
+    if (@intFromEnum(l.inner) != @intFromEnum(r.inner)) {
         return Error.NotEqual;
     }
-    if (l.len == 0) {
-        return;
-    }
 
-    if (l.null_count > 0) {
-        const lv = l.validity orelse unreachable;
-        const rv = r.validity orelse unreachable;
-
-        var li: u32 = l.offset;
-        var ri: u32 = r.offset;
-        for (0..l.len) |_| {
-            const l_inner = get.get_list_view_opt(index_type, &l.inner, l.offsets.ptr, l.sizes.ptr, lv.ptr, li);
-            const r_inner = get.get_list_view_opt(index_type, &r.inner, r.offsets.ptr, r.sizes.ptr, rv.ptr, ri);
-
-            if (l_inner) |linner| {
-                const rinner = r_inner orelse return Error.NotEqual;
-                try equals(&linner, &rinner);
-            } else if (r_inner != null) {
-                return Error.NotEqual;
-            }
-
-            li += 1;
-            ri += 1;
-        }
-    } else {
-        var li: u32 = l.offset;
-        var ri: u32 = r.offset;
-        for (0..l.len) |_| {
-            const l_inner = get.get_list_view(index_type, &l.inner, l.offsets.ptr, l.sizes.ptr, li);
-            const r_inner = get.get_list_view(index_type, &r.inner, r.offsets.ptr, r.sizes.ptr, ri);
-            try equals(&l_inner, &r_inner);
-
-            li += 1;
-            ri += 1;
-        }
-    }
+    try equals_impl(arr.GenericListViewArray(index_type), l, r, ListViewImpl(index_type).eq);
 }
 
 /// Checks if two arrays are logically equal.
@@ -394,9 +307,9 @@ pub fn equals(left: *const arr.Array, right: *const arr.Array) Error!void {
         .time64 => |*l| try equals_time(.i64, l, &right.time64),
         .timestamp => |*l| try equals_timestamp(l, &right.timestamp),
         .duration => |*l| try equals_duration(l, &right.duration),
-        .interval_year_month => |*l| try equals_interval(.year_month, l, &right.interval_year_month),
-        .interval_day_time => |*l| try equals_interval(.day_time, l, &right.interval_day_time),
-        .interval_month_day_nano => |*l| try equals_interval(.month_day_nano, l, &right.interval_month_day_nano),
+        .interval_year_month => |*l| try equals_interval_year_month(l, &right.interval_year_month),
+        .interval_day_time => |*l| try equals_interval_day_time(l, &right.interval_day_time),
+        .interval_month_day_nano => |*l| try equals_interval_month_day_nano(l, &right.interval_month_day_nano),
         .list => |*l| try equals_list(.i32, l, &right.list),
         .large_list => |*l| try equals_list(.i64, l, &right.large_list),
         else => unreachable,
