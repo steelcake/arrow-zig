@@ -463,6 +463,27 @@ pub fn equals_dict(l: *const arr.DictArray, r: *const arr.DictArray) Error!void 
     }
 }
 
+pub fn equals_run_end_encoded(l: *const arr.RunEndArray, r: *const arr.RunEndArray) Error!void {
+    if (@intFromEnum(l.values.*) != @intFromEnum(r.values.*)) {
+        return Error.NotEqual;
+    }
+
+    if (@intFromEnum(l.run_ends.*) != @intFromEnum(r.run_ends.*)) {
+        return Error.NotEqual;
+    }
+
+    if (l.len != r.len) {
+        return Error.NotEqual;
+    }
+
+    if (l.len == 0) {
+        return;
+    }
+
+    try equals(l.run_ends, r.run_ends);
+    try equals(l.values, r.values);
+}
+
 /// Checks if two arrays are logically equal.
 ///
 /// Two arrays are logically equal iff:
@@ -530,7 +551,7 @@ pub fn equals(left: *const arr.Array, right: *const arr.Array) Error!void {
         .map => |*l| try equals_map(l, &right.map),
         .dense_union => |*l| try equals_dense_union(l, &right.dense_union),
         .sparse_union => |*l| try equals_sparse_union(l, &right.sparse_union),
-        .run_end_encoded => unreachable,
+        .run_end_encoded => |*l| try equals_run_end_encoded(l, &right.run_end_encoded),
         .dict => |*l| try equals_dict(l, &right.dict),
     }
 }
