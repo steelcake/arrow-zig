@@ -639,7 +639,7 @@ pub const BinaryViewBuilder = struct {
 
     buffers: [][*]const u8,
     buffer: []u8,
-    buffer_len: u32,
+    buffer_len: i32,
     validity: ?[]u8,
     null_count: u32,
     views: []arr.BinaryView,
@@ -712,14 +712,14 @@ pub const BinaryViewBuilder = struct {
             bitmap.set(v.ptr, self.len);
         }
 
-        const len: u32 = @intCast(val.len);
+        const len: i32 = @intCast(val.len);
 
         if (val.len <= 12) {
             var data: [12]u8 = .{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
             for (0..val.len) |i| {
                 data[i] = val[i];
             }
-            const datas: [3]u32 = @bitCast(data);
+            const datas: [3]i32 = @bitCast(data);
             self.views[self.len] = arr.BinaryView{
                 .length = len,
                 .prefix = datas[0],
@@ -727,7 +727,7 @@ pub const BinaryViewBuilder = struct {
                 .offset = datas[2],
             };
         } else {
-            if (len + self.buffer_len > self.buffer.len) {
+            if (@as(u32, @bitCast(len + self.buffer_len)) > self.buffer.len) {
                 return Error.OutOfCapacity;
             }
 
@@ -739,7 +739,7 @@ pub const BinaryViewBuilder = struct {
                 .offset = self.buffer_len,
             };
 
-            @memcpy(self.buffer[self.buffer_len..].ptr, val);
+            @memcpy(self.buffer[@as(u32, @bitCast(self.buffer_len))..].ptr, val);
 
             self.buffer_len += len;
             self.views[self.len] = view;

@@ -47,10 +47,13 @@ pub fn get_binary_opt(comptime index_type: arr.IndexType, data: [*]const u8, off
 
 pub fn get_binary_view(buffers: [*]const [*]const u8, views: [*]const arr.BinaryView, index: u32) []const u8 {
     const view = views[index];
+    const vl = @as(u32, @bitCast(view.length));
+    const vo = @as(u32, @bitCast(view.offset));
+    const vbi = @as(u32, @bitCast(view.buffer_idx));
     return if (view.length <= 12)
-        @as([*]const u8, @ptrCast(&views[index].prefix))[0..view.length]
+        @as([*]const u8, @ptrCast(&views[index].prefix))[0..vl]
     else
-        buffers[view.buffer_idx][view.offset .. view.offset + view.length];
+        buffers[vbi][vo .. vo + vl];
 }
 
 pub fn get_binary_view_opt(buffers: [*]const [*]const u8, views: [*]const arr.BinaryView, validity: [*]const u8, index: u32) ?[]const u8 {
@@ -63,7 +66,7 @@ pub fn get_binary_view_opt(buffers: [*]const [*]const u8, views: [*]const arr.Bi
 pub fn get_fixed_size_binary(data: [*]const u8, byte_width: i32, index: u32) []const u8 {
     const bw = @as(u32, @bitCast(byte_width));
     const start = bw *% index;
-    const end = start + bw;
+    const end = start +% bw;
     return data[start..end];
 }
 
@@ -103,7 +106,7 @@ pub fn get_list_view_opt(comptime index_type: arr.IndexType, inner: *const arr.A
 pub fn get_fixed_size_list(inner: *const arr.Array, item_width: i32, index: u32) arr.Array {
     const iw = @as(u32, @bitCast(item_width));
     const start = iw *% index;
-    const end = start + iw;
+    const end = start +% iw;
     return slice(inner, start, end);
 }
 

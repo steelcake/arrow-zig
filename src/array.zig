@@ -323,10 +323,10 @@ pub const NullArray = struct {
 };
 
 pub const BinaryView = extern struct {
-    length: u32,
-    prefix: u32,
-    buffer_idx: u32,
-    offset: u32,
+    length: i32,
+    prefix: i32,
+    buffer_idx: i32,
+    offset: i32,
 };
 
 pub const BinaryViewArray = struct {
