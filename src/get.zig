@@ -60,11 +60,14 @@ pub fn get_binary_view_opt(buffers: [*]const [*]const u8, views: [*]const arr.Bi
         null;
 }
 
-pub fn get_fixed_size_binary(data: [*]const u8, byte_width: u32, index: u32) []const u8 {
-    return data[byte_width * index .. byte_width * (index + 1)];
+pub fn get_fixed_size_binary(data: [*]const u8, byte_width: i32, index: u32) []const u8 {
+    const bw = @as(u32, @bitCast(byte_width));
+    const start = bw *% index;
+    const end = start + bw;
+    return data[start..end];
 }
 
-pub fn get_fixed_size_binary_opt(data: [*]const u8, byte_width: u32, validity: [*]const u8, index: u32) ?[]const u8 {
+pub fn get_fixed_size_binary_opt(data: [*]const u8, byte_width: i32, validity: [*]const u8, index: u32) ?[]const u8 {
     return if (bitmap.get(validity, index))
         get_fixed_size_binary(data, byte_width, index)
     else
@@ -93,6 +96,20 @@ pub fn get_list_view(comptime index_type: arr.IndexType, inner: *const arr.Array
 pub fn get_list_view_opt(comptime index_type: arr.IndexType, inner: *const arr.Array, offsets: [*]const index_type.to_type(), sizes: [*]const index_type.to_type(), validity: [*]const u8, index: u32) ?arr.Array {
     return if (bitmap.get(validity, index))
         get_list_view(index_type, inner, offsets, sizes, index)
+    else
+        null;
+}
+
+pub fn get_fixed_size_list(inner: *const arr.Array, item_width: i32, index: u32) arr.Array {
+    const iw = @as(u32, @bitCast(item_width));
+    const start = iw *% index;
+    const end = start + iw;
+    return slice(inner, start, end);
+}
+
+pub fn get_fixed_size_list_opt(inner: *const arr.Array, item_width: i32, validity: [*]const u8, index: u32) ?arr.Array {
+    return if (bitmap.get(validity, index))
+        get_fixed_size_list(inner, item_width, index)
     else
         null;
 }

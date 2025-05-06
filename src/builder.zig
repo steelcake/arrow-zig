@@ -198,10 +198,10 @@ pub const FixedSizeBinaryBuilder = struct {
     null_count: u32,
     len: u32,
     capacity: u32,
-    byte_width: u32,
+    byte_width: i32,
 
-    pub fn with_capacity(byte_width: u32, capacity: u32, nullable: bool, allocator: Allocator) Error!Self {
-        const data = try allocator.alloc(u8, byte_width * capacity);
+    pub fn with_capacity(byte_width: i32, capacity: u32, nullable: bool, allocator: Allocator) Error!Self {
+        const data = try allocator.alloc(u8, @as(u32, @bitCast(byte_width)) * capacity);
         @memset(data, 0);
 
         const num_bytes = (capacity + 7) / 8;
@@ -259,7 +259,7 @@ pub const FixedSizeBinaryBuilder = struct {
             bitmap.set(v.ptr, self.len);
         }
 
-        @memcpy(self.data[self.byte_width * self.len ..].ptr, val);
+        @memcpy(self.data[@as(u32, @bitCast(self.byte_width)) * self.len ..].ptr, val);
         self.len += 1;
     }
 

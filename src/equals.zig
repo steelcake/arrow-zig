@@ -245,11 +245,30 @@ fn ListViewImpl(comptime index_type: arr.IndexType) type {
 }
 
 pub fn equals_list_view(comptime index_type: arr.IndexType, l: *const arr.GenericListViewArray(index_type), r: *const arr.GenericListViewArray(index_type)) Error!void {
-    if (@intFromEnum(l.inner) != @intFromEnum(r.inner)) {
+    if (@intFromEnum(l.inner.*) != @intFromEnum(r.inner.*)) {
         return Error.NotEqual;
     }
 
     try equals_impl(arr.GenericListViewArray(index_type), l, r, ListViewImpl(index_type).eq);
+}
+
+pub fn fixed_size_list_impl(l: *const arr.FixedSizeListArray, r: *const arr.FixedSizeListArray, li: u32, ri: u32) Error!void {
+    const lvalue = get.get_fixed_size_list(l.inner, l.item_width, li);
+    const rvalue = get.get_fixed_size_list(r.inner, r.item_width, ri);
+
+    try equals(&lvalue, &rvalue);
+}
+
+pub fn equals_fixed_size_list(l: *const arr.FixedSizeListArray, r: *const arr.FixedSizeListArray) Error!void {
+    if (@intFromEnum(l.inner.*) != @intFromEnum(r.inner.*)) {
+        return Error.NotEqual;
+    }
+
+    if (l.item_width != r.item_width) {
+        return Error.NotEqual;
+    }
+
+    try equals_impl(arr.FixedSizeListArray, l, r, fixed_size_list_impl);
 }
 
 /// Checks if two arrays are logically equal.
@@ -312,6 +331,9 @@ pub fn equals(left: *const arr.Array, right: *const arr.Array) Error!void {
         .interval_month_day_nano => |*l| try equals_interval_month_day_nano(l, &right.interval_month_day_nano),
         .list => |*l| try equals_list(.i32, l, &right.list),
         .large_list => |*l| try equals_list(.i64, l, &right.large_list),
+        .list_view => |*l| try equals_list_view(.i32, l, &right.list_view),
+        .large_list_view => |*l| try equals_list_view(.i64, l, &right.large_list_view),
+        .fixed_size_list => |*l| try equals_fixed_size_list(l, &right.fixed_size_list),
         else => unreachable,
     }
 }
