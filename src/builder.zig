@@ -326,6 +326,14 @@ pub fn DecimalBuilder(comptime int: arr.DecimalInt) type {
         inner: PrimitiveBuilder(T),
         params: arr.DecimalParams,
 
+        pub fn from_slice(params: arr.DecimalParams, s: []const T, nullable: bool, allocator: Allocator) Error!arr.DecimalArray(int) {
+            return .{ .inner = try PrimitiveBuilder(T).from_slice(s, nullable, allocator), .params = params };
+        }
+
+        pub fn from_slice_opt(params: arr.DecimalParams, s: []const ?T, allocator: Allocator) Error!arr.DecimalArray(int) {
+            return .{ .inner = try PrimitiveBuilder(T).from_slice_opt(s, allocator), .params = params };
+        }
+
         pub fn with_capacity(params: arr.DecimalParams, capacity: u32, nullable: bool, allocator: Allocator) Error!Self {
             return Self{
                 .inner = try PrimitiveBuilder(T).with_capacity(capacity, nullable, allocator),
@@ -371,6 +379,38 @@ pub fn GenericBinaryBuilder(comptime index_type: arr.IndexType) type {
         len: u32,
         data_len: u32,
         capacity: u32,
+
+        pub fn from_slice(s: []const []const u8, nullable: bool, allocator: Allocator) Error!arr.GenericBinaryArray(index_type) {
+            var data_capacity: usize = 0;
+            for (s) |str| {
+                data_capacity += str.len;
+            }
+
+            var b = try Self.with_capacity(@intCast(data_capacity), @intCast(s.len), nullable, allocator);
+
+            for (s) |item| {
+                try b.append_value(item);
+            }
+
+            return try b.finish();
+        }
+
+        pub fn from_slice_opt(s: []const ?[]const u8, allocator: Allocator) Error!arr.GenericBinaryArray(index_type) {
+            var data_capacity: usize = 0;
+            for (s) |str| {
+                if (str) |q| {
+                    data_capacity += q.len;
+                }
+            }
+
+            var b = try Self.with_capacity(@intCast(data_capacity), @intCast(s.len), true, allocator);
+
+            for (s) |item| {
+                try b.append_option(item);
+            }
+
+            return try b.finish();
+        }
 
         pub fn with_capacity(data_capacity: u32, capacity: u32, nullable: bool, allocator: Allocator) Error!Self {
             const data = try allocator.alloc(u8, data_capacity);
@@ -466,6 +506,14 @@ pub fn GenericUtf8Builder(comptime index_type: arr.IndexType) type {
         const Self = @This();
 
         inner: GenericBinaryBuilder(index_type),
+
+        pub fn from_slice(s: []const []const u8, nullable: bool, allocator: Allocator) Error!arr.GenericUtf8Array(index_type) {
+            return .{ .inner = try GenericBinaryBuilder(index_type).from_slice(s, nullable, allocator) };
+        }
+
+        pub fn from_slice_opt(s: []const ?[]const u8, allocator: Allocator) Error!arr.GenericUtf8Array(index_type) {
+            return .{ .inner = try GenericBinaryBuilder(index_type).from_slice_opt(s, allocator) };
+        }
 
         pub fn with_capacity(data_capacity: u32, capacity: u32, nullable: bool, allocator: Allocator) Error!Self {
             return Self{
