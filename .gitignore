@@ -7,3 +7,6 @@ zig-out/
 /docgen_tmp/
 
 zig-cache/
+
+*.so
+

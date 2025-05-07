@@ -1561,3 +1561,9 @@ fn export_primitive(comptime T: type, array: *const arr.PrimitiveArray(T), forma
         },
     };
 }
+
+extern fn print_hello_from_rust() void;
+
+test "QWEQWEQWEWQE" {
+    print_hello_from_rust();
+}
