@@ -43,16 +43,12 @@ fn import_buffer(comptime T: type, buf: ?*const anyopaque, size: u32) []const T 
     return ptr[0..size];
 }
 
-fn import_validity(flags: abi.Flags, buf: ?*const anyopaque, size: u32) ?[]const u8 {
-    if (!flags.nullable) {
+fn import_validity(null_count: u32, buf: ?*const anyopaque, size: u32) ?[]const u8 {
+    if (null_count == 0) {
         return null;
     }
     const byte_size = validity_size(size);
-    if (buf) |b| {
-        return import_buffer(u8, b, byte_size);
-    } else {
-        return &.{};
-    }
+    return import_buffer(u8, buf orelse unreachable, byte_size);
 }
 
 fn import_primitive(comptime T: type, array: *const FFI_Array) arr.PrimitiveArray(T) {
@@ -65,7 +61,7 @@ fn import_primitive(comptime T: type, array: *const FFI_Array) arr.PrimitiveArra
     const size: u32 = len + offset;
     const null_count: u32 = @intCast(array.array.null_count);
 
-    const validity = import_validity(array.schema.flags, buffers[0], size);
+    const validity = import_validity(null_count, buffers[0], size);
 
     return .{
         .values = import_buffer(T, buffers[1], size),
@@ -86,7 +82,7 @@ fn import_binary(comptime index_type: arr.IndexType, array: *const FFI_Array) ar
     const size: u32 = len + offset;
     const null_count: u32 = @intCast(array.array.null_count);
 
-    const validity = import_validity(array.schema.flags, buffers[0], size);
+    const validity = import_validity(null_count, buffers[0], size);
 
     const offsets = import_buffer(index_type.to_type(), buffers[1], size + 1);
 
@@ -110,7 +106,7 @@ fn import_binary_view(array: *const FFI_Array) arr.BinaryViewArray {
     const size: u32 = len + offset;
     const null_count: u32 = @intCast(array.array.null_count);
 
-    const validity = import_validity(array.schema.flags, buffers[0], size);
+    const validity = import_validity(null_count, buffers[0], size);
 
     const num_data_buffers: u32 = @intCast(array.array.n_buffers - 2);
     const data_buffers = @as([*]const [*]const u8, @ptrCast(&buffers[2]))[0..num_data_buffers];
@@ -175,7 +171,8 @@ fn import_decimal(format: []const u8, array: *const FFI_Array) arr.Array {
 fn import_fixed_size_binary(format: []const u8, array: *const FFI_Array) arr.FixedSizeBinaryArray {
     std.debug.assert(format[1] == ':');
 
-    const byte_width = std.fmt.parseInt(u32, format[2..], 10) catch unreachable;
+    const byte_width = std.fmt.parseInt(i32, format[2..], 10) catch unreachable;
+    const byte_width_u: u32 = @intCast(byte_width);
 
     const buffers = array.array.buffers orelse unreachable;
 
@@ -186,10 +183,10 @@ fn import_fixed_size_binary(format: []const u8, array: *const FFI_Array) arr.Fix
     const size: u32 = len + offset;
     const null_count: u32 = @intCast(array.array.null_count);
 
-    const validity = import_validity(array.schema.flags, buffers[0], size);
+    const validity = import_validity(null_count, buffers[0], size);
 
     return .{
-        .data = import_buffer(u8, buffers[1], size * byte_width),
+        .data = import_buffer(u8, buffers[1], size * byte_width_u),
         .validity = validity,
         .len = len,
         .offset = offset,
@@ -230,7 +227,7 @@ fn import_list(comptime index_type: arr.IndexType, array: *const FFI_Array, allo
     const size: u32 = len + offset;
     const null_count: u32 = @intCast(array.array.null_count);
 
-    const validity = import_validity(array.schema.flags, buffers[0], size);
+    const validity = import_validity(null_count, buffers[0], size);
 
     const child = array.get_child(0);
     const inner = try allocator.create(arr.Array);
@@ -259,7 +256,7 @@ fn import_list_view(comptime index_type: arr.IndexType, array: *const FFI_Array,
     const size: u32 = len + offset;
     const null_count: u32 = @intCast(array.array.null_count);
 
-    const validity = import_validity(array.schema.flags, buffers[0], size);
+    const validity = import_validity(null_count, buffers[0], size);
 
     const child = array.get_child(0);
     const inner = try allocator.create(arr.Array);
@@ -296,7 +293,7 @@ fn import_fixed_size_list(format: []const u8, array: *const FFI_Array, allocator
     const size: u32 = len + offset;
     const null_count: u32 = @intCast(array.array.null_count);
 
-    const validity = import_validity(array.schema.flags, buffers[0], size);
+    const validity = import_validity(null_count, buffers[0], size);
 
     const child = array.get_child(0);
     const inner = try allocator.create(arr.Array);
@@ -323,7 +320,7 @@ fn import_struct(array: *const FFI_Array, allocator: Allocator) Error!arr.Struct
     const size: u32 = len + offset;
     const null_count: u32 = @intCast(array.array.null_count);
 
-    const validity = import_validity(array.schema.flags, buffers[0], size);
+    const validity = import_validity(null_count, buffers[0], size);
 
     const n_fields: u32 = @intCast(array.array.n_children);
 
@@ -363,7 +360,7 @@ fn import_map(array: *const FFI_Array, allocator: Allocator) Error!arr.MapArray 
     const size: u32 = len + offset;
     const null_count: u32 = @intCast(array.array.null_count);
 
-    const validity = import_validity(array.schema.flags, buffers[0], size);
+    const validity = import_validity(null_count, buffers[0], size);
 
     const child = array.get_child(0);
     const entries = try allocator.create(arr.StructArray);
@@ -492,7 +489,7 @@ fn import_bool(array: *const FFI_Array) arr.BoolArray {
     const size: u32 = len + offset;
     const null_count: u32 = @intCast(array.array.null_count);
 
-    const validity = import_validity(array.schema.flags, buffers[0], size);
+    const validity = import_validity(null_count, buffers[0], size);
 
     return .{
         .values = import_buffer(u8, buffers[1], validity_size(size)),
@@ -504,8 +501,18 @@ fn import_bool(array: *const FFI_Array) arr.BoolArray {
 }
 
 fn import_dict(array: *const FFI_Array, allocator: Allocator) Error!arr.DictArray {
-    const keys = try allocator.create(arr.Array);
-    keys.* = try import_array(array, allocator);
+    const keys_arr = try import_array(array, allocator);
+    const keys: arr.DictKeys = switch (keys_arr) {
+        .i8 => |x| .{ .i8 = x },
+        .i16 => |x| .{ .i16 = x },
+        .i32 => |x| .{ .i32 = x },
+        .i64 => |x| .{ .i64 = x },
+        .u8 => |x| .{ .u8 = x },
+        .u16 => |x| .{ .u16 = x },
+        .u32 => |x| .{ .u32 = x },
+        .u64 => |x| .{ .u64 = x },
+        else => unreachable,
+    };
 
     const array_dict = array.array.dictionary orelse unreachable;
     const schema_dict = array.schema.dictionary orelse unreachable;
@@ -958,7 +965,17 @@ fn export_null(array: *const arr.NullArray, private_data: *PrivateData) FFI_Arra
 }
 
 fn export_dict(array: *const arr.DictArray, private_data: *PrivateData) Error!FFI_Array {
-    var out = try export_array_impl(array.keys, private_data.increment());
+    const keys: arr.Array = switch (array.keys) {
+        .i8 => |i| .{ .i8 = i },
+        .i16 => |i| .{ .i16 = i },
+        .i32 => |i| .{ .i32 = i },
+        .i64 => |i| .{ .i64 = i },
+        .u8 => |i| .{ .u8 = i },
+        .u16 => |i| .{ .u16 = i },
+        .u32 => |i| .{ .u32 = i },
+        .u64 => |i| .{ .u64 = i },
+    };
+    var out = try export_array_impl(&keys, private_data.increment());
 
     const allocator = private_data.arena.allocator();
     const dict_ptr = try allocator.create(FFI_Array);
@@ -1045,7 +1062,7 @@ fn union_format(base: []const u8, type_id_set: []const i8, allocator: Allocator)
     return @ptrCast(format[0..write_idx]);
 }
 
-fn export_union(array: *const arr.UnionArr, offsets: ?[]const i32, format_base: []const u8, private_data: *PrivateData) Error!FFI_Array {
+fn export_union(array: *const arr.UnionArray, offsets: ?[]const i32, format_base: []const u8, private_data: *PrivateData) Error!FFI_Array {
     const n_fields = array.children.len;
     const n_children: i64 = @intCast(n_fields);
     const n_buffers: u32 = if (offsets != null) 2 else 1;
@@ -1560,10 +1577,4 @@ fn export_primitive(comptime T: type, array: *const arr.PrimitiveArray(T), forma
             .private_data = private_data,
         },
     };
-}
-
-extern fn print_hello_from_rust() void;
-
-test "QWEQWEQWEWQE" {
-    print_hello_from_rust();
 }

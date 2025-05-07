@@ -18,33 +18,11 @@ const Error = error{
 };
 
 pub const BoolBuilder = struct {
-    const Self = @This();
-
     values: []u8,
     validity: ?[]u8,
     null_count: u32,
     len: u32,
     capacity: u32,
-
-    pub fn from_slice(s: []const bool, nullable: bool, allocator: Allocator) Error!arr.BoolArray {
-        var b = try Self.with_capacity(@intCast(s.len), nullable, allocator);
-
-        for (s) |item| {
-            try b.append_value(item);
-        }
-
-        return try b.finish();
-    }
-
-    pub fn from_slice_opt(s: []const ?bool, allocator: Allocator) Error!arr.BoolArray {
-        var b = try Self.with_capacity(@intCast(s.len), true, allocator);
-
-        for (s) |item| {
-            try b.append_option(item);
-        }
-
-        return try b.finish();
-    }
 
     pub fn with_capacity(capacity: u32, nullable: bool, allocator: Allocator) Error!BoolBuilder {
         const num_bytes = (capacity + 7) / 8;
@@ -129,24 +107,14 @@ pub fn PrimitiveBuilder(comptime T: type) type {
         null_count: u32,
         len: u32,
 
-        pub fn from_slice(s: []const T, nullable: bool, allocator: Allocator) Error!arr.PrimitiveArray(T) {
-            var b = try Self.with_capacity(@intCast(s.len), nullable, allocator);
+        pub fn from_slice(s: []const T, nullable: bool, allocator: Allocator) Error!Self {
+            var b = try Self.with_capacity(s.len, nullable, allocator);
 
             for (s) |item| {
-                try b.append_value(item);
+                b.append_value(item);
             }
 
-            return try b.finish();
-        }
 
-        pub fn from_slice_opt(s: []const ?T, allocator: Allocator) Error!arr.PrimitiveArray(T) {
-            var b = try Self.with_capacity(@intCast(s.len), true, allocator);
-
-            for (s) |item| {
-                try b.append_option(item);
-            }
-
-            return try b.finish();
         }
 
         pub fn with_capacity(capacity: u32, nullable: bool, allocator: Allocator) Error!Self {
