@@ -33,6 +33,7 @@ fn make_array(id: u8, allocator: Allocator) !arr.Array {
         15 => .{ .large_utf8 = try builder.LargeUtf8Builder.from_slice_opt(&.{ "hello", "world", null }, allocator) },
         16 => .{ .decimal128 = try builder.Decimal128Builder.from_slice(.{ .precision = 31, .scale = -31 }, &.{ 1, 2, 3, 4, 69 }, true, allocator) },
         17 => .{ .decimal256 = try builder.Decimal256Builder.from_slice(.{ .precision = 31, .scale = -31 }, &.{ 69, -69 }, false, allocator) },
+        // 18 => .{ .date32 = try builder.Date32Builder.from }
         else => unreachable,
     };
 }
