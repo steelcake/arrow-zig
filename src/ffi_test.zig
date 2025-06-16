@@ -78,4 +78,27 @@ test "ffi basic" {
     try run_test(15);
     try run_test(16);
     try run_test(17);
+    // try run_test(18);
+    // try run_test(19);
+    // try run_test(20);
+    // try run_test(21);
+    // try run_test(22);
+    // try run_test(23);
+    // try run_test(24);
+    // try run_test(25);
+    // try run_test(26);
+    // try run_test(27);
+    // try run_test(28);
+    // try run_test(29);
+    // try run_test(30);
+    // try run_test(31);
+    // try run_test(32);
+    // try run_test(33);
+    // try run_test(34);
+    // try run_test(35);
+    // try run_test(36);
+    // try run_test(37);
+    // try run_test(38);
+    // try run_test(39);
+    // try run_test(40);
 }
