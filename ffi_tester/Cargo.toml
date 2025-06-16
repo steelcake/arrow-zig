@@ -8,4 +8,4 @@ name = "ffi_tester"
 crate-type = ["staticlib"]
 
 [dependencies]
-arrow = { version = "55", features = ["ffi"] }
+arrow = { version = "54", features = ["ffi"] }
