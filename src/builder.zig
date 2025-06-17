@@ -242,6 +242,26 @@ pub const FixedSizeBinaryBuilder = struct {
     capacity: u32,
     byte_width: i32,
 
+    pub fn from_slice(byte_width: i32, s: []const []const u8, nullable: bool, allocator: Allocator) Error!arr.FixedSizeBinaryArray {
+        var b = try Self.with_capacity(byte_width, @intCast(s.len), nullable, allocator);
+
+        for (s) |item| {
+            try b.append_value(item);
+        }
+
+        return try b.finish();
+    }
+
+    pub fn from_slice_opt(byte_width: i32, s: []const ?[]const u8, allocator: Allocator) Error!arr.FixedSizeBinaryArray {
+        var b = try Self.with_capacity(byte_width, @intCast(s.len), true, allocator);
+
+        for (s) |item| {
+            try b.append_option(item);
+        }
+
+        return try b.finish();
+    }
+
     pub fn with_capacity(byte_width: i32, capacity: u32, nullable: bool, allocator: Allocator) Error!Self {
         const data = try allocator.alloc(u8, @as(u32, @bitCast(byte_width)) * capacity);
         @memset(data, 0);
@@ -551,6 +571,14 @@ pub fn DateBuilder(comptime backing_t: arr.IndexType) type {
 
         inner: PrimitiveBuilder(T),
 
+        pub fn from_slice(s: []const T, nullable: bool, allocator: Allocator) Error!arr.DateArray(backing_t) {
+            return .{ .inner = try PrimitiveBuilder(T).from_slice(s, nullable, allocator) };
+        }
+
+        pub fn from_slice_opt(s: []const ?T, allocator: Allocator) Error!arr.DateArray(backing_t) {
+            return .{ .inner = try PrimitiveBuilder(T).from_slice_opt(s, allocator) };
+        }
+
         pub fn with_capacity(capacity: u32, nullable: bool, allocator: Allocator) Error!Self {
             return Self{
                 .inner = try PrimitiveBuilder(T).with_capacity(capacity, nullable, allocator),
@@ -589,6 +617,14 @@ pub fn TimeBuilder(comptime backing_t: arr.IndexType) type {
         inner: PrimitiveBuilder(T),
         unit: Inner.Unit,
 
+        pub fn from_slice(unit: Inner.Unit, s: []const T, nullable: bool, allocator: Allocator) Error!arr.TimeArray(backing_t) {
+            return .{ .unit = unit, .inner = try PrimitiveBuilder(T).from_slice(s, nullable, allocator) };
+        }
+
+        pub fn from_slice_opt(unit: Inner.Unit, s: []const ?T, allocator: Allocator) Error!arr.TimeArray(backing_t) {
+            return .{ .unit = unit, .inner = try PrimitiveBuilder(T).from_slice_opt(s, allocator) };
+        }
+
         pub fn with_capacity(unit: Inner.Unit, capacity: u32, nullable: bool, allocator: Allocator) Error!Self {
             return Self{
                 .inner = try PrimitiveBuilder(T).with_capacity(capacity, nullable, allocator),
@@ -626,6 +662,14 @@ pub const TimestampBuilder = struct {
     inner: Int64Builder,
     ts: arr.Timestamp,
 
+    pub fn from_slice(ts: arr.Timestamp, s: []const i64, nullable: bool, allocator: Allocator) Error!arr.TimestampArray {
+        return .{ .ts = ts, .inner = try Int64Builder.from_slice(s, nullable, allocator) };
+    }
+
+    pub fn from_slice_opt(ts: arr.Timestamp, s: []const ?i64, allocator: Allocator) Error!arr.TimestampArray {
+        return .{ .ts = ts, .inner = try Int64Builder.from_slice_opt(s, allocator) };
+    }
+
     pub fn with_capacity(ts: arr.Timestamp, capacity: u32, nullable: bool, allocator: Allocator) Error!Self {
         return Self{
             .inner = try Int64Builder.with_capacity(capacity, nullable, allocator),
@@ -660,6 +704,14 @@ pub fn IntervalBuilder(comptime interval_type: arr.IntervalType) type {
         const T = interval_type.to_type();
 
         inner: PrimitiveBuilder(T),
+
+        pub fn from_slice(s: []const T, nullable: bool, allocator: Allocator) Error!arr.IntervalArray(interval_type) {
+            return .{ .inner = try PrimitiveBuilder(T).from_slice(s, nullable, allocator) };
+        }
+
+        pub fn from_slice_opt(s: []const ?T, allocator: Allocator) Error!arr.IntervalArray(interval_type) {
+            return .{ .inner = try PrimitiveBuilder(T).from_slice_opt(s, allocator) };
+        }
 
         pub fn with_capacity(capacity: u32, nullable: bool, allocator: Allocator) Error!Self {
             return Self{
@@ -696,6 +748,14 @@ pub const DurationBuilder = struct {
 
     inner: Int64Builder,
     unit: arr.TimestampUnit,
+
+    pub fn from_slice(unit: arr.TimestampUnit, s: []const i64, nullable: bool, allocator: Allocator) Error!arr.DurationArray {
+        return .{ .unit = unit, .inner = try Int64Builder.from_slice(s, nullable, allocator) };
+    }
+
+    pub fn from_slice_opt(unit: arr.TimestampUnit, s: []const ?i64, allocator: Allocator) Error!arr.DurationArray {
+        return .{ .unit = unit, .inner = try Int64Builder.from_slice_opt(s, allocator) };
+    }
 
     pub fn with_capacity(unit: arr.TimestampUnit, capacity: u32, nullable: bool, allocator: Allocator) Error!Self {
         return Self{
@@ -734,6 +794,42 @@ pub const BinaryViewBuilder = struct {
     null_count: u32,
     views: []arr.BinaryView,
     len: u32,
+
+    pub fn from_slice(s: []const []const u8, nullable: bool, allocator: Allocator) Error!arr.BinaryViewArray {
+        var buffer_capacity: usize = 0;
+        for (s) |str| {
+            if (str.len > 12) {
+                buffer_capacity += str.len;
+            }
+        }
+
+        var b = try Self.with_capacity(@intCast(buffer_capacity), @intCast(s.len), nullable, allocator);
+
+        for (s) |item| {
+            try b.append_value(item);
+        }
+
+        return try b.finish();
+    }
+
+    pub fn from_slice_opt(s: []const ?[]const u8, allocator: Allocator) Error!arr.BinaryViewArray {
+        var buffer_capacity: usize = 0;
+        for (s) |str| {
+            if (str) |q| {
+                if (q.len > 12) {
+                    buffer_capacity += q.len;
+                }
+            }
+        }
+
+        var b = try Self.with_capacity(@intCast(buffer_capacity), @intCast(s.len), true, allocator);
+
+        for (s) |item| {
+            try b.append_option(item);
+        }
+
+        return try b.finish();
+    }
 
     pub fn with_capacity(buffer_capacity: u32, capacity: u32, nullable: bool, allocator: Allocator) Error!Self {
         const buffer = try allocator.alloc(u8, buffer_capacity);
@@ -864,6 +960,14 @@ pub const Utf8ViewBuilder = struct {
 
     inner: BinaryViewBuilder,
 
+    pub fn from_slice(s: []const []const u8, nullable: bool, allocator: Allocator) Error!arr.Utf8ViewArray {
+        return .{ .inner = try BinaryViewBuilder.from_slice(s, nullable, allocator) };
+    }
+
+    pub fn from_slice_opt(s: []const ?[]const u8, allocator: Allocator) Error!arr.Utf8ViewArray {
+        return .{ .inner = try BinaryViewBuilder.from_slice_opt(s, allocator) };
+    }
+
     pub fn with_capacity(buffer_capacity: u32, capacity: u32, nullable: bool, allocator: Allocator) Error!Self {
         return Self{
             .inner = try BinaryViewBuilder.with_capacity(buffer_capacity, capacity, nullable, allocator),
@@ -899,6 +1003,26 @@ pub fn GenericListBuilder(comptime index_type: arr.IndexType) type {
         null_count: u32,
         len: u32,
         capacity: u32,
+
+        pub fn from_slice(s: []const I, nullable: bool, inner: *const arr.Array, allocator: Allocator) Error!arr.GenericListArray(index_type) {
+            var b = try Self.with_capacity(@intCast(s.len), nullable, allocator);
+
+            for (s) |item| {
+                try b.append_value(item);
+            }
+
+            return try b.finish(inner);
+        }
+
+        pub fn from_slice_opt(s: []const ?I, inner: *const arr.Array, allocator: Allocator) Error!arr.GenericListArray(index_type) {
+            var b = try Self.with_capacity(@intCast(s.len), true, allocator);
+
+            for (s) |item| {
+                try b.append_option(item);
+            }
+
+            return try b.finish(inner);
+        }
 
         pub fn with_capacity(capacity: u32, nullable: bool, allocator: Allocator) Error!Self {
             const num_bytes = (capacity + 7) / 8;
@@ -994,6 +1118,26 @@ pub fn GenericListViewBuilder(comptime index_type: arr.IndexType) type {
         len: u32,
         capacity: u32,
 
+        pub fn from_slice(s: []const I, nullable: bool, inner: *const arr.Array, allocator: Allocator) Error!arr.GenericListViewArray(index_type) {
+            var b = try Self.with_capacity(@intCast(s.len), nullable, allocator);
+
+            for (s) |item| {
+                try b.append_value(item);
+            }
+
+            return try b.finish(inner);
+        }
+
+        pub fn from_slice_opt(s: []const ?I, inner: *const arr.Array, allocator: Allocator) Error!arr.GenericListViewArray(index_type) {
+            var b = try Self.with_capacity(@intCast(s.len), true, allocator);
+
+            for (s) |item| {
+                try b.append_option(item);
+            }
+
+            return try b.finish(inner);
+        }
+
         pub fn with_capacity(capacity: u32, nullable: bool, allocator: Allocator) Error!Self {
             const num_bytes = (capacity + 7) / 8;
             var validity: ?[]u8 = null;
@@ -1044,9 +1188,9 @@ pub fn GenericListViewBuilder(comptime index_type: arr.IndexType) type {
             };
         }
 
-        pub fn append_option(self: *Self, val: ?struct { I, I }) Error!void {
+        pub fn append_option(self: *Self, val: ?struct { offset: I, size: I }) Error!void {
             if (val) |v| {
-                try self.append_item(v.@"0", v.@"1");
+                try self.append_item(v.offset, v.size);
             } else {
                 try self.append_null();
             }
@@ -1090,6 +1234,26 @@ pub const FixedSizeListBuilder = struct {
     len: u32,
     capacity: u32,
     item_width: i32,
+
+    pub fn from_slice(item_width: i32, s: []const bool, nullable: bool, inner: *const arr.Array, allocator: Allocator) Error!arr.FixedSizeListArray {
+        var b = try Self.with_capacity(item_width, @intCast(s.len), nullable, allocator);
+
+        for (s) |item| {
+            try b.append_value(item);
+        }
+
+        return try b.finish(inner);
+    }
+
+    pub fn from_slice_opt(byte_width: i32, s: []const bool, inner: *const arr.Array, allocator: Allocator) Error!arr.FixedSizeListArray {
+        var b = try Self.with_capacity(byte_width, @intCast(s.len), true, allocator);
+
+        for (s) |item| {
+            try b.append_option(item);
+        }
+
+        return try b.finish(inner);
+    }
 
     pub fn with_capacity(item_width: i32, capacity: u32, nullable: bool, allocator: Allocator) Error!Self {
         const num_bytes = (capacity + 7) / 8;
@@ -1169,6 +1333,26 @@ pub const StructBuilder = struct {
     len: u32,
     capacity: u32,
     field_names: []const [:0]const u8,
+
+    pub fn from_slice(field_names: []const [:0]const u8, field_values: []const arr.Array, s: []const bool, nullable: bool, allocator: Allocator) Error!arr.StructArray {
+        var b = try Self.with_capacity(field_names, @intCast(s.len), nullable, allocator);
+
+        for (s) |item| {
+            try b.append_value(item);
+        }
+
+        return try b.finish(field_values);
+    }
+
+    pub fn from_slice_opt(field_names: []const [:0]const u8, field_values: []const arr.Array, s: []const bool, allocator: Allocator) Error!arr.StructArray {
+        var b = try Self.with_capacity(field_names, @intCast(s.len), true, allocator);
+
+        for (s) |item| {
+            try b.append_option(item);
+        }
+
+        return try b.finish(field_values);
+    }
 
     pub fn with_capacity(field_names: []const [:0]const u8, capacity: u32, nullable: bool, allocator: Allocator) Error!Self {
         const num_bytes = (capacity + 7) / 8;
@@ -1255,6 +1439,16 @@ pub const SparseUnionBuilder = struct {
     len: u32,
     capacity: u32,
 
+    pub fn from_slice(field_names: []const [:0]const u8, type_id_set: []const i8, s: []const i8, children: []const arr.Array, allocator: Allocator) Error!arr.SparseUnionArray {
+        var b = try Self.with_capacity(field_names, type_id_set, @intCast(s.len), allocator);
+
+        for (s) |item| {
+            try b.append_value(item);
+        }
+
+        return try b.finish(children);
+    }
+
     pub fn with_capacity(field_names: []const [:0]const u8, type_id_set: []const i8, capacity: u32, allocator: Allocator) Error!Self {
         if (field_names.len != type_id_set.len) {
             return Error.InvalidSliceLength;
@@ -1326,6 +1520,16 @@ pub const DenseUnionBuilder = struct {
     offsets: []i32,
     len: u32,
     capacity: u32,
+
+    pub fn from_slice(field_names: []const [:0]const u8, type_id_set: []const i8, s: []const struct { type_id: i8, offset: i8 }, children: []const arr.Array, allocator: Allocator) Error!arr.DenseUnionArray {
+        var b = try Self.with_capacity(field_names, type_id_set, @intCast(s.len), allocator);
+
+        for (s) |item| {
+            try b.append(item.type_id, item.offset);
+        }
+
+        return try b.finish(children);
+    }
 
     pub fn with_capacity(field_names: []const [:0]const u8, type_id_set: []const i8, capacity: u32, allocator: Allocator) Error!Self {
         if (field_names.len != type_id_set.len) {
@@ -1411,6 +1615,26 @@ pub const MapBuilder = struct {
     len: u32,
     capacity: u32,
     keys_are_sorted: bool,
+
+    pub fn from_slice(keys_are_sorted: bool, s: []const i32, entries: *const arr.StructArray, nullable: bool, allocator: Allocator) Error!arr.MapArray {
+        var b = try Self.with_capacity(keys_are_sorted, @intCast(s.len), nullable, allocator);
+
+        for (s) |item| {
+            try b.append_item(item);
+        }
+
+        return try b.finish(entries);
+    }
+
+    pub fn from_slice_opt(keys_are_sorted: bool, s: []const ?i32, entries: *const arr.StructArray, allocator: Allocator) Error!arr.MapArray {
+        var b = try Self.with_capacity(keys_are_sorted, @intCast(s.len), true, allocator);
+
+        for (s) |item| {
+            try b.append_option(item);
+        }
+
+        return try b.finish(entries);
+    }
 
     pub fn with_capacity(keys_are_sorted: bool, capacity: u32, nullable: bool, allocator: Allocator) Error!Self {
         const num_bytes = (capacity + 7) / 8;
@@ -2406,19 +2630,19 @@ fn test_list_view_nullable(comptime index_type: arr.IndexType) !void {
     try builder.append_item(69, 0);
     try builder.append_option(null);
     try builder.append_item(3, 3);
-    try builder.append_option(.{ 0, 0 });
+    try builder.append_option(.{ .offset = 0, .size = 0 });
 
     try testing.expectEqual(Error.LenCapacityMismatch, builder.finish(inner));
 
-    try builder.append_option(.{ 0, 0 });
+    try builder.append_option(.{ .offset = 0, .size = 0 });
     try builder.append_item(18, 2);
-    try builder.append_option(.{ 0, 15 });
+    try builder.append_option(.{ .offset = 0, .size = 15 });
     try builder.append_null();
 
     try testing.expectEqual(Error.OutOfCapacity, builder.append_null());
     try testing.expectEqual(Error.OutOfCapacity, builder.append_item(64, 69));
     try testing.expectEqual(Error.OutOfCapacity, builder.append_option(null));
-    try testing.expectEqual(Error.OutOfCapacity, builder.append_option(.{ 64, 69 }));
+    try testing.expectEqual(Error.OutOfCapacity, builder.append_option(.{ .offset = 64, .size = 69 }));
 
     try testing.expectEqual(Error.ChildLength, builder.finish(short_inner));
 
@@ -2459,14 +2683,14 @@ fn test_list_view_non_nullable(comptime index_type: arr.IndexType) !void {
     try builder.append_item(69, 0);
     try builder.append_item(0, 0);
     try builder.append_item(3, 3);
-    try builder.append_option(.{ 0, 0 });
+    try builder.append_option(.{ .offset = 0, .size = 0 });
 
     try testing.expectEqual(Error.LenCapacityMismatch, builder.finish(inner));
 
-    try builder.append_option(.{ 0, 0 });
+    try builder.append_option(.{ .offset = 0, .size = 0 });
     try builder.append_item(18, 2);
-    try builder.append_option(.{ 0, 15 });
-    try builder.append_option(.{ 0, 0 });
+    try builder.append_option(.{ .offset = 0, .size = 15 });
+    try builder.append_option(.{ .offset = 0, .size = 0 });
 
     try testing.expectEqual(Error.OutOfCapacity, builder.append_item(11, 11));
     try testing.expectEqual(Error.OutOfCapacity, builder.append_item(0, 0));
