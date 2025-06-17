@@ -22,7 +22,9 @@ use arrow::{
 // and export the array it created back to the caller.
 /// # Safety
 ///
-/// There is no safety
+/// All operations should be according to Arrow FFI Spec.
+/// This function takes ownership of array and schema.
+/// And gives out ownership of out_array and out_schema.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn arrow_ffi_test_case(
     id: u8,
@@ -39,8 +41,11 @@ pub unsafe extern "C" fn arrow_ffi_test_case(
         assert_eq!(array_data, out_data);
 
         let (out_a, out_s) = to_ffi(&out_data).unwrap();
-        *out_array = out_a;
-        *out_schema = out_s;
+
+        // Apparently rust drops the value at the pointer (which would be undefined) if *ptr = val
+        // is used. So have to use std::ptr::write here.
+        std::ptr::write(out_array, out_a);
+        std::ptr::write(out_schema, out_s);
     };
 }
 

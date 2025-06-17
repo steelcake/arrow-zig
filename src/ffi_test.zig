@@ -11,7 +11,7 @@ const slice = @import("./slice.zig").slice;
 
 // Each `id` corresponds to a specific arrow array, this function is supposed to import the given array, create a new array based on the `id` it receives, assert these two arrays are equal,
 // and export the array it created back to the caller.
-extern fn arrow_ffi_test_case(id: u8, array: ffi.abi.ArrowArray, schema: ffi.abi.ArrowSchema, out_array: *ffi.abi.ArrowArray, out_schema: *ffi.abi.ArrowSchema) void;
+extern fn arrow_ffi_test_case(id: u8, array: ffi.abi.ArrowArray, schema: ffi.abi.ArrowSchema, out_array: *ffi.abi.ArrowArray, out_schema: *ffi.abi.ArrowSchema) callconv(.C) void;
 
 fn make_array(id: u8, allocator: Allocator) !arr.Array {
     return switch (id) {
