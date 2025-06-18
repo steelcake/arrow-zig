@@ -846,6 +846,8 @@ pub const BinaryViewBuilder = struct {
             validity = v;
         }
 
+        // Do this to avoid hitting this issue:
+        // https://github.com/apache/arrow-rs/issues/7709
         const views = try allocator.alignedAlloc(arr.BinaryView, std.mem.Alignment.@"16", capacity);
         @memset(@as([]u8, @ptrCast(views)), 0);
 
