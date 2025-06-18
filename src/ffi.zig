@@ -380,8 +380,8 @@ fn import_map(array: *const FFI_Array, allocator: Allocator) Error!arr.MapArray 
 fn parse_union_type_id_set(format: []const u8, allocator: Allocator) Error![]const i8 {
     std.debug.assert(format[3] == ':');
 
-    var it = std.mem.splitSequence(u8, format[3..], ",");
-    const num_type_ids = if (format.len > 3) std.mem.count(u8, format[3..], ",") + 1 else 0;
+    var it = std.mem.splitSequence(u8, format[4..], ",");
+    const num_type_ids = if (format.len > 3) std.mem.count(u8, format[4..], ",") + 1 else 0;
 
     const type_id_set = try allocator.alloc(i8, num_type_ids);
 

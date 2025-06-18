@@ -1443,7 +1443,7 @@ pub const SparseUnionBuilder = struct {
         var b = try Self.with_capacity(field_names, type_id_set, @intCast(type_ids.len), allocator);
 
         for (type_ids) |item| {
-            try b.append_value(item);
+            try b.append(item);
         }
 
         return try b.finish(children);
@@ -1511,6 +1511,11 @@ pub const SparseUnionBuilder = struct {
     }
 };
 
+pub const TypeIdOffset = struct {
+    type_id: i8,
+    offset: i8,
+};
+
 pub const DenseUnionBuilder = struct {
     const Self = @This();
 
@@ -1521,7 +1526,7 @@ pub const DenseUnionBuilder = struct {
     len: u32,
     capacity: u32,
 
-    pub fn from_slice(field_names: []const [:0]const u8, type_id_set: []const i8, type_ids: []const struct { type_id: i8, offset: i8 }, children: []const arr.Array, allocator: Allocator) Error!arr.DenseUnionArray {
+    pub fn from_slice(field_names: []const [:0]const u8, type_id_set: []const i8, type_ids: []const TypeIdOffset, children: []const arr.Array, allocator: Allocator) Error!arr.DenseUnionArray {
         var b = try Self.with_capacity(field_names, type_id_set, @intCast(type_ids.len), allocator);
 
         for (type_ids) |item| {

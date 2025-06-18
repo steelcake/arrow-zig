@@ -8,4 +8,4 @@ name = "ffi_tester"
 crate-type = ["staticlib"]
 
 [dependencies]
-arrow = { version = "55", features = ["ffi"] }
+arrow = { git = "https://github.com/steelcake/arrow-rs", features = ["ffi"] }

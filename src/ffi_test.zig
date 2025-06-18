@@ -44,8 +44,59 @@ fn make_array(id: u8, allocator: Allocator) !arr.Array {
         26 => try make_list(.i32, allocator),
         27 => try make_list(.i64, allocator),
         28 => try make_struct(allocator),
+        29 => try make_dense_union(allocator),
+        30 => try make_sparse_union(allocator),
+        31 => .{ .fixed_size_binary = try builder.FixedSizeBinaryBuilder.from_slice_opt(4, &.{ "anan", "zaaa", null, "xddd" }, allocator) },
         else => unreachable,
     };
+}
+
+fn make_sparse_union(allocator: Allocator) !arr.Array {
+    const num_children = 2;
+
+    const field_names = try allocator.alloc([:0]const u8, num_children);
+    field_names[0] = "ft";
+    field_names[1] = "mint";
+
+    const type_id_set = try allocator.alloc(i8, num_children);
+    type_id_set[0] = 0;
+    type_id_set[1] = 1;
+
+    const type_ids: []const i8 = &.{
+        0, 1, 0,
+    };
+
+    const children = try allocator.alloc(arr.Array, num_children);
+    children[0] = .{ .f32 = try builder.Float32Builder.from_slice_opt(&.{ 69.69, null, null }, allocator) };
+    children[1] = .{ .u32 = try builder.UInt32Builder.from_slice_opt(&.{ null, 699, null }, allocator) };
+
+    const array = try builder.SparseUnionBuilder.from_slice(field_names, type_id_set, type_ids, children, allocator);
+    return .{ .sparse_union = array };
+}
+
+fn make_dense_union(allocator: Allocator) !arr.Array {
+    const num_children = 2;
+
+    const field_names = try allocator.alloc([:0]const u8, num_children);
+    field_names[0] = "ft";
+    field_names[1] = "mint";
+
+    const type_id_set = try allocator.alloc(i8, num_children);
+    type_id_set[0] = 0;
+    type_id_set[1] = 1;
+
+    const type_ids: []const builder.TypeIdOffset = &.{
+        .{ .type_id = 0, .offset = 0 },
+        .{ .type_id = 1, .offset = 0 },
+        .{ .type_id = 0, .offset = 1 },
+    };
+
+    const children = try allocator.alloc(arr.Array, num_children);
+    children[0] = .{ .f32 = try builder.Float32Builder.from_slice_opt(&.{ 69.69, null }, allocator) };
+    children[1] = .{ .u32 = try builder.UInt32Builder.from_slice(&.{699}, false, allocator) };
+
+    const array = try builder.DenseUnionBuilder.from_slice(field_names, type_id_set, type_ids, children, allocator);
+    return .{ .dense_union = array };
 }
 
 fn make_struct(allocator: Allocator) !arr.Array {
