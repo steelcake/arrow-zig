@@ -21,8 +21,8 @@ fn make_array(id: u8, allocator: Allocator) !arr.Array {
         3 => .{ .i64 = try builder.Int64Builder.from_slice_opt(&.{ 1, -1, 69, null, -69, null }, allocator) },
         4 => .{ .u8 = try builder.UInt8Builder.from_slice(&.{ 1, 1, 69, 69 }, false, allocator) },
         5 => .{ .u16 = try builder.UInt16Builder.from_slice_opt(&.{ 1, 1, null, null, 69, 69 }, allocator) },
-        6 => .{ .u32 = try builder.UInt32Builder.from_slice_opt(&.{ 1, 1, null, null, 69, 69 }, allocator) },
-        7 => .{ .u64 = try builder.UInt64Builder.from_slice_opt(&.{ 1, 1, null, null, 69, 69 }, allocator) },
+        6 => try make_u32(allocator),
+        7 => try make_u64(allocator),
         8 => .{ .null = .{ .len = 69 } },
         9 => .{ .bool = try builder.BoolBuilder.from_slice_opt(&.{ true, false, null }, allocator) },
         10 => .{ .f32 = try builder.Float32Builder.from_slice_opt(&.{ 1, -1, 69, null, -69, null }, allocator) },
@@ -41,13 +41,47 @@ fn make_array(id: u8, allocator: Allocator) !arr.Array {
         23 => .{ .interval_year_month = try builder.IntervalYearMonthBuilder.from_slice_opt(&.{ 9, null }, allocator) },
         24 => .{ .interval_day_time = try builder.IntervalDayTimeBuilder.from_slice_opt(&.{ null, .{ 69, 11 } }, allocator) },
         25 => .{ .interval_month_day_nano = try builder.IntervalMonthDayNanoBuilder.from_slice_opt(&.{ null, null, null, null, .{ .days = 69, .months = 69, .nanoseconds = 1131 } }, allocator) },
-        26 => .{ .list = try make_list(.i32, allocator) },
-        27 => .{ .large_list = try make_list(.i64, allocator) },
+        26 => try make_list(.i32, allocator),
+        27 => try make_list(.i64, allocator),
+        28 => try make_struct(allocator),
         else => unreachable,
     };
 }
 
-fn make_list(comptime index_t: arr.IndexType, allocator: Allocator) !arr.GenericListArray(index_t) {
+fn make_struct(allocator: Allocator) !arr.Array {
+    const len = 3;
+
+    const field_names = try allocator.alloc([:0]const u8, len);
+    field_names[0] = "a";
+    field_names[1] = "b";
+    field_names[2] = "c";
+
+    const field_values = try allocator.alloc(arr.Array, len);
+    field_values[0] = slice.slice(&try make_u32(allocator), 0, 2);
+    field_values[1] = slice.slice(&try make_u64(allocator), 0, 2);
+    field_values[2] = slice.slice(&try make_list(.i32, allocator), 0, 2);
+
+    const array = try builder.StructBuilder.from_slice_opt(
+        field_names,
+        field_values,
+        &.{ true, false },
+        allocator,
+    );
+
+    return .{ .struct_ = array };
+}
+
+fn make_u32(allocator: Allocator) !arr.Array {
+    const array = try builder.UInt32Builder.from_slice_opt(&.{ 1, 1, null, null, 69, 69 }, allocator);
+    return .{ .u32 = array };
+}
+
+fn make_u64(allocator: Allocator) !arr.Array {
+    const array = try builder.UInt64Builder.from_slice_opt(&.{ 1, 1, null, null, 69, 69 }, allocator);
+    return .{ .u64 = array };
+}
+
+fn make_list(comptime index_t: arr.IndexType, allocator: Allocator) !arr.Array {
     var inner_b = try builder.UInt16Builder.with_capacity(7, true, allocator);
     var list_b = try builder.GenericListBuilder(index_t).with_capacity(4, true, allocator);
 
@@ -71,7 +105,12 @@ fn make_list(comptime index_t: arr.IndexType, allocator: Allocator) !arr.Generic
 
     const list = try list_b.finish(inner);
 
-    return slice.slice_list(index_t, &list, 1, 2);
+    const sliced_list = slice.slice_list(index_t, &list, 1, 2);
+
+    return switch (index_t) {
+        .i32 => .{ .list = sliced_list },
+        .i64 => .{ .large_list = sliced_list },
+    };
 }
 
 fn run_test_impl(id: u8) !void {
