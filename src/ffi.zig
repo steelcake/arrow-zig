@@ -1341,6 +1341,8 @@ fn export_list(comptime index_type: arr.IndexType, array: *const arr.GenericList
     const child = try allocator.create(FFI_Array);
     child.* = try export_array_impl(array.inner, private_data.increment());
 
+    child.schema.name = "item";
+
     const array_children = try allocator.alloc([*c]abi.ArrowArray, n_children);
     array_children[0] = &child.array;
 

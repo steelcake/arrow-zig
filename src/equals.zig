@@ -188,7 +188,7 @@ fn interval_day_time_impl(l: *const arr.PrimitiveArray([2]i32), r: *const arr.Pr
     const lvalue = get.get_primitive([2]i32, l.values.ptr, li);
     const rvalue = get.get_primitive([2]i32, r.values.ptr, ri);
 
-    if (lvalue[0] != rvalue[0] or lvalue[1] != rvalue[0]) {
+    if (lvalue[0] != rvalue[0] or lvalue[1] != rvalue[1]) {
         return Error.NotEqual;
     }
 }
