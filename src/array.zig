@@ -322,7 +322,10 @@ pub const NullArray = struct {
     len: u32,
 };
 
-pub const BinaryView = extern struct {
+// This struct shouldn't need to be represented like this.
+// It is implemented like this to be compatible with arrow-rs (Rust impl of Arrow).
+// See https://github.com/apache/arrow-rs/issues/7709
+pub const BinaryView = packed struct(u128) {
     length: i32,
     prefix: i32,
     buffer_idx: i32,

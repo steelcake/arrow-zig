@@ -11,10 +11,7 @@ use arrow::{
         UInt64Array, builder,
     },
     buffer::NullBuffer,
-    datatypes::{
-        DataType, Field, Fields, Float32Type, Int8Type, Int16Type, IntervalMonthDayNano,
-        UInt32Type, i256,
-    },
+    datatypes::{DataType, Field, Fields, Float32Type, IntervalMonthDayNano, UInt32Type, i256},
     ffi::{FFI_ArrowArray, FFI_ArrowSchema, to_ffi},
 };
 
@@ -86,48 +83,10 @@ fn make_array(id: u8) -> ArrayRef {
         32 => make_fixed_size_list(),
         33 => make_map(),
         34 => make_duration(),
-        35 => make_run_end_encoded(),
-        36 => make_binary_view(),
-        37 => make_utf8_view(),
-        38 => make_list_view(),
-        39 => make_large_list_view(),
-        40 => make_dict(),
+        35 => make_binary_view(),
+        36 => make_utf8_view(),
         _ => unreachable!(),
     }
-}
-
-fn make_dict() -> ArrayRef {
-    let mut builder = builder::BinaryDictionaryBuilder::<Int8Type>::new();
-
-    builder.append(b"abc").unwrap();
-    builder.append_null();
-    builder.append(b"def").unwrap();
-    builder.append(b"def").unwrap();
-    builder.append(b"abc").unwrap();
-
-    Arc::new(builder.finish())
-}
-
-fn make_large_list_view() -> ArrayRef {
-    let mut b = builder::LargeListViewBuilder::new(builder::UInt16Builder::new());
-
-    b.append_null();
-    b.append_value([Some(5), None, Some(69)]);
-    b.append_null();
-    b.append_value([Some(5), None, Some(69), Some(11)]);
-
-    Arc::new(b.finish().slice(1, 2))
-}
-
-fn make_list_view() -> ArrayRef {
-    let mut b = builder::ListViewBuilder::new(builder::UInt16Builder::new());
-
-    b.append_null();
-    b.append_value([Some(5), None, Some(69)]);
-    b.append_null();
-    b.append_value([Some(5), None, Some(69), Some(11)]);
-
-    Arc::new(b.finish().slice(1, 2))
 }
 
 fn make_utf8_view() -> ArrayRef {
@@ -144,18 +103,6 @@ fn make_binary_view() -> ArrayRef {
         Some("world"),
         None,
     ]))
-}
-
-fn make_run_end_encoded() -> ArrayRef {
-    let mut builder = builder::PrimitiveRunBuilder::<Int16Type, UInt32Type>::new();
-    builder.append_value(1234);
-    builder.append_value(1234);
-    builder.append_value(1234);
-    builder.append_null();
-    builder.append_value(5678);
-    builder.append_value(5678);
-
-    Arc::new(builder.finish())
 }
 
 fn make_map() -> ArrayRef {

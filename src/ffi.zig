@@ -1240,6 +1240,8 @@ fn export_fixed_size_list(array: *const arr.FixedSizeListArray, private_data: *P
     const child = try allocator.create(FFI_Array);
     child.* = try export_array_impl(array.inner, private_data.increment());
 
+    child.schema.name = "item";
+
     const array_children = try allocator.alloc([*c]abi.ArrowArray, n_children);
     array_children[0] = &child.array;
 
@@ -1290,6 +1292,8 @@ fn export_list_view(comptime index_type: arr.IndexType, array: *const arr.Generi
 
     const child = try allocator.create(FFI_Array);
     child.* = try export_array_impl(array.inner, private_data.increment());
+
+    child.schema.name = "item";
 
     const array_children = try allocator.alloc(?*abi.ArrowArray, n_children);
     array_children[0] = &child.array;

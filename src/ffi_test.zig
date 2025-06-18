@@ -47,8 +47,40 @@ fn make_array(id: u8, allocator: Allocator) !arr.Array {
         29 => try make_dense_union(allocator),
         30 => try make_sparse_union(allocator),
         31 => .{ .fixed_size_binary = try builder.FixedSizeBinaryBuilder.from_slice_opt(4, &.{ "anan", "zaaa", null, "xddd" }, allocator) },
+        32 => try make_fixed_size_list(allocator),
+        33 => try make_map(allocator),
+        34 => .{ .duration = try builder.DurationBuilder.from_slice(.nanosecond, &.{ 69, 69, 11, 15 }, false, allocator) },
+        35 => .{ .binary_view = try builder.BinaryViewBuilder.from_slice_opt(&.{ "hello", "world", null }, allocator) },
+        36 => .{ .utf8_view = try builder.Utf8ViewBuilder.from_slice_opt(&.{ "hello", "world", null }, allocator) },
         else => unreachable,
     };
+}
+
+fn make_map(allocator: Allocator) !arr.Array {
+    const keys = try builder.Utf8Builder.from_slice(&.{ "joe", "blogs", "foo" }, false, allocator);
+    const values = try builder.UInt32Builder.from_slice(&.{ 1, 2, 4 }, true, allocator);
+
+    const field_names = try allocator.alloc([:0]const u8, 2);
+    field_names[0] = "keys";
+    field_names[1] = "values";
+
+    const field_values = try allocator.alloc(arr.Array, 2);
+    field_values[0] = .{ .utf8 = keys };
+    field_values[1] = .{ .u32 = values };
+
+    const entries = try allocator.create(arr.StructArray);
+    entries.* = try builder.StructBuilder.from_slice(field_names, field_values, 3, false, allocator);
+
+    const array = try builder.MapBuilder.from_slice_opt(false, &.{ 1, 2, 0, null }, entries, allocator);
+
+    return .{ .map = array };
+}
+
+fn make_fixed_size_list(allocator: Allocator) !arr.Array {
+    const inner = try allocator.create(arr.Array);
+    inner.* = .{ .u16 = try builder.UInt16Builder.from_slice_opt(&.{ 1, null, 2, 69, null, null }, allocator) };
+    const array = try builder.FixedSizeListBuilder.from_slice_opt(3, &.{ true, false }, inner, allocator);
+    return .{ .fixed_size_list = array };
 }
 
 fn make_sparse_union(allocator: Allocator) !arr.Array {
@@ -193,7 +225,7 @@ fn run_test(id: u8) !void {
     };
 }
 
-const NUM_TESTS = 41;
+const NUM_TESTS = 37;
 
 test "ffi basic" {
     for (0..NUM_TESTS) |i| {

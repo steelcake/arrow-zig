@@ -846,7 +846,7 @@ pub const BinaryViewBuilder = struct {
             validity = v;
         }
 
-        const views = try allocator.alloc(arr.BinaryView, capacity);
+        const views = try allocator.alignedAlloc(arr.BinaryView, std.mem.Alignment.@"16", capacity);
         @memset(@as([]u8, @ptrCast(views)), 0);
 
         return Self{
