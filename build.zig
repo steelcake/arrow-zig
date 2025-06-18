@@ -12,7 +12,7 @@ pub fn build(b: *std.Build) void {
     cargo_build.setName("Build Rust Library(cargo)");
     cargo_build.setCwd(b.path("ffi_tester"));
 
-    const lib_mod = b.createModule(.{
+    const lib_mod = b.addModule("arrow", .{
         .root_source_file = b.path("src/root.zig"),
         .target = target,
         .optimize = optimize,
