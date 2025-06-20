@@ -24,12 +24,18 @@ pub fn build(b: *std.Build) void {
     lib_unit_tests.step.dependOn(&cargo_build.step);
     lib_unit_tests.linkLibC();
     lib_unit_tests.linkSystemLibrary("unwind");
+    if (target.result.os.tag == .macos) {
+        lib_unit_tests.linkFramework("CoreFoundation");
+    }
 
     const object_file_path = switch (optimize) {
         .Debug => "ffi_tester/target/debug/libffi_tester.a",
         else => "ffi_tester/target/release/libffi_tester.a",
     };
-    lib_unit_tests.addObjectFile(b.path(object_file_path));
+
+    if (std.fs.cwd().access(object_file_path, .{})) |_| {
+        lib_unit_tests.addObjectFile(b.path(object_file_path));
+    } else |_| {}
 
     const run_lib_unit_tests = b.addRunArtifact(lib_unit_tests);
 
