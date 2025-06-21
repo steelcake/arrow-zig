@@ -6,6 +6,7 @@ pub const length = @import("./length.zig");
 pub const slice = @import("./slice.zig");
 pub const equals = @import("./equals.zig");
 pub const get = @import("./get.zig");
+pub const data_type = @import("./data_type.zig");
 const ffi_test = @import("./ffi_test.zig");
 
 test {
@@ -17,5 +18,6 @@ test {
     _ = slice;
     _ = equals;
     _ = get;
+    _ = data_type;
     _ = ffi_test;
 }
