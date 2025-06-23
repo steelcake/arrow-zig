@@ -65,14 +65,14 @@ pub const MapKeyType = enum {
     utf8_view,
 
     pub fn to_data_type(self: MapKeyType) DataType {
-        switch (self) {
-            .binary => .{ .binary = {} },
-            .large_binary => .{ .large_binary = {} },
-            .utf8 => .{ .utf8 = {} },
-            .large_utf8 => .{ .large_utf8 = {} },
-            .binary_view => .{ .binary_view = {} },
-            .utf8_view => .{ .utf8_view = {} },
-        }
+        return switch (self) {
+            .binary => DataType{ .binary = {} },
+            .large_binary => DataType{ .large_binary = {} },
+            .utf8 => DataType{ .utf8 = {} },
+            .large_utf8 => DataType{ .large_utf8 = {} },
+            .binary_view => DataType{ .binary_view = {} },
+            .utf8_view => DataType{ .utf8_view = {} },
+        };
     }
 };
 
@@ -91,11 +91,11 @@ pub const RunEndType = enum {
     i64,
 
     pub fn to_data_type(self: RunEndType) DataType {
-        switch (self) {
+        return switch (self) {
             .i16 => .{ .i16 = {} },
             .i32 => .{ .i32 = {} },
             .i64 => .{ .i64 = {} },
-        }
+        };
     }
 };
 
@@ -119,7 +119,7 @@ pub const DictKeyType = enum {
     u64,
 
     pub fn to_data_type(self: DictKeyType) DataType {
-        switch (self) {
+        return switch (self) {
             i8 => .{ .i8 = {} },
             i16 => .{ .i16 = {} },
             i32 => .{ .i32 = {} },
@@ -128,7 +128,7 @@ pub const DictKeyType = enum {
             u16 => .{ .u16 = {} },
             u32 => .{ .u32 = {} },
             u64 => .{ .u64 = {} },
-        }
+        };
     }
 };
 
@@ -255,6 +255,31 @@ pub const DataType = union(enum) {
     }
 };
 
+fn check_union_data_type(array: *const arr.UnionArray, dt: *const UnionType) bool {
+    if (!std.mem.eql(i8, dt.type_id_set, array.type_id_set)) {
+        return false;
+    }
+
+    std.debug.assert(dt.field_names.len == dt.field_types.len);
+    if (dt.field_names.len != array.field_names.len or dt.field_types.len != array.children.len) {
+        return false;
+    }
+
+    for (dt.field_names, array.field_names) |dtfn, afn| {
+        if (!std.mem.eql(u8, dtfn, afn)) {
+            return false;
+        }
+    }
+
+    for (dt.field_types, array.children) |*dtft, *afv| {
+        if (!check_data_type(afv, dtft)) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 pub fn check_data_type(array: *const arr.Array, expected: *const DataType) bool {
     switch (array.*) {
         .null => {
@@ -347,14 +372,14 @@ pub fn check_data_type(array: *const arr.Array, expected: *const DataType) bool 
         .duration => |*a| {
             return expected.eql(&.{ .duration = a.unit });
         },
-        .interval_year_month => |*a| {
-            return expected.eql(&.{ .interval_year_month = a.unit });
+        .interval_year_month => {
+            return expected.eql(&.{ .interval_year_month = {} });
         },
-        .interval_day_time => |*a| {
-            return expected.eql(&.{ .interval_day_time = a.unit });
+        .interval_day_time => {
+            return expected.eql(&.{ .interval_day_time = {} });
         },
-        .interval_month_day_nano => |*a| {
-            return expected.eql(&.{ .interval_month_day_nano = a.unit });
+        .interval_month_day_nano => {
+            return expected.eql(&.{ .interval_month_day_nano = {} });
         },
         .list => |*a| {
             switch (expected.*) {
@@ -391,7 +416,7 @@ pub fn check_data_type(array: *const arr.Array, expected: *const DataType) bool 
         .fixed_size_list => |*a| {
             switch (expected.*) {
                 .fixed_size_list => |dt| {
-                    return dt.item_width == a.item_width and check_data_type(a.inner, dt.inner);
+                    return dt.item_width == a.item_width and check_data_type(a.inner, &dt.inner);
                 },
                 else => return false,
             }
@@ -399,7 +424,7 @@ pub fn check_data_type(array: *const arr.Array, expected: *const DataType) bool 
         .struct_ => |*a| {
             switch (expected.*) {
                 .struct_ => |dt| {
-                    std.dbg.assert(dt.field_names.len == dt.field_types.len);
+                    std.debug.assert(dt.field_names.len == dt.field_types.len);
                     if (dt.field_names.len != a.field_names.len or dt.field_types.len != a.field_values.len) {
                         return false;
                     }
@@ -424,24 +449,26 @@ pub fn check_data_type(array: *const arr.Array, expected: *const DataType) bool 
         .map => |*a| {
             switch (expected.*) {
                 .map => |dt| {
-                    return check_data_type(a.entries.field_values[0], &dt.key.to_data_type()) and check_data_type(a.entries.field_values[1], &dt.value);
+                    return check_data_type(&a.entries.field_values[0], &dt.key.to_data_type()) and check_data_type(&a.entries.field_values[1], &dt.value);
                 },
                 else => return false,
             }
         },
         .dense_union => |*a| {
-            return expected.eql(&.{ .dense_union = .{
-                .type_id_set = a.inner.type_id_set,
-                .field_names = a.inner.field_names,
-                .field_types = a.inner.field_types,
-            } });
+            switch (expected.*) {
+                .dense_union => |dt| {
+                    return check_union_data_type(&a.inner, dt);
+                },
+                else => return false,
+            }
         },
         .sparse_union => |*a| {
-            return expected.eql(&.{ .sparse_union = .{
-                .type_id_set = a.inner.type_id_set,
-                .field_names = a.inner.field_names,
-                .field_types = a.inner.field_types,
-            } });
+            switch (expected.*) {
+                .sparse_union => |dt| {
+                    return check_union_data_type(&a.inner, dt);
+                },
+                else => return false,
+            }
         },
         .run_end_encoded => |*a| {
             switch (expected.*) {
@@ -630,4 +657,8 @@ test "DataType.eql - fixed_size_list type" {
 
     try testing.expect(!same.eql(&diff));
     try testing.expect(!diff.eql(&same));
+}
+
+test check_data_type {
+    try testing.expect(check_data_type(&arr.Array{ .i8 = arr.Int8Array{ .values = &.{}, .len = 0, .offset = 0, .validity = null, .null_count = 0 } }, &DataType{ .i8 = {} }));
 }
