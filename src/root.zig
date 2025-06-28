@@ -8,8 +8,10 @@ pub const equals = @import("./equals.zig");
 pub const get = @import("./get.zig");
 pub const data_type = @import("./data_type.zig");
 const ffi_test = @import("./ffi_test.zig");
+pub const test_array = @import("./test_array.zig");
 
 test {
+    _ = test_array;
     _ = array;
     _ = ffi;
     _ = bitmap;
