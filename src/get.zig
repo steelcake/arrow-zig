@@ -129,6 +129,24 @@ pub fn get_map(entries: *const arr.StructArray, offsets: [*]const i32, index: u3
     return slice_struct(entries, start, end -% start);
 }
 
+pub fn get_validity(comptime ArrayT: type, array: *const ArrayT) ?[]const u8 {
+    switch (ArrayT) {
+        arr.NullArray => unreachable,
+        arr.Int8Array, arr.Int16Array, arr.Int32Array, arr.Int64Array, arr.UInt8Array, arr.UInt16Array, arr.UInt32Array, arr.UInt64Array, arr.Float16Array,
+        arr.Float32Array, arr.Float64Array, arr.BinaryArray, arr.LargeBinaryArray, arr.BoolArray, arr.BinaryViewArray, arr.FixedSizeBinaryArray, arr.ListArray,
+        arr.LargeListArray, arr.ListViewArray, arr.LargeListViewArray, arr.FixedSizeListArray, arr.StructArray => {
+            if (array.null_count > 0) {
+                const v = array.validity orelse unreachable;
+                return v;
+            } else {
+                return null;
+            }
+        },
+        arr.Utf8Array, arr.LargeUtf8Array, arr.Utf8ViewArray, arr.Decimal32Array, arr.Decimal64Array, arr.Decimal128Array, arr.Decimal256Array, arr.Date32Array,
+        arr.Date64Array, arr.Time32Array, arr.Time64Array, arr.TimestampArray, arr.DurationArray, arr.
+    }
+}
+
 pub fn item_type(comptime ArrayT: type) type {
     return switch (ArrayT) {
         arr.NullArray => unreachable,

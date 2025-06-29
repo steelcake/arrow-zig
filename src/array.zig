@@ -1,3 +1,5 @@
+const bitmap = @import("./bitmap.zig");
+
 pub const DecimalParams = struct {
     precision: u8,
     scale: i8,
@@ -78,15 +80,45 @@ pub const BoolArray = struct {
     len: u32,
     offset: u32,
     null_count: u32,
+
+    pub fn get_len(self: *const BoolArray) u32 {
+        return self.len;
+    }
+
+    pub fn get_null_count(self: *const BoolArray) u32 {
+        return self.null_count;
+    }
+
+    pub fn get_validity(self: *const BoolArray) ?[]const u8 {
+        return self.validity;
+    }
+
+    pub fn get_value(self: *const BoolArray, index: u32) bool {
+        return bitmap.get(self.values.ptr, index);
+    }
 };
 
 pub fn PrimitiveArray(comptime T: type) type {
     return struct {
+        const Self = @This();
+
         values: []const T,
         validity: ?[]const u8,
         len: u32,
         offset: u32,
         null_count: u32,
+
+        pub fn get_len(self: *const Self) u32 {
+            return self.len;
+        }
+
+        pub fn get_null_count(self: *const Self) u32 {
+            return self.null_count;
+        }
+
+        pub fn get_validity(self: *const Self) ?[]const u8 {
+            return self.validity;
+        }
     };
 }
 
@@ -103,12 +135,26 @@ pub const Float32Array = PrimitiveArray(f32);
 pub const Float64Array = PrimitiveArray(f64);
 
 pub const FixedSizeBinaryArray = struct {
+    const Self = @This();
+
     data: []const u8,
     validity: ?[]const u8,
     byte_width: i32,
     len: u32,
     offset: u32,
     null_count: u32,
+
+    pub fn get_len(self: *const Self) u32 {
+        return self.len;
+    }
+
+    pub fn get_null_count(self: *const Self) u32 {
+        return self.null_count;
+    }
+
+    pub fn get_validity(self: *const Self) ?[]const u8 {
+        return self.validity;
+    }
 };
 
 pub const DecimalInt = enum {
@@ -129,8 +175,22 @@ pub const DecimalInt = enum {
 
 pub fn DecimalArray(comptime int: DecimalInt) type {
     return struct {
+        const Self = @This();
+
         inner: PrimitiveArray(int.to_type()),
         params: DecimalParams,
+
+        pub fn get_len(self: *const Self) u32 {
+            return self.inner.len;
+        }
+
+        pub fn get_null_count(self: *const Self) u32 {
+            return self.inner.null_count;
+        }
+
+        pub fn get_validity(self: *const Self) ?[]const u8 {
+            return self.inner.validity;
+        }
     };
 }
 
@@ -185,6 +245,20 @@ pub fn GenericBinaryArray(comptime index_type: IndexType) type {
         len: u32,
         offset: u32,
         null_count: u32,
+
+        const Self = @This();
+
+        pub fn get_len(self: *const Self) u32 {
+            return self.len;
+        }
+
+        pub fn get_null_count(self: *const Self) u32 {
+            return self.null_count;
+        }
+
+        pub fn get_validity(self: *const Self) ?[]const u8 {
+            return self.validity;
+        }
     };
 }
 
@@ -194,6 +268,20 @@ pub const LargeBinaryArray = GenericBinaryArray(.i64);
 pub fn GenericUtf8Array(comptime index_type: IndexType) type {
     return struct {
         inner: GenericBinaryArray(index_type),
+
+        const Self = @This();
+
+        pub fn get_len(self: *const Self) u32 {
+            return self.inner.len;
+        }
+
+        pub fn get_null_count(self: *const Self) u32 {
+            return self.inner.null_count;
+        }
+
+        pub fn get_validity(self: *const Self) ?[]const u8 {
+            return self.inner.validity;
+        }
     };
 }
 
@@ -207,6 +295,20 @@ pub const StructArray = struct {
     len: u32,
     offset: u32,
     null_count: u32,
+
+    const Self = @This();
+
+    pub fn get_len(self: *const Self) u32 {
+        return self.len;
+    }
+
+    pub fn get_null_count(self: *const Self) u32 {
+        return self.null_count;
+    }
+
+    pub fn get_validity(self: *const Self) ?[]const u8 {
+        return self.validity;
+    }
 };
 
 pub const FixedSizeListArray = struct {
@@ -216,6 +318,20 @@ pub const FixedSizeListArray = struct {
     offset: u32,
     null_count: u32,
     item_width: i32,
+
+    const Self = @This();
+
+    pub fn get_len(self: *const Self) u32 {
+        return self.len;
+    }
+
+    pub fn get_null_count(self: *const Self) u32 {
+        return self.null_count;
+    }
+
+    pub fn get_validity(self: *const Self) ?[]const u8 {
+        return self.validity;
+    }
 };
 
 pub fn GenericListArray(comptime index_type: IndexType) type {
@@ -228,6 +344,20 @@ pub fn GenericListArray(comptime index_type: IndexType) type {
         len: u32,
         offset: u32,
         null_count: u32,
+
+        const Self = @This();
+
+        pub fn get_len(self: *const Self) u32 {
+            return self.len;
+        }
+
+        pub fn get_null_count(self: *const Self) u32 {
+            return self.null_count;
+        }
+
+        pub fn get_validity(self: *const Self) ?[]const u8 {
+            return self.validity;
+        }
     };
 }
 
@@ -241,20 +371,52 @@ pub const UnionArray = struct {
     children: []const Array,
     len: u32,
     offset: u32,
+
+    const Self = @This();
+
+    pub fn get_len(self: *const Self) u32 {
+        return self.len;
+    }
 };
 
 pub const DenseUnionArray = struct {
     offsets: []const i32,
     inner: UnionArray,
+
+    const Self = @This();
+
+    pub fn get_len(self: *const Self) u32 {
+        return self.inner.len;
+    }
 };
 
 pub const SparseUnionArray = struct {
     inner: UnionArray,
+
+    const Self = @This();
+
+    pub fn get_len(self: *const Self) u32 {
+        return self.inner.len;
+    }
 };
 
 pub fn DateArray(comptime backing_t: IndexType) type {
     return struct {
         inner: PrimitiveArray(backing_t.to_type()),
+
+        const Self = @This();
+
+        pub fn get_len(self: *const Self) u32 {
+            return self.inner.len;
+        }
+
+        pub fn get_null_count(self: *const Self) u32 {
+            return self.inner.null_count;
+        }
+
+        pub fn get_validity(self: *const Self) ?[]const u8 {
+            return self.inner.validity;
+        }
     };
 }
 
@@ -272,6 +434,20 @@ pub fn TimeArray(comptime backing_t: IndexType) type {
 
         inner: PrimitiveArray(T),
         unit: Unit,
+
+        const Self = @This();
+
+        pub fn get_len(self: *const Self) u32 {
+            return self.inner.len;
+        }
+
+        pub fn get_null_count(self: *const Self) u32 {
+            return self.inner.null_count;
+        }
+
+        pub fn get_validity(self: *const Self) ?[]const u8 {
+            return self.inner.validity;
+        }
     };
 }
 
@@ -281,6 +457,20 @@ pub const Time64Array = TimeArray(.i64);
 pub const TimestampArray = struct {
     inner: Int64Array,
     ts: Timestamp,
+
+    const Self = @This();
+
+    pub fn get_len(self: *const Self) u32 {
+        return self.inner.len;
+    }
+
+    pub fn get_null_count(self: *const Self) u32 {
+        return self.inner.null_count;
+    }
+
+    pub fn get_validity(self: *const Self) ?[]const u8 {
+        return self.inner.validity;
+    }
 };
 
 pub const MonthDayNano = extern struct {
@@ -306,6 +496,20 @@ pub const IntervalType = enum {
 pub fn IntervalArray(comptime interval_type: IntervalType) type {
     return struct {
         inner: PrimitiveArray(interval_type.to_type()),
+
+        const Self = @This();
+
+        pub fn get_len(self: *const Self) u32 {
+            return self.inner.len;
+        }
+
+        pub fn get_null_count(self: *const Self) u32 {
+            return self.inner.null_count;
+        }
+
+        pub fn get_validity(self: *const Self) ?[]const u8 {
+            return self.inner.validity;
+        }
     };
 }
 
@@ -316,6 +520,20 @@ pub const IntervalYearMonthArray = IntervalArray(.year_month);
 pub const DurationArray = struct {
     inner: Int64Array,
     unit: TimestampUnit,
+
+    const Self = @This();
+
+    pub fn get_len(self: *const Self) u32 {
+        return self.inner.len;
+    }
+
+    pub fn get_null_count(self: *const Self) u32 {
+        return self.inner.null_count;
+    }
+
+    pub fn get_validity(self: *const Self) ?[]const u8 {
+        return self.inner.validity;
+    }
 };
 
 pub const NullArray = struct {
@@ -336,10 +554,38 @@ pub const BinaryViewArray = struct {
     len: u32,
     offset: u32,
     null_count: u32,
+
+    const Self = @This();
+
+    pub fn get_len(self: *const Self) u32 {
+        return self.len;
+    }
+
+    pub fn get_null_count(self: *const Self) u32 {
+        return self.null_count;
+    }
+
+    pub fn get_validity(self: *const Self) ?[]const u8 {
+        return self.validity;
+    }
 };
 
 pub const Utf8ViewArray = struct {
     inner: BinaryViewArray,
+
+    const Self = @This();
+
+    pub fn get_len(self: *const Self) u32 {
+        return self.inner.len;
+    }
+
+    pub fn get_null_count(self: *const Self) u32 {
+        return self.inner.null_count;
+    }
+
+    pub fn get_validity(self: *const Self) ?[]const u8 {
+        return self.inner.validity;
+    }
 };
 
 pub fn GenericListViewArray(comptime index_type: IndexType) type {
@@ -353,6 +599,20 @@ pub fn GenericListViewArray(comptime index_type: IndexType) type {
         len: u32,
         offset: u32,
         null_count: u32,
+
+        const Self = @This();
+
+        pub fn get_len(self: *const Self) u32 {
+            return self.len;
+        }
+
+        pub fn get_null_count(self: *const Self) u32 {
+            return self.null_count;
+        }
+
+        pub fn get_validity(self: *const Self) ?[]const u8 {
+            return self.validity;
+        }
     };
 }
 
@@ -367,4 +627,18 @@ pub const MapArray = struct {
     offset: u32,
     null_count: u32,
     keys_are_sorted: bool,
+
+    const Self = @This();
+
+    pub fn get_len(self: *const Self) u32 {
+        return self.len;
+    }
+
+    pub fn get_null_count(self: *const Self) u32 {
+        return self.null_count;
+    }
+
+    pub fn get_validity(self: *const Self) ?[]const u8 {
+        return self.validity;
+    }
 };
