@@ -1,6 +1,8 @@
 const arr = @import("./array.zig");
 const std = @import("std");
+const Allocator = std.mem.Allocator;
 const testing = std.testing;
+const test_array = @import("./test_array.zig");
 
 pub const StructType = struct {
     field_names: []const [:0]const u8,
@@ -280,6 +282,235 @@ fn check_union_data_type(array: *const arr.UnionArray, dt: *const UnionType) boo
     return true;
 }
 
+fn get_union_type(array: *const arr.UnionArray, alloc: Allocator) Error!*const UnionType {
+    const field_types = try alloc.alloc(DataType, array.children.len);
+    for (array.children, 0..) |*field, idx| {
+        field_types[idx] = try get_data_type(field, alloc);
+    }
+
+    const union_type = try alloc.create(UnionType);
+    union_type.* = .{
+        .type_id_set = array.type_id_set,
+        .field_names = array.field_names,
+        .field_types = field_types,
+    };
+
+    return union_type;
+}
+
+const Error = error{ OutOfMemory, BadMapKeyType, BadReeKeyType };
+
+/// Get data type of given struct.
+/// Lifetime of the returned data type is tied to the lifetime of the given array
+pub fn get_data_type(array: *const arr.Array, alloc: Allocator) Error!DataType {
+    switch (array.*) {
+        .null => {
+            return .{ .null = {} };
+        },
+        .i8 => {
+            return .{ .i8 = {} };
+        },
+        .i16 => {
+            return .{ .i16 = {} };
+        },
+        .i32 => {
+            return .{ .i32 = {} };
+        },
+        .i64 => {
+            return .{ .i64 = {} };
+        },
+        .u8 => {
+            return .{ .u8 = {} };
+        },
+        .u16 => {
+            return .{ .u16 = {} };
+        },
+        .u32 => {
+            return .{ .u32 = {} };
+        },
+        .u64 => {
+            return .{ .u64 = {} };
+        },
+        .f16 => {
+            return .{ .f16 = {} };
+        },
+        .f32 => {
+            return .{ .f32 = {} };
+        },
+        .f64 => {
+            return .{ .f64 = {} };
+        },
+        .binary => {
+            return .{ .binary = {} };
+        },
+        .large_binary => {
+            return .{ .large_binary = {} };
+        },
+        .utf8 => {
+            return .{ .utf8 = {} };
+        },
+        .large_utf8 => {
+            return .{ .large_utf8 = {} };
+        },
+        .bool => {
+            return .{ .bool = {} };
+        },
+        .binary_view => {
+            return .{ .binary_view = {} };
+        },
+        .utf8_view => {
+            return .{ .utf8_view = {} };
+        },
+        .decimal32 => |*a| {
+            return .{ .decimal32 = a.params };
+        },
+        .decimal64 => |*a| {
+            return .{ .decimal64 = a.params };
+        },
+        .decimal128 => |*a| {
+            return .{ .decimal128 = a.params };
+        },
+        .decimal256 => |*a| {
+            return .{ .decimal256 = a.params };
+        },
+        .fixed_size_binary => |*a| {
+            return .{ .fixed_size_binary = a.byte_width };
+        },
+        .date32 => {
+            return .{ .date32 = {} };
+        },
+        .date64 => {
+            return .{ .date64 = {} };
+        },
+        .time32 => |*a| {
+            return .{ .time32 = a.unit };
+        },
+        .time64 => |*a| {
+            return .{ .time64 = a.unit };
+        },
+        .timestamp => |*a| {
+            return .{ .timestamp = a.ts };
+        },
+        .duration => |*a| {
+            return .{ .duration = a.unit };
+        },
+        .interval_year_month => {
+            return .{ .interval_year_month = {} };
+        },
+        .interval_day_time => {
+            return .{ .interval_day_time = {} };
+        },
+        .interval_month_day_nano => {
+            return .{ .interval_month_day_nano = {} };
+        },
+        .list => |*a| {
+            const inner = try alloc.create(DataType);
+            inner.* = try get_data_type(a.inner, alloc);
+            return .{ .list = inner };
+        },
+        .large_list => |*a| {
+            const inner = try alloc.create(DataType);
+            inner.* = try get_data_type(a.inner, alloc);
+            return .{ .large_list = inner };
+        },
+        .list_view => |*a| {
+            const inner = try alloc.create(DataType);
+            inner.* = try get_data_type(a.inner, alloc);
+            return .{ .list_view = inner };
+        },
+        .large_list_view => |*a| {
+            const inner = try alloc.create(DataType);
+            inner.* = try get_data_type(a.inner, alloc);
+            return .{ .large_list_view = inner };
+        },
+        .fixed_size_list => |*a| {
+            const fsl_type = try alloc.create(FixedSizeListType);
+            fsl_type.* = .{
+                .inner = try get_data_type(a.inner, alloc),
+                .item_width = a.item_width,
+            };
+            return .{ .fixed_size_list = fsl_type };
+        },
+        .struct_ => |*a| {
+            const field_types = try alloc.alloc(DataType, a.field_values.len);
+            for (a.field_values, 0..) |*field, idx| {
+                field_types[idx] = try get_data_type(field, alloc);
+            }
+
+            const struct_type = try alloc.create(StructType);
+            struct_type.* = StructType{ .field_names = a.field_names, .field_types = field_types };
+            return .{ .struct_ = struct_type };
+        },
+        .map => |*a| {
+            const key: MapKeyType = switch (a.entries.field_values[0]) {
+                .binary => .binary,
+                .large_binary => .large_binary,
+                .utf8 => .utf8,
+                .large_utf8 => .large_utf8,
+                .binary_view => .binary_view,
+                .utf8_view => .utf8_view,
+                else => return error.BadMapKeyType,
+            };
+
+            const value = try get_data_type(&a.entries.field_values[1], alloc);
+
+            const map_type = try alloc.create(MapType);
+            map_type.* = .{
+                .key = key,
+                .value = value,
+            };
+
+            return .{ .map = map_type };
+        },
+        .dense_union => |*a| {
+            return .{ .dense_union = try get_union_type(&a.inner, alloc) };
+        },
+        .sparse_union => |*a| {
+            return .{ .sparse_union = try get_union_type(&a.inner, alloc) };
+        },
+        .run_end_encoded => |*a| {
+            const run_end: RunEndType = switch (a.run_ends.*) {
+                .i16 => .i16,
+                .i32 => .i32,
+                .i64 => .i64,
+                else => return error.BadReeKeyType,
+            };
+
+            const value = try get_data_type(a.values, alloc);
+
+            const ree_type = try alloc.create(RunEndEncodedType);
+            ree_type.* = .{
+                .run_end = run_end,
+                .value = value,
+            };
+
+            return .{ .run_end_encoded = ree_type };
+        },
+        .dict => |*a| {
+            const key: DictKeyType = switch (a.keys) {
+                .i8 => .i8,
+                .i16 => .i16,
+                .i32 => .i32,
+                .i64 => .i64,
+                .u8 => .u8,
+                .u16 => .u16,
+                .u32 => .u32,
+                .u64 => .u64,
+            };
+
+            const value = try get_data_type(a.values, alloc);
+
+            const dict_type = try alloc.create(DictType);
+            dict_type.* = .{
+                .key = key,
+                .value = value,
+            };
+
+            return .{ .dict = dict_type };
+        },
+    }
+}
+
 pub fn check_data_type(array: *const arr.Array, expected: *const DataType) bool {
     switch (array.*) {
         .null => {
@@ -529,6 +760,33 @@ pub fn check_data_type(array: *const arr.Array, expected: *const DataType) bool 
                 else => return false,
             }
         },
+    }
+}
+
+fn run_test_impl(id: u8) !void {
+    var array_arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer array_arena.deinit();
+
+    const array = try test_array.make_array(id, array_arena.allocator());
+
+    var dt_arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer dt_arena.deinit();
+
+    const dt = try get_data_type(&array, dt_arena.allocator());
+
+    try testing.expect(check_data_type(&array, &dt));
+}
+
+fn run_test(id: u8) !void {
+    return run_test_impl(id) catch |e| err: {
+        std.log.err("failed test id: {}", .{id});
+        break :err e;
+    };
+}
+
+test "data_type roundtrip" {
+    for (0..test_array.NUM_ARRAYS) |i| {
+        try run_test(@intCast(i));
     }
 }
 
