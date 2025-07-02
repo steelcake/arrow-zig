@@ -286,6 +286,78 @@ pub fn concat_bool(arrays: []const arr.BoolArray, alloc: Allocator) Error!arr.Bo
     };
 }
 
+/// Concatenates given arrays, lifetime of the output array isn't tied to the input arrays
+pub fn concat_fixed_size_binary(byte_width: i32, arrays: []const arr.FixedSizeBinaryArray, alloc: Allocator) Error!arr.FixedSizeBinaryArray {
+    const b_width: u32 = @intCast(byte_width);
+
+    var total_len: u32 = 0;
+    var total_null_count: u32 = 0;
+
+    for (arrays) |array| {
+        std.debug.assert(array.byte_width == byte_width);
+
+        total_len += array.len;
+        total_null_count += array.null_count;
+    }
+
+    const has_nulls = total_null_count > 0;
+    const bitmap_len = (total_len + 7) / 8;
+
+    const data = try alloc.alloc(u8, total_len * b_width);
+    const validity: []u8 = if (has_nulls) has_n: {
+        const v = try alloc.alloc(u8, bitmap_len);
+        @memset(v, 0xff);
+        break :has_n v;
+    } else &.{};
+
+    var write_offset: u32 = 0;
+    for (arrays) |array| {
+        const data_offset = write_offset * b_width;
+        const input_offset = array.offset * b_width;
+        const input_len = array.len * b_width;
+        @memcpy(data.ptr[data_offset .. data_offset + input_len], array.data.ptr[input_offset .. input_offset + input_len]);
+
+        if (array.null_count > 0) {
+            const v = (array.validity orelse unreachable).ptr;
+
+            var idx: u32 = array.offset;
+            var w_idx: u32 = write_offset;
+            while (idx < array.offset + array.len) : ({
+                idx += 1;
+                w_idx += 1;
+            }) {
+                if (!bitmap.get(v, idx)) {
+                    bitmap.unset(validity.ptr, w_idx);
+                }
+            }
+        }
+
+        write_offset += array.len;
+    }
+
+    return .{
+        .len = total_len,
+        .null_count = total_null_count,
+        .validity = if (has_nulls) validity else null,
+        .data = data,
+        .offset = 0,
+        .byte_width = byte_width,
+    };
+}
+
+test "concat_primitive empty-input" {
+    const result = try concat_primitive(i32, &.{}, testing.allocator);
+    const expected = arr.Int32Array{
+        .offset = 0,
+        .len = 0,
+        .values = &.{},
+        .validity = null,
+        .null_count = 0,
+    };
+
+    try equals.equals_primitive(i32, &result, &expected);
+}
+
 test "concat_primitive non-null" {
     var arena = ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
@@ -335,6 +407,25 @@ test "concat_primitive empty" {
     const expected = try builder.Int32Builder.from_slice_opt(&.{}, alloc);
 
     try equals.equals_primitive(i32, &result, &expected);
+}
+
+test "concat_binary empty-input" {
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    const alloc = arena.allocator();
+
+    const result = try concat_binary(.i32, &.{}, alloc);
+    const expected = arr.BinaryArray{
+        .offset = 0,
+        .len = 0,
+        .offsets = &.{0},
+        .data = &.{},
+        .validity = null,
+        .null_count = 0,
+    };
+
+    try equals.equals_binary(.i32, &result, &expected);
 }
 
 test "concat_binary non-null" {
@@ -388,6 +479,25 @@ test "concat_binary empty" {
     try equals.equals_binary(.i32, &result, &expected);
 }
 
+test "concat_binary_view empty-input" {
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    const alloc = arena.allocator();
+
+    const result = try concat_binary_view(&.{}, alloc);
+    const expected = arr.BinaryViewArray{
+        .offset = 0,
+        .len = 0,
+        .views = &.{},
+        .buffers = &.{},
+        .validity = null,
+        .null_count = 0,
+    };
+
+    try equals.equals_binary_view(&result, &expected);
+}
+
 test "concat_binary_view non-null" {
     var arena = ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
@@ -439,6 +549,19 @@ test "concat_binary_view empty" {
     try equals.equals_binary_view(&result, &expected);
 }
 
+test "concat_bool empty-input" {
+    const result = try concat_bool(&.{}, testing.allocator);
+    const expected = arr.BoolArray{
+        .offset = 0,
+        .len = 0,
+        .values = &.{},
+        .validity = null,
+        .null_count = 0,
+    };
+
+    try equals.equals_bool(&result, &expected);
+}
+
 test "concat_bool non-null" {
     var arena = ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
@@ -488,4 +611,69 @@ test "concat_bool empty" {
     const expected = try builder.BoolBuilder.from_slice_opt(&.{}, alloc);
 
     try equals.equals_bool(&result, &expected);
+}
+
+test "concat_fixed_size_binary empty-input" {
+    const result = try concat_fixed_size_binary(69, &.{}, testing.allocator);
+    const expected = arr.FixedSizeBinaryArray{
+        .offset = 0,
+        .len = 0,
+        .data = &.{},
+        .validity = null,
+        .null_count = 0,
+        .byte_width = 69,
+    };
+
+    try equals.equals_fixed_size_binary(&result, &expected);
+}
+
+test "concat_fixed_size_binary non-null" {
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    const alloc = arena.allocator();
+
+    const arr0 = try builder.FixedSizeBinaryBuilder.from_slice(3, &.{ "abc", "qqq", "www" }, false, alloc);
+    const arr1 = try builder.FixedSizeBinaryBuilder.from_slice(3, &.{ "ddd", "sss", "xzc" }, false, alloc);
+    const arr2 = try builder.FixedSizeBinaryBuilder.from_slice(3, &.{}, false, alloc);
+    const arr3 = try builder.FixedSizeBinaryBuilder.from_slice(3, &.{"hww"}, false, alloc);
+
+    const result = try concat_fixed_size_binary(3, &.{ arr0, arr1, arr2, arr3 }, alloc);
+    const expected = try builder.FixedSizeBinaryBuilder.from_slice(3, &.{ "abc", "qqq", "www", "ddd", "sss", "xzc", "hww" }, false, alloc);
+
+    try equals.equals_fixed_size_binary(&result, &expected);
+}
+
+test "concat_fixed_size_binary nullable" {
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    const alloc = arena.allocator();
+
+    const arr0 = try builder.FixedSizeBinaryBuilder.from_slice_opt(3, &.{ "abc", "qqq", "www", null, null }, alloc);
+    const arr1 = try builder.FixedSizeBinaryBuilder.from_slice(3, &.{ "ddd", "sss", "xzc" }, false, alloc);
+    const arr2 = try builder.FixedSizeBinaryBuilder.from_slice_opt(3, &.{null}, alloc);
+    const arr3 = try builder.FixedSizeBinaryBuilder.from_slice_opt(3, &.{ null, "hww", "ggz", null }, alloc);
+
+    const result = try concat_fixed_size_binary(3, &.{ arr0, arr1, arr2, slice.slice_fixed_size_binary(&arr3, 1, 2) }, alloc);
+    const expected = try builder.FixedSizeBinaryBuilder.from_slice_opt(3, &.{ "abc", "qqq", "www", null, null, "ddd", "sss", "xzc", null, "hww", "ggz" }, alloc);
+
+    try equals.equals_fixed_size_binary(&result, &expected);
+}
+
+test "concat_fixed_size_binary empty" {
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    const alloc = arena.allocator();
+
+    const arr0 = try builder.FixedSizeBinaryBuilder.from_slice_opt(5, &.{}, alloc);
+    const arr1 = try builder.FixedSizeBinaryBuilder.from_slice(5, &.{}, false, alloc);
+    const arr2 = try builder.FixedSizeBinaryBuilder.from_slice_opt(5, &.{}, alloc);
+    const arr3 = try builder.FixedSizeBinaryBuilder.from_slice(5, &.{}, false, alloc);
+
+    const result = try concat_fixed_size_binary(5, &.{ arr0, arr1, arr2, arr3 }, alloc);
+    const expected = try builder.FixedSizeBinaryBuilder.from_slice_opt(5, &.{}, alloc);
+
+    try equals.equals_fixed_size_binary(&result, &expected);
 }
