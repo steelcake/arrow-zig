@@ -1,6 +1,7 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const arr = @import("./array.zig");
+const slice = @import("./slice.zig");
 const bitmap = @import("./bitmap.zig");
 const equals = @import("./equals.zig");
 const testing = std.testing;
@@ -175,7 +176,7 @@ pub fn concat_binary_view(arrays: []const arr.BinaryViewArray, alloc: Allocator)
     var write_offset: u32 = 0;
     for (arrays) |array| {
         var wi: u32 = write_offset;
-        for (array.views) |v| {
+        for (array.views[array.offset .. array.offset + array.len]) |v| {
             if (v.length <= 12) {
                 views.ptr[wi] = v;
             } else {
@@ -222,6 +223,69 @@ pub fn concat_binary_view(arrays: []const arr.BinaryViewArray, alloc: Allocator)
     };
 }
 
+/// Concatenates given arrays, lifetime of the output array isn't tied to the input arrays
+pub fn concat_bool(arrays: []const arr.BoolArray, alloc: Allocator) Error!arr.BoolArray {
+    var total_len: u32 = 0;
+    var total_null_count: u32 = 0;
+
+    for (arrays) |array| {
+        total_len += array.len;
+        total_null_count += array.null_count;
+    }
+
+    const has_nulls = total_null_count > 0;
+    const bitmap_len = (total_len + 7) / 8;
+
+    const values = try alloc.alloc(u8, bitmap_len);
+    @memset(values, 0);
+    const validity: []u8 = if (has_nulls) has_n: {
+        const v = try alloc.alloc(u8, bitmap_len);
+        @memset(v, 0xff);
+        break :has_n v;
+    } else &.{};
+
+    var write_offset: u32 = 0;
+    for (arrays) |array| {
+        {
+            var idx: u32 = array.offset;
+            var w_idx: u32 = write_offset;
+            while (idx < array.offset + array.len) : ({
+                idx += 1;
+                w_idx += 1;
+            }) {
+                if (bitmap.get(array.values.ptr, idx)) {
+                    bitmap.set(values.ptr, w_idx);
+                }
+            }
+        }
+
+        if (array.null_count > 0) {
+            const v = (array.validity orelse unreachable).ptr;
+
+            var idx: u32 = array.offset;
+            var w_idx: u32 = write_offset;
+            while (idx < array.offset + array.len) : ({
+                idx += 1;
+                w_idx += 1;
+            }) {
+                if (!bitmap.get(v, idx)) {
+                    bitmap.unset(validity.ptr, w_idx);
+                }
+            }
+        }
+
+        write_offset += array.len;
+    }
+
+    return .{
+        .len = total_len,
+        .null_count = total_null_count,
+        .validity = if (has_nulls) validity else null,
+        .values = values,
+        .offset = 0,
+    };
+}
+
 test "concat_primitive non-null" {
     var arena = ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
@@ -248,10 +312,10 @@ test "concat_primitive nullable" {
     const arr0 = try builder.Int32Builder.from_slice_opt(&.{ 1, 2, 3, null, null }, alloc);
     const arr1 = try builder.Int32Builder.from_slice(&.{ 4, 5, 6 }, false, alloc);
     const arr2 = try builder.Int32Builder.from_slice_opt(&.{null}, alloc);
-    const arr3 = try builder.Int32Builder.from_slice(&.{ 7, 8, 9, 10 }, false, alloc);
+    const arr3 = try builder.Int32Builder.from_slice_opt(&.{ null, 8, 9, 10 }, alloc);
 
-    const result = try concat_primitive(i32, &.{ arr0, arr1, arr2, arr3 }, alloc);
-    const expected = try builder.Int32Builder.from_slice_opt(&.{ 1, 2, 3, null, null, 4, 5, 6, null, 7, 8, 9, 10 }, alloc);
+    const result = try concat_primitive(i32, &.{ arr0, arr1, arr2, slice.slice_primitive(i32, &arr3, 1, 2) }, alloc);
+    const expected = try builder.Int32Builder.from_slice_opt(&.{ 1, 2, 3, null, null, 4, 5, 6, null, 8, 9 }, alloc);
 
     try equals.equals_primitive(i32, &result, &expected);
 }
@@ -299,10 +363,10 @@ test "concat_binary nullable" {
     const arr0 = try builder.LargeBinaryBuilder.from_slice_opt(&.{ "abc", "qq", "ww", null, null }, alloc);
     const arr1 = try builder.LargeBinaryBuilder.from_slice(&.{ "dd", "s", "xzc" }, false, alloc);
     const arr2 = try builder.LargeBinaryBuilder.from_slice_opt(&.{null}, alloc);
-    const arr3 = try builder.LargeBinaryBuilder.from_slice(&.{"helloworld"}, false, alloc);
+    const arr3 = try builder.LargeBinaryBuilder.from_slice_opt(&.{ null, "helloworld", "gz", null }, alloc);
 
-    const result = try concat_binary(.i64, &.{ arr0, arr1, arr2, arr3 }, alloc);
-    const expected = try builder.LargeBinaryBuilder.from_slice_opt(&.{ "abc", "qq", "ww", null, null, "dd", "s", "xzc", null, "helloworld" }, alloc);
+    const result = try concat_binary(.i64, &.{ arr0, arr1, arr2, slice.slice_binary(.i64, &arr3, 1, 2) }, alloc);
+    const expected = try builder.LargeBinaryBuilder.from_slice_opt(&.{ "abc", "qq", "ww", null, null, "dd", "s", "xzc", null, "helloworld", "gz" }, alloc);
 
     try equals.equals_binary(.i64, &result, &expected);
 }
@@ -350,10 +414,10 @@ test "concat_binary_view nullable" {
     const arr0 = try builder.BinaryViewBuilder.from_slice_opt(&.{ "abc", "qq", "ww", null, null }, alloc);
     const arr1 = try builder.BinaryViewBuilder.from_slice(&.{ "dd", "s", "xzc" }, false, alloc);
     const arr2 = try builder.BinaryViewBuilder.from_slice_opt(&.{null}, alloc);
-    const arr3 = try builder.BinaryViewBuilder.from_slice(&.{"helloworld"}, false, alloc);
+    const arr3 = try builder.BinaryViewBuilder.from_slice_opt(&.{ null, "helloworld", "gz", null }, alloc);
 
-    const result = try concat_binary_view(&.{ arr0, arr1, arr2, arr3 }, alloc);
-    const expected = try builder.BinaryViewBuilder.from_slice_opt(&.{ "abc", "qq", "ww", null, null, "dd", "s", "xzc", null, "helloworld" }, alloc);
+    const result = try concat_binary_view(&.{ arr0, arr1, arr2, slice.slice_binary_view(&arr3, 1, 2) }, alloc);
+    const expected = try builder.BinaryViewBuilder.from_slice_opt(&.{ "abc", "qq", "ww", null, null, "dd", "s", "xzc", null, "helloworld", "gz" }, alloc);
 
     try equals.equals_binary_view(&result, &expected);
 }
@@ -373,4 +437,55 @@ test "concat_binary_view empty" {
     const expected = try builder.BinaryViewBuilder.from_slice_opt(&.{}, alloc);
 
     try equals.equals_binary_view(&result, &expected);
+}
+
+test "concat_bool non-null" {
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    const alloc = arena.allocator();
+
+    const arr0 = try builder.BoolBuilder.from_slice(&.{ true, false, true }, false, alloc);
+    const arr1 = try builder.BoolBuilder.from_slice(&.{ false, false }, false, alloc);
+    const arr2 = try builder.BoolBuilder.from_slice(&.{}, false, alloc);
+    const arr3 = try builder.BoolBuilder.from_slice(&.{ false, true, true, true }, false, alloc);
+
+    const result = try concat_bool(&.{ arr0, arr1, arr2, arr3 }, alloc);
+    const expected = try builder.BoolBuilder.from_slice(&.{ true, false, true, false, false, false, true, true, true }, false, alloc);
+
+    try equals.equals_bool(&result, &expected);
+}
+
+test "concat_bool nullable" {
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    const alloc = arena.allocator();
+
+    const arr0 = try builder.BoolBuilder.from_slice_opt(&.{ false, true, true, null, null }, alloc);
+    const arr1 = try builder.BoolBuilder.from_slice(&.{ true, false, false }, true, alloc);
+    const arr2 = try builder.BoolBuilder.from_slice_opt(&.{null}, alloc);
+    const arr3 = try builder.BoolBuilder.from_slice_opt(&.{ null, true, false, false, true, null }, alloc);
+
+    const result = try concat_bool(&.{ arr0, arr1, arr2, slice.slice_bool(&arr3, 2, 2) }, alloc);
+    const expected = try builder.BoolBuilder.from_slice_opt(&.{ false, true, true, null, null, true, false, false, null, false, false }, alloc);
+
+    try equals.equals_bool(&result, &expected);
+}
+
+test "concat_bool empty" {
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    const alloc = arena.allocator();
+
+    const arr0 = try builder.BoolBuilder.from_slice_opt(&.{}, alloc);
+    const arr1 = try builder.BoolBuilder.from_slice(&.{}, false, alloc);
+    const arr2 = try builder.BoolBuilder.from_slice_opt(&.{}, alloc);
+    const arr3 = try builder.BoolBuilder.from_slice(&.{}, false, alloc);
+
+    const result = try concat_bool(&.{ arr0, arr1, arr2, arr3 }, alloc);
+    const expected = try builder.BoolBuilder.from_slice_opt(&.{}, alloc);
+
+    try equals.equals_bool(&result, &expected);
 }
