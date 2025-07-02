@@ -14,6 +14,29 @@ const Error = error{
 };
 
 /// Concatenates given arrays, lifetime of the output array isn't tied to the input arrays
+/// Scratch alloc will be used to allocate intermediary slices, it can be deallocated after this function returns.
+pub fn concat_decimal(comptime d_int: arr.DecimalInt, params: arr.DecimalParams, arrays: []const arr.DecimalArray(d_int), alloc: Allocator, scratch_alloc: Allocator) Error!arr.DecimalArray(d_int) {
+    const T = d_int.to_type();
+
+    for (arrays) |array| {
+        std.debug.assert(params.scale == array.params.scale and params.precision == array.params.precision);
+    }
+
+    const inner_arrays = try scratch_alloc.alloc(arr.PrimitiveArray(T), arrays.len);
+
+    for (arrays, 0..) |array, idx| {
+        inner_arrays[idx] = array.inner;
+    }
+
+    const inner = try concat_primitive(T, inner_arrays, alloc);
+
+    return .{
+        .params = params,
+        .inner = inner,
+    };
+}
+
+/// Concatenates given arrays, lifetime of the output array isn't tied to the input arrays
 pub fn concat_primitive(comptime T: type, arrays: []const arr.PrimitiveArray(T), alloc: Allocator) Error!arr.PrimitiveArray(T) {
     var total_len: u32 = 0;
     var total_null_count: u32 = 0;
@@ -343,6 +366,28 @@ pub fn concat_fixed_size_binary(byte_width: i32, arrays: []const arr.FixedSizeBi
         .offset = 0,
         .byte_width = byte_width,
     };
+}
+
+test concat_decimal {
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    const alloc = arena.allocator();
+
+    const params = arr.DecimalParams{
+        .scale = -10,
+        .precision = 10,
+    };
+
+    const arr0 = try builder.Decimal128Builder.from_slice(params, &.{ 1, 2, 3 }, false, alloc);
+    const arr1 = try builder.Decimal128Builder.from_slice(params, &.{ 4, 5, 6 }, false, alloc);
+    const arr2 = try builder.Decimal128Builder.from_slice(params, &.{}, false, alloc);
+    const arr3 = try builder.Decimal128Builder.from_slice(params, &.{ 7, 8, 9, 10 }, false, alloc);
+
+    const result = try concat_decimal(.i128, params, &.{ arr0, arr1, arr2, arr3 }, alloc, alloc);
+    const expected = try builder.Decimal128Builder.from_slice(params, &.{ 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 }, false, alloc);
+
+    try equals.equals_decimal(.i128, &result, &expected);
 }
 
 test "concat_primitive empty-input" {
