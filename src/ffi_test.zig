@@ -14,6 +14,26 @@ const NUM_TESTS = test_array.NUM_ARRAYS;
 // and export the array it created back to the caller.
 extern fn arrow_ffi_test_case(id: u8, array: ffi.abi.ArrowArray, schema: ffi.abi.ArrowSchema, out_array: *ffi.abi.ArrowArray, out_schema: *ffi.abi.ArrowSchema) callconv(.C) void;
 
+fn ffi_test_case(id: u8, array: ffi.abi.ArrowArray, schema: ffi.abi.ArrowSchema, out_array: *ffi.abi.ArrowArray, out_schema: *ffi.abi.ArrowSchema) void {
+    var import_arena = ArenaAllocator.init(testing.allocator);
+    defer import_arena.deinit();
+
+    var ffi_arr = ffi.FFI_Array{ .array = array, .schema = schema };
+    defer ffi_arr.release();
+
+    const imported_arr = ffi.import_array(&ffi_arr, import_arena.allocator()) catch unreachable;
+
+    var make_arena = ArenaAllocator.init(testing.allocator);
+    const made_arr = test_array.make_array(id, make_arena.allocator()) catch unreachable;
+
+    equals(&imported_arr, &made_arr) catch unreachable;
+
+    const export_ffi_arr = ffi.export_array(.{ .array = &made_arr, .arena = make_arena }) catch unreachable;
+
+    out_array.* = export_ffi_arr.array;
+    out_schema.* = export_ffi_arr.schema;
+}
+
 fn run_test_impl(id: u8) !void {
     var input_ffi_array = ffi.FFI_Array{ .array = undefined, .schema = undefined };
 
@@ -22,7 +42,7 @@ fn run_test_impl(id: u8) !void {
         const allocator = arena.allocator();
         const array = try make_array(id, allocator);
         const ffi_array = try ffi.export_array(.{ .array = &array, .arena = arena });
-        arrow_ffi_test_case(id, ffi_array.array, ffi_array.schema, &input_ffi_array.array, &input_ffi_array.schema);
+        ffi_test_case(id, ffi_array.array, ffi_array.schema, &input_ffi_array.array, &input_ffi_array.schema);
     }
 
     defer input_ffi_array.release();
