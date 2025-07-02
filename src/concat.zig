@@ -96,7 +96,7 @@ pub fn concat_binary(comptime index_t: arr.IndexType, arrays: []const arr.Generi
     for (arrays) |array| {
         const input_start: usize = @intCast(array.offsets.ptr[array.offset]);
         const input_end: usize = @intCast(array.offsets.ptr[array.offset + array.len]);
-        const input_len: u32 = @intCast(input_end - input_start);
+        const input_len = input_end - input_start;
         @memcpy(data.ptr[data_offset .. data_offset + input_len], array.data.ptr[input_start..input_end]);
 
         {
@@ -107,7 +107,7 @@ pub fn concat_binary(comptime index_t: arr.IndexType, arrays: []const arr.Generi
                 idx += 1;
                 w_idx += 1;
             }) {
-                offsets.ptr[idx] = array.offsets.ptr[idx] +% offset_diff;
+                offsets.ptr[w_idx] = array.offsets.ptr[idx] +% offset_diff;
             }
         }
 
@@ -127,16 +127,16 @@ pub fn concat_binary(comptime index_t: arr.IndexType, arrays: []const arr.Generi
         }
 
         write_offset += array.len;
-        data_offset += input_len;
+        data_offset += @as(u32, @intCast(input_len));
     }
 
-    offsets[total_len] = @intCast(data_offset);
+    offsets.ptr[total_len] = @intCast(data_offset);
 
     return .{
         .len = total_len,
         .null_count = total_null_count,
         .validity = if (has_nulls) validity else null,
-        .data = data,
+        .data = data[0..@intCast(data_offset)],
         .offsets = offsets,
         .offset = 0,
     };
@@ -219,7 +219,7 @@ test "concat_binary nullable" {
     const arr0 = try builder.LargeBinaryBuilder.from_slice_opt(&.{ "abc", "qq", "ww", null, null }, alloc);
     const arr1 = try builder.LargeBinaryBuilder.from_slice(&.{ "dd", "s", "xzc" }, false, alloc);
     const arr2 = try builder.LargeBinaryBuilder.from_slice_opt(&.{null}, alloc);
-    const arr3 = try builder.LargeBinaryBuilder.from_slice(&.{"helloworld "}, false, alloc);
+    const arr3 = try builder.LargeBinaryBuilder.from_slice(&.{"helloworld"}, false, alloc);
 
     const result = try concat_binary(.i64, &.{ arr0, arr1, arr2, arr3 }, alloc);
     const expected = try builder.LargeBinaryBuilder.from_slice_opt(&.{ "abc", "qq", "ww", null, null, "dd", "s", "xzc", null, "helloworld" }, alloc);
