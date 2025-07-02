@@ -15,6 +15,124 @@ const Error = error{
 
 /// Concatenates given arrays, lifetime of the output array isn't tied to the input arrays
 /// Scratch alloc will be used to allocate intermediary slices, it can be deallocated after this function returns.
+pub fn concat_interval(comptime backing_t: arr.IntervalType, arrays: []const arr.IntervalArray(backing_t), alloc: Allocator, scratch_alloc: Allocator) Error!arr.IntervalArray(backing_t) {
+    const T = backing_t.to_type();
+
+    const inner_arrays = try scratch_alloc.alloc(arr.PrimitiveArray(T), arrays.len);
+
+    for (arrays, 0..) |array, idx| {
+        inner_arrays[idx] = array.inner;
+    }
+
+    const inner = try concat_primitive(T, inner_arrays, alloc);
+
+    return .{
+        .inner = inner,
+    };
+}
+
+/// Concatenates given arrays, lifetime of the output array isn't tied to the input arrays
+/// Scratch alloc will be used to allocate intermediary slices, it can be deallocated after this function returns.
+pub fn concat_duration(unit: arr.TimestampUnit, arrays: []const arr.DurationArray, alloc: Allocator, scratch_alloc: Allocator) Error!arr.DurationArray {
+    for (arrays) |array| {
+        std.debug.assert(unit == array.unit);
+    }
+
+    const inner_arrays = try scratch_alloc.alloc(arr.Int64Array, arrays.len);
+
+    for (arrays, 0..) |array, idx| {
+        inner_arrays[idx] = array.inner;
+    }
+
+    const inner = try concat_primitive(i64, inner_arrays, alloc);
+
+    return .{
+        .unit = unit,
+        .inner = inner,
+    };
+}
+
+/// Concatenates given arrays, lifetime of the output array isn't tied to the input arrays
+/// Scratch alloc will be used to allocate intermediary slices, it can be deallocated after this function returns.
+pub fn concat_timestamp(ts: arr.Timestamp, arrays: []const arr.TimestampArray, alloc: Allocator, scratch_alloc: Allocator) Error!arr.TimestampArray {
+    for (arrays) |array| {
+        std.debug.assert(ts.unit == array.ts.unit);
+
+        if (ts.timezone) |tz| {
+            const arr_tz = array.ts.timezone orelse unreachable;
+
+            std.debug.assert(std.mem.eql(u8, tz, arr_tz));
+        } else {
+            std.debug.assert(array.ts.timezone == null);
+        }
+    }
+
+    const inner_arrays = try scratch_alloc.alloc(arr.Int64Array, arrays.len);
+
+    for (arrays, 0..) |array, idx| {
+        inner_arrays[idx] = array.inner;
+    }
+
+    const inner = try concat_primitive(i64, inner_arrays, alloc);
+
+    const out_ts = arr.Timestamp{
+        .unit = ts.unit,
+        .timezone = if (ts.timezone) |tz| tz_alloc: {
+            const tz_out = try alloc.alloc(u8, tz.len);
+            @memcpy(tz_out, tz);
+            break :tz_alloc tz_out;
+        } else null,
+    };
+
+    return .{
+        .ts = out_ts,
+        .inner = inner,
+    };
+}
+
+/// Concatenates given arrays, lifetime of the output array isn't tied to the input arrays
+/// Scratch alloc will be used to allocate intermediary slices, it can be deallocated after this function returns.
+pub fn concat_time(comptime backing_t: arr.IndexType, unit: arr.TimeArray(backing_t).Unit, arrays: []const arr.TimeArray(backing_t), alloc: Allocator, scratch_alloc: Allocator) Error!arr.TimeArray(backing_t) {
+    const T = backing_t.to_type();
+
+    for (arrays) |array| {
+        std.debug.assert(unit == array.unit);
+    }
+
+    const inner_arrays = try scratch_alloc.alloc(arr.PrimitiveArray(T), arrays.len);
+
+    for (arrays, 0..) |array, idx| {
+        inner_arrays[idx] = array.inner;
+    }
+
+    const inner = try concat_primitive(T, inner_arrays, alloc);
+
+    return .{
+        .unit = unit,
+        .inner = inner,
+    };
+}
+
+/// Concatenates given arrays, lifetime of the output array isn't tied to the input arrays
+/// Scratch alloc will be used to allocate intermediary slices, it can be deallocated after this function returns.
+pub fn concat_date(comptime backing_t: arr.IndexType, arrays: []const arr.DateArray(backing_t), alloc: Allocator, scratch_alloc: Allocator) Error!arr.DateArray(backing_t) {
+    const T = backing_t.to_type();
+
+    const inner_arrays = try scratch_alloc.alloc(arr.PrimitiveArray(T), arrays.len);
+
+    for (arrays, 0..) |array, idx| {
+        inner_arrays[idx] = array.inner;
+    }
+
+    const inner = try concat_primitive(T, inner_arrays, alloc);
+
+    return .{
+        .inner = inner,
+    };
+}
+
+/// Concatenates given arrays, lifetime of the output array isn't tied to the input arrays
+/// Scratch alloc will be used to allocate intermediary slices, it can be deallocated after this function returns.
 pub fn concat_decimal(comptime d_int: arr.DecimalInt, params: arr.DecimalParams, arrays: []const arr.DecimalArray(d_int), alloc: Allocator, scratch_alloc: Allocator) Error!arr.DecimalArray(d_int) {
     const T = d_int.to_type();
 
@@ -366,6 +484,100 @@ pub fn concat_fixed_size_binary(byte_width: i32, arrays: []const arr.FixedSizeBi
         .offset = 0,
         .byte_width = byte_width,
     };
+}
+
+test concat_interval {
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    const alloc = arena.allocator();
+
+    const arr0 = try builder.IntervalYearMonthBuilder.from_slice(&.{ 1, 2, 3 }, false, alloc);
+    const arr1 = try builder.IntervalYearMonthBuilder.from_slice(&.{ 4, 5, 6 }, false, alloc);
+    const arr2 = try builder.IntervalYearMonthBuilder.from_slice(&.{}, false, alloc);
+    const arr3 = try builder.IntervalYearMonthBuilder.from_slice(&.{ 7, 8, 9, 10 }, false, alloc);
+
+    const result = try concat_interval(.year_month, &.{ arr0, arr1, arr2, arr3 }, alloc, alloc);
+    const expected = try builder.IntervalYearMonthBuilder.from_slice(&.{ 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 }, false, alloc);
+
+    try equals.equals_interval_year_month(&result, &expected);
+}
+
+test concat_duration {
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    const alloc = arena.allocator();
+
+    const unit = arr.TimestampUnit.microsecond;
+
+    const arr0 = try builder.DurationBuilder.from_slice(unit, &.{ 1, 2, 3 }, false, alloc);
+    const arr1 = try builder.DurationBuilder.from_slice(unit, &.{ 4, 5, 6 }, false, alloc);
+    const arr2 = try builder.DurationBuilder.from_slice(unit, &.{}, false, alloc);
+    const arr3 = try builder.DurationBuilder.from_slice(unit, &.{ 7, 8, 9, 10 }, false, alloc);
+
+    const result = try concat_duration(unit, &.{ arr0, arr1, arr2, arr3 }, alloc, alloc);
+    const expected = try builder.DurationBuilder.from_slice(unit, &.{ 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 }, false, alloc);
+
+    try equals.equals_duration(&result, &expected);
+}
+
+test concat_timestamp {
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    const alloc = arena.allocator();
+
+    const ts = arr.Timestamp{
+        .unit = .nanosecond,
+        .timezone = "hell",
+    };
+
+    const arr0 = try builder.TimestampBuilder.from_slice(ts, &.{ 1, 2, 3 }, false, alloc);
+    const arr1 = try builder.TimestampBuilder.from_slice(ts, &.{ 4, 5, 6 }, false, alloc);
+    const arr2 = try builder.TimestampBuilder.from_slice(ts, &.{}, false, alloc);
+    const arr3 = try builder.TimestampBuilder.from_slice(ts, &.{ 7, 8, 9, 10 }, false, alloc);
+
+    const result = try concat_timestamp(ts, &.{ arr0, arr1, arr2, arr3 }, alloc, alloc);
+    const expected = try builder.TimestampBuilder.from_slice(ts, &.{ 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 }, false, alloc);
+
+    try equals.equals_timestamp(&result, &expected);
+}
+
+test concat_time {
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    const alloc = arena.allocator();
+
+    const unit = arr.Time32Unit.millisecond;
+
+    const arr0 = try builder.Time32Builder.from_slice(unit, &.{ 1, 2, 3 }, false, alloc);
+    const arr1 = try builder.Time32Builder.from_slice(unit, &.{ 4, 5, 6 }, false, alloc);
+    const arr2 = try builder.Time32Builder.from_slice(unit, &.{}, false, alloc);
+    const arr3 = try builder.Time32Builder.from_slice(unit, &.{ 7, 8, 9, 10 }, false, alloc);
+
+    const result = try concat_time(.i32, unit, &.{ arr0, arr1, arr2, arr3 }, alloc, alloc);
+    const expected = try builder.Time32Builder.from_slice(unit, &.{ 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 }, false, alloc);
+
+    try equals.equals_time(.i32, &result, &expected);
+}
+
+test concat_date {
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    const alloc = arena.allocator();
+
+    const arr0 = try builder.Date64Builder.from_slice(&.{ 1, 2, 3 }, false, alloc);
+    const arr1 = try builder.Date64Builder.from_slice(&.{ 4, 5, 6 }, false, alloc);
+    const arr2 = try builder.Date64Builder.from_slice(&.{}, false, alloc);
+    const arr3 = try builder.Date64Builder.from_slice(&.{ 7, 8, 9, 10 }, false, alloc);
+
+    const result = try concat_date(.i64, &.{ arr0, arr1, arr2, arr3 }, alloc, alloc);
+    const expected = try builder.Date64Builder.from_slice(&.{ 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 }, false, alloc);
+
+    try equals.equals_date(.i64, &result, &expected);
 }
 
 test concat_decimal {
