@@ -6,6 +6,7 @@ const equals = @import("./equals.zig");
 const testing = std.testing;
 const ArenaAllocator = std.heap.ArenaAllocator;
 const builder = @import("./builder.zig");
+const get = @import("./get.zig");
 
 const Error = error{
     OutOfMemory,
@@ -35,7 +36,7 @@ pub fn concat_primitive(comptime T: type, arrays: []const arr.PrimitiveArray(T),
     for (arrays) |array| {
         @memcpy(values.ptr[write_offset .. write_offset + array.len], array.values.ptr[array.offset .. array.offset + array.len]);
 
-        if (has_nulls and array.null_count > 0) {
+        if (array.null_count > 0) {
             const v = (array.validity orelse unreachable).ptr;
 
             var idx: u32 = array.offset;
@@ -111,7 +112,7 @@ pub fn concat_binary(comptime index_t: arr.IndexType, arrays: []const arr.Generi
             }
         }
 
-        if (has_nulls and array.null_count > 0) {
+        if (array.null_count > 0) {
             const v = (array.validity orelse unreachable).ptr;
 
             var idx: u32 = array.offset;
@@ -138,6 +139,85 @@ pub fn concat_binary(comptime index_t: arr.IndexType, arrays: []const arr.Generi
         .validity = if (has_nulls) validity else null,
         .data = data[0..@intCast(data_offset)],
         .offsets = offsets,
+        .offset = 0,
+    };
+}
+
+/// Concatenates given arrays, lifetime of the output array isn't tied to the input arrays
+pub fn concat_binary_view(arrays: []const arr.BinaryViewArray, alloc: Allocator) Error!arr.BinaryViewArray {
+    var total_len: u32 = 0;
+    var total_null_count: u32 = 0;
+    var total_data_len: usize = 0;
+
+    for (arrays) |array| {
+        total_len += array.len;
+        total_null_count += array.null_count;
+
+        for (array.views) |v| {
+            if (v.length > 12) {
+                total_data_len +%= @as(u32, @bitCast(v.length));
+            }
+        }
+    }
+
+    const has_nulls = total_null_count > 0;
+    const bitmap_len = (total_len + 7) / 8;
+
+    const buffer = try alloc.alloc(u8, total_data_len);
+    const views = try alloc.alloc(arr.BinaryView, total_len);
+    const validity: []u8 = if (has_nulls) has_n: {
+        const v = try alloc.alloc(u8, bitmap_len);
+        @memset(v, 0xff);
+        break :has_n v;
+    } else &.{};
+
+    var buffer_offset: i32 = 0;
+    var write_offset: u32 = 0;
+    for (arrays) |array| {
+        var wi: u32 = write_offset;
+        for (array.views) |v| {
+            if (v.length <= 12) {
+                views.ptr[wi] = v;
+            } else {
+                views.ptr[wi] = arr.BinaryView{
+                    .length = v.length,
+                    .prefix = v.prefix,
+                    .offset = @bitCast(buffer_offset),
+                    .buffer_idx = 0,
+                };
+                buffer_offset += v.length;
+            }
+
+            wi +%= 1;
+        }
+
+        if (array.null_count > 0) {
+            const v = (array.validity orelse unreachable).ptr;
+
+            var idx: u32 = array.offset;
+            var w_idx: u32 = write_offset;
+            while (idx < array.offset + array.len) : ({
+                idx += 1;
+                w_idx += 1;
+            }) {
+                if (!bitmap.get(v, idx)) {
+                    bitmap.unset(validity.ptr, w_idx);
+                }
+            }
+        }
+
+        write_offset += array.len;
+    }
+
+    const buffers = try alloc.alloc([*]const u8, 1);
+    buffers[0] = buffer.ptr;
+
+    return .{
+        .len = total_len,
+        .null_count = total_null_count,
+        .validity = if (has_nulls) validity else null,
+        .buffers = buffers,
+        .views = views,
         .offset = 0,
     };
 }
@@ -242,4 +322,55 @@ test "concat_binary empty" {
     const expected = try builder.BinaryBuilder.from_slice_opt(&.{}, alloc);
 
     try equals.equals_binary(.i32, &result, &expected);
+}
+
+test "concat_binary_view non-null" {
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    const alloc = arena.allocator();
+
+    const arr0 = try builder.BinaryViewBuilder.from_slice(&.{ "abc", "qq", "ww" }, false, alloc);
+    const arr1 = try builder.BinaryViewBuilder.from_slice(&.{ "dd", "s", "xzc" }, false, alloc);
+    const arr2 = try builder.BinaryViewBuilder.from_slice(&.{}, false, alloc);
+    const arr3 = try builder.BinaryViewBuilder.from_slice(&.{"helloworld"}, false, alloc);
+
+    const result = try concat_binary_view(&.{ arr0, arr1, arr2, arr3 }, alloc);
+    const expected = try builder.BinaryViewBuilder.from_slice(&.{ "abc", "qq", "ww", "dd", "s", "xzc", "helloworld" }, false, alloc);
+
+    try equals.equals_binary_view(&result, &expected);
+}
+
+test "concat_binary_view nullable" {
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    const alloc = arena.allocator();
+
+    const arr0 = try builder.BinaryViewBuilder.from_slice_opt(&.{ "abc", "qq", "ww", null, null }, alloc);
+    const arr1 = try builder.BinaryViewBuilder.from_slice(&.{ "dd", "s", "xzc" }, false, alloc);
+    const arr2 = try builder.BinaryViewBuilder.from_slice_opt(&.{null}, alloc);
+    const arr3 = try builder.BinaryViewBuilder.from_slice(&.{"helloworld"}, false, alloc);
+
+    const result = try concat_binary_view(&.{ arr0, arr1, arr2, arr3 }, alloc);
+    const expected = try builder.BinaryViewBuilder.from_slice_opt(&.{ "abc", "qq", "ww", null, null, "dd", "s", "xzc", null, "helloworld" }, alloc);
+
+    try equals.equals_binary_view(&result, &expected);
+}
+
+test "concat_binary_view empty" {
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    const alloc = arena.allocator();
+
+    const arr0 = try builder.BinaryViewBuilder.from_slice_opt(&.{}, alloc);
+    const arr1 = try builder.BinaryViewBuilder.from_slice(&.{}, false, alloc);
+    const arr2 = try builder.BinaryViewBuilder.from_slice_opt(&.{}, alloc);
+    const arr3 = try builder.BinaryViewBuilder.from_slice(&.{}, false, alloc);
+
+    const result = try concat_binary_view(&.{ arr0, arr1, arr2, arr3 }, alloc);
+    const expected = try builder.BinaryViewBuilder.from_slice_opt(&.{}, alloc);
+
+    try equals.equals_binary_view(&result, &expected);
 }
