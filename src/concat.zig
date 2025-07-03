@@ -82,7 +82,7 @@ pub fn concat(dt: data_type.DataType, arrays: []const arr.Array, alloc: Allocato
         },
         .utf8 => {
             const a = try convert_arrays(arr.Utf8Array, "utf8", arrays, scratch_alloc);
-            return try concat_utf8(.i32, a, alloc);
+            return try concat_utf8(.i32, a, alloc, scratch_alloc);
         },
         .bool => {
             const a = try convert_arrays(arr.BoolArray, "bool", arrays, scratch_alloc);
@@ -150,8 +150,14 @@ pub fn concat(dt: data_type.DataType, arrays: []const arr.Array, alloc: Allocato
             const a = try convert_arrays(arr.DurationArray, "duration", arrays, scratch_alloc);
             return try concat_duration(unit, a, alloc, scratch_alloc);
         },
-        // large_binary,
-        // large_utf8,
+        .large_binary => {
+            const a = try convert_arrays(arr.LargeBinaryArray, "large_binary", arrays, scratch_alloc);
+            return try concat_binary(.i64, a, alloc);
+        },
+        .large_utf8 => {
+            const a = try convert_arrays(arr.LargeUtf8Array, "large_utf8", arrays, scratch_alloc);
+            return try concat_utf8(.i64, a, alloc, scratch_alloc);
+        },
         // large_list: *const DataType,
         // run_end_encoded: *const RunEndEncodedType,
         .binary_view => {
@@ -169,9 +175,7 @@ pub fn concat(dt: data_type.DataType, arrays: []const arr.Array, alloc: Allocato
 }
 
 // pub fn concat_list(comptime index_t: arr.IndexType, arrays: []const arr.GenericListArray(index_t), alloc: Allocator) Error!arr.ListArray {
-
 // }
-//
 
 pub fn concat_null(arrays: []const arr.NullArray) arr.NullArray {
     var len: u32 = 0;
