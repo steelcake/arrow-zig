@@ -8,10 +8,180 @@ const testing = std.testing;
 const ArenaAllocator = std.heap.ArenaAllocator;
 const builder = @import("./builder.zig");
 const get = @import("./get.zig");
+const data_type = @import("./data_type.zig");
 
 const Error = error{
     OutOfMemory,
 };
+
+fn convert_arrays(comptime ArrayT: type, comptime field_name: []const u8, arrays: []const arr.Array, scratch_alloc: Allocator) Error![]ArrayT {
+    const out = try scratch_alloc.alloc(ArrayT, arrays.len);
+
+    for (arrays, 0..) |array, idx| {
+        out[idx] = @field(array, field_name);
+    }
+
+    return out;
+}
+
+/// Concatenates given arrays, lifetime of the output array isn't tied to the input arrays
+/// Scratch alloc will be used to allocate intermediary slices, it can be deallocated after this function returns.
+pub fn concat(dt: data_type.DataType, arrays: []const arr.Array, alloc: Allocator, scratch_alloc: Allocator) Error!arr.Array {
+    switch (dt) {
+        .null => {
+            const a = try convert_arrays(arr.NullArray, "null", arrays, scratch_alloc);
+            return concat_null(a);
+        },
+        .i8 => {
+            const a = try convert_arrays(arr.Int8Array, "i8", arrays, scratch_alloc);
+            return try concat_primitive(i8, a, alloc);
+        },
+        .i16 => {
+            const a = try convert_arrays(arr.Int16Array, "i16", arrays, scratch_alloc);
+            return try concat_primitive(i16, a, alloc);
+        },
+        .i32 => {
+            const a = try convert_arrays(arr.Int32Array, "i32", arrays, scratch_alloc);
+            return try concat_primitive(i32, a, alloc);
+        },
+        .i64 => {
+            const a = try convert_arrays(arr.Int64Array, "i64", arrays, scratch_alloc);
+            return try concat_primitive(i64, a, alloc);
+        },
+        .u8 => {
+            const a = try convert_arrays(arr.UInt8Array, "u8", arrays, scratch_alloc);
+            return try concat_primitive(u8, a, alloc);
+        },
+        .u16 => {
+            const a = try convert_arrays(arr.UInt16Array, "u16", arrays, scratch_alloc);
+            return try concat_primitive(u16, a, alloc);
+        },
+        .u32 => {
+            const a = try convert_arrays(arr.UInt32Array, "u32", arrays, scratch_alloc);
+            return try concat_primitive(u32, a, alloc);
+        },
+        .u64 => {
+            const a = try convert_arrays(arr.UInt64Array, "u64", arrays, scratch_alloc);
+            return try concat_primitive(u64, a, alloc);
+        },
+        .f16 => {
+            const a = try convert_arrays(arr.Float16Array, "f16", arrays, scratch_alloc);
+            return try concat_primitive(f16, a, alloc);
+        },
+        .f32 => {
+            const a = try convert_arrays(arr.Float32Array, "f32", arrays, scratch_alloc);
+            return try concat_primitive(u64, a, alloc);
+        },
+        .f64 => {
+            const a = try convert_arrays(arr.Float64Array, "f64", arrays, scratch_alloc);
+            return try concat_primitive(f64, a, alloc);
+        },
+        .binary => {
+            const a = try convert_arrays(arr.BinaryArray, "binary", arrays, scratch_alloc);
+            return try concat_binary(.i32, a, alloc);
+        },
+        .utf8 => {
+            const a = try convert_arrays(arr.Utf8Array, "utf8", arrays, scratch_alloc);
+            return try concat_utf8(.i32, a, alloc);
+        },
+        .bool => {
+            const a = try convert_arrays(arr.BoolArray, "bool", arrays, scratch_alloc);
+            return try concat_bool(a, alloc);
+        },
+        .decimal32 => |params| {
+            const a = try convert_arrays(arr.Decimal32Array, "decimal32", arrays, scratch_alloc);
+            return try concat_decimal(.i32, params, a, alloc, scratch_alloc);
+        },
+        .decimal64 => |params| {
+            const a = try convert_arrays(arr.Decimal64Array, "decimal64", arrays, scratch_alloc);
+            return try concat_decimal(.i64, params, a, alloc, scratch_alloc);
+        },
+        .decimal128 => |params| {
+            const a = try convert_arrays(arr.Decimal128Array, "decimal128", arrays, scratch_alloc);
+            return try concat_decimal(.i128, params, a, alloc, scratch_alloc);
+        },
+        .decimal256 => |params| {
+            const a = try convert_arrays(arr.Decimal256Array, "decimal256", arrays, scratch_alloc);
+            return try concat_decimal(.i256, params, a, alloc, scratch_alloc);
+        },
+        .date32 => {
+            const a = try convert_arrays(arr.Date32Array, "date32", arrays, scratch_alloc);
+            return try concat_date(.i32, a, alloc, scratch_alloc);
+        },
+        .date64 => {
+            const a = try convert_arrays(arr.Date64Array, "date64", arrays, scratch_alloc);
+            return try concat_date(.i64, a, alloc, scratch_alloc);
+        },
+        .time32 => |unit| {
+            const a = try convert_arrays(arr.Time32Array, "time32", arrays, scratch_alloc);
+            return try concat_time(.i32, unit, a, alloc, scratch_alloc);
+        },
+        .time64 => |unit| {
+            const a = try convert_arrays(arr.Time64Array, "time64", arrays, scratch_alloc);
+            return try concat_time(.i64, unit, a, alloc, scratch_alloc);
+        },
+        .timestamp => |ts| {
+            const a = try convert_arrays(arr.TimestampArray, "timestamp", arrays, scratch_alloc);
+            return try concat_timestamp(ts, a, alloc, scratch_alloc);
+        },
+        .interval_year_month => {
+            const a = try convert_arrays(arr.IntervalYearMonthArray, "interval_year_month", arrays, scratch_alloc);
+            return try concat_interval(.year_month, a, alloc, scratch_alloc);
+        },
+        .interval_day_time => {
+            const a = try convert_arrays(arr.IntervalDayTimeArray, "interval_day_time", arrays, scratch_alloc);
+            return try concat_interval(.day_time, a, alloc, scratch_alloc);
+        },
+        .interval_month_day_nano => {
+            const a = try convert_arrays(arr.IntervalMonthDayNanoArray, "interval_month_day_nano", arrays, scratch_alloc);
+            return try concat_interval(.month_day_nano, a, alloc, scratch_alloc);
+        },
+        // list: *const DataType,
+        // struct_: *const StructType,
+        // dense_union: *const UnionType,
+        // sparse_union: *const UnionType,
+        .fixed_size_binary => |bw| {
+            const a = try convert_arrays(arr.FixedSizeBinaryArray, "fixed_size_binary", arrays, scratch_alloc);
+            return try concat_fixed_size_binary(bw, a, alloc);
+        },
+        // fixed_size_list: *const FixedSizeListType,
+        // map: *const MapType,
+        .duration => |unit| {
+            const a = try convert_arrays(arr.DurationArray, "duration", arrays, scratch_alloc);
+            return try concat_duration(unit, a, alloc, scratch_alloc);
+        },
+        // large_binary,
+        // large_utf8,
+        // large_list: *const DataType,
+        // run_end_encoded: *const RunEndEncodedType,
+        .binary_view => {
+            const a = try convert_arrays(arr.BinaryViewArray, "binary_view", arrays, scratch_alloc);
+            return try concat_binary_view(a, alloc);
+        },
+        .utf8_view => {
+            const a = try convert_arrays(arr.Utf8ViewArray, "utf8_view", arrays, scratch_alloc);
+            return try concat_utf8_view(a, alloc, scratch_alloc);
+        },
+        // list_view: *const DataType,
+        // large_list_view: *const DataType,
+        // dict: *const DictType,
+    }
+}
+
+// pub fn concat_list(comptime index_t: arr.IndexType, arrays: []const arr.GenericListArray(index_t), alloc: Allocator) Error!arr.ListArray {
+
+// }
+//
+
+pub fn concat_null(arrays: []const arr.NullArray) arr.NullArray {
+    var len: u32 = 0;
+
+    for (arrays) |array| {
+        len += array.len;
+    }
+
+    return .{ .len = len };
+}
 
 /// Concatenates given arrays, lifetime of the output array isn't tied to the input arrays
 /// Scratch alloc will be used to allocate intermediary slices, it can be deallocated after this function returns.
@@ -125,6 +295,38 @@ pub fn concat_date(comptime backing_t: arr.IndexType, arrays: []const arr.DateAr
     }
 
     const inner = try concat_primitive(T, inner_arrays, alloc);
+
+    return .{
+        .inner = inner,
+    };
+}
+
+/// Concatenates given arrays, lifetime of the output array isn't tied to the input arrays
+/// Scratch alloc will be used to allocate intermediary slices, it can be deallocated after this function returns.
+pub fn concat_utf8(comptime index_t: arr.IndexType, arrays: []const arr.GenericUtf8Array(index_t), alloc: Allocator, scratch_alloc: Allocator) Error!arr.GenericUtf8Array(index_t) {
+    const inner_arrays = try scratch_alloc.alloc(arr.GenericBinaryArray(index_t), arrays.len);
+
+    for (arrays, 0..) |array, idx| {
+        inner_arrays[idx] = array.inner;
+    }
+
+    const inner = try concat_binary(index_t, inner_arrays, alloc);
+
+    return .{
+        .inner = inner,
+    };
+}
+
+/// Concatenates given arrays, lifetime of the output array isn't tied to the input arrays
+/// Scratch alloc will be used to allocate intermediary slices, it can be deallocated after this function returns.
+pub fn concat_utf8_view(arrays: []const arr.Utf8ViewArray, alloc: Allocator, scratch_alloc: Allocator) Error!arr.Utf8ViewArray {
+    const inner_arrays = try scratch_alloc.alloc(arr.BinaryViewArray, arrays.len);
+
+    for (arrays, 0..) |array, idx| {
+        inner_arrays[idx] = array.inner;
+    }
+
+    const inner = try concat_binary_view(inner_arrays, alloc);
 
     return .{
         .inner = inner,
@@ -484,6 +686,40 @@ pub fn concat_fixed_size_binary(byte_width: i32, arrays: []const arr.FixedSizeBi
         .offset = 0,
         .byte_width = byte_width,
     };
+}
+
+test concat_utf8_view {
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    const alloc = arena.allocator();
+
+    const arr0 = try builder.Utf8ViewBuilder.from_slice(&.{ "1", "2", "3" }, false, alloc);
+    const arr1 = try builder.Utf8ViewBuilder.from_slice(&.{ "4", "5", "6" }, false, alloc);
+    const arr2 = try builder.Utf8ViewBuilder.from_slice(&.{}, false, alloc);
+    const arr3 = try builder.Utf8ViewBuilder.from_slice(&.{ "7", "8", "9", "10" }, false, alloc);
+
+    const result = try concat_utf8_view(&.{ arr0, arr1, arr2, arr3 }, alloc, alloc);
+    const expected = try builder.Utf8ViewBuilder.from_slice(&.{ "1", "2", "3", "4", "5", "6", "7", "8", "9", "10" }, false, alloc);
+
+    try equals.equals_utf8_view(&result, &expected);
+}
+
+test concat_utf8 {
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    const alloc = arena.allocator();
+
+    const arr0 = try builder.Utf8Builder.from_slice(&.{ "1", "2", "3" }, false, alloc);
+    const arr1 = try builder.Utf8Builder.from_slice(&.{ "4", "5", "6" }, false, alloc);
+    const arr2 = try builder.Utf8Builder.from_slice(&.{}, false, alloc);
+    const arr3 = try builder.Utf8Builder.from_slice(&.{ "7", "8", "9", "10" }, false, alloc);
+
+    const result = try concat_utf8(.i32, &.{ arr0, arr1, arr2, arr3 }, alloc, alloc);
+    const expected = try builder.Utf8Builder.from_slice(&.{ "1", "2", "3", "4", "5", "6", "7", "8", "9", "10" }, false, alloc);
+
+    try equals.equals_utf8(.i32, &result, &expected);
 }
 
 test concat_interval {
