@@ -1010,7 +1010,7 @@ pub fn GenericListBuilder(comptime index_type: arr.IndexType) type {
             var b = try Self.with_capacity(@intCast(lengths.len), nullable, allocator);
 
             for (lengths) |item| {
-                try b.append_value(item);
+                try b.append_item(item);
             }
 
             return try b.finish(inner);
