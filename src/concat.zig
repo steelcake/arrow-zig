@@ -140,7 +140,10 @@ pub fn concat(dt: data_type.DataType, arrays: []const arr.Array, alloc: Allocato
             const a = try convert_arrays(arr.ListArray, "list", arrays, scratch_alloc);
             return .{ .list = try concat_list(.i32, inner_dt.*, a, alloc, scratch_alloc) };
         },
-        .struct_ => |_| unreachable,
+        .struct_ => |sdt| {
+            const a = try convert_arrays(arr.StructArray, "struct_", arrays, scratch_alloc);
+            return .{ .struct_ = try concat_struct(sdt.*, a, alloc, scratch_alloc) };
+        },
         .dense_union => |_| unreachable,
         .sparse_union => |_| unreachable,
         .fixed_size_binary => |bw| {
@@ -178,6 +181,89 @@ pub fn concat(dt: data_type.DataType, arrays: []const arr.Array, alloc: Allocato
         .large_list_view => |_| unreachable,
         .dict => |_| unreachable,
     }
+}
+
+/// Concatenates given arrays, lifetime of the output array isn't tied to the input arrays
+/// Scratch alloc will be used to allocate intermediary slices, it can be deallocated after this function returns.
+pub fn concat_struct(dt: data_type.StructType, arrays: []const arr.StructArray, alloc: Allocator, scratch_alloc: Allocator) Error!arr.StructArray {
+    for (arrays) |array| {
+        std.debug.assert(array.field_names.len == dt.field_names.len);
+        for (array.field_names, dt.field_names) |afn, dfn| {
+            std.debug.assert(std.mem.eql(u8, afn, dfn));
+        }
+
+        std.debug.assert(array.field_values.len == dt.field_types.len);
+        for (array.field_values, dt.field_types) |*afv, *dft| {
+            std.debug.assert(data_type.check_data_type(afv, dft));
+        }
+    }
+
+    const field_arrays = try scratch_alloc.alloc(arr.Array, arrays.len);
+
+    const field_values = try alloc.alloc(arr.Array, dt.field_types.len);
+
+    for (0..dt.field_names.len) |field_idx| {
+        for (arrays, 0..) |array, array_idx| {
+            field_arrays[array_idx] = array.field_values[field_idx];
+        }
+
+        field_values[field_idx] = try concat(dt.field_types[field_idx], field_arrays, alloc, scratch_alloc);
+    }
+
+    const field_names = try alloc.alloc([:0]const u8, dt.field_names.len);
+    for (dt.field_names, 0..) |name, idx| {
+        const field_name = try alloc.allocSentinel(u8, name.len, 0);
+        @memcpy(field_name, name);
+        field_names[idx] = field_name;
+    }
+
+    var total_len: u32 = 0;
+    var total_null_count: u32 = 0;
+
+    for (arrays) |array| {
+        total_len += array.len;
+        total_null_count += array.null_count;
+    }
+
+    const has_nulls = total_null_count > 0;
+    const bitmap_len = (total_len + 7) / 8;
+
+    const validity: []u8 = if (has_nulls) has_n: {
+        const v = try alloc.alloc(u8, bitmap_len);
+        @memset(v, 0xff);
+        break :has_n v;
+    } else &.{};
+
+    if (has_nulls) {
+        var write_offset: u32 = 0;
+        for (arrays) |array| {
+            if (array.null_count > 0) {
+                const v = (array.validity orelse unreachable).ptr;
+
+                var idx: u32 = array.offset;
+                var w_idx: u32 = write_offset;
+                while (idx < array.offset + array.len) : ({
+                    idx += 1;
+                    w_idx += 1;
+                }) {
+                    if (!bitmap.get(v, idx)) {
+                        bitmap.unset(validity.ptr, w_idx);
+                    }
+                }
+            }
+
+            write_offset += array.len;
+        }
+    }
+
+    return .{
+        .field_names = field_names,
+        .field_values = field_values,
+        .offset = 0,
+        .len = total_len,
+        .null_count = total_null_count,
+        .validity = if (has_nulls) validity else null,
+    };
 }
 
 /// Concatenates given arrays, lifetime of the output array isn't tied to the input arrays
@@ -1344,4 +1430,130 @@ test "concat_list empty" {
     try equals.equals_list(.i32, &result, &expected);
     try testing.expectEqual(result.inner.*.binary.data.len, 0);
     try testing.expectEqual(result.inner.*.binary.len, 0);
+}
+
+test "concat_struct empty-input" {
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    const alloc = arena.allocator();
+
+    const dt = data_type.StructType{
+        .field_names = &.{ "asd", "qwe" },
+        .field_types = &.{
+            data_type.DataType{ .i32 = {} },
+            data_type.DataType{ .i64 = {} },
+        },
+    };
+
+    const result = try concat_struct(dt, &.{}, alloc, alloc);
+    const expected = arr.StructArray{
+        .offset = 0,
+        .len = 0,
+        .validity = null,
+        .null_count = 0,
+        .field_names = dt.field_names,
+        .field_values = &.{
+            arr.Array{ .i32 = .{ .validity = null, .len = 0, .values = &.{}, .offset = 0, .null_count = 0 } },
+            arr.Array{ .i64 = .{ .validity = null, .len = 0, .values = &.{}, .offset = 0, .null_count = 0 } },
+        },
+    };
+
+    try equals.equals_struct(&result, &expected);
+}
+
+test "concat_struct non-null" {
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    const alloc = arena.allocator();
+
+    const field_names = &.{ "asd", "qwe" };
+    const dt = data_type.StructType{
+        .field_names = field_names,
+        .field_types = &.{
+            data_type.DataType{ .i32 = {} },
+            data_type.DataType{ .i32 = {} },
+        },
+    };
+
+    const asd = try builder.Int32Builder.from_slice(&.{ 1, 2, 3, 69 }, false, alloc);
+    const asd_a = arr.Array{ .i32 = asd };
+    const qwe = try builder.Int32Builder.from_slice(&.{ 1131, 0, 0, 0 }, false, alloc);
+    const qwe_a = arr.Array{ .i32 = qwe };
+
+    const arr0 = try builder.StructBuilder.from_slice(field_names, &.{ asd_a, qwe_a }, asd.len, false, alloc);
+    const arr1 = try builder.StructBuilder.from_slice(field_names, &.{ qwe_a, asd_a }, asd.len, false, alloc);
+
+    const asd_concat = arr.Array{ .i32 = try builder.Int32Builder.from_slice(&.{ 1, 2, 3, 69, 1131, 0, 0, 0 }, false, alloc) };
+    const qwe_concat = arr.Array{ .i32 = try builder.Int32Builder.from_slice(&.{ 1131, 0, 0, 0, 1, 2, 3, 69 }, false, alloc) };
+    const expected = try builder.StructBuilder.from_slice(field_names, &.{ asd_concat, qwe_concat }, asd.len * 2, false, alloc);
+
+    const result = try concat_struct(dt, &.{ arr0, arr1 }, alloc, alloc);
+
+    try equals.equals_struct(&result, &expected);
+}
+
+test "concat_struct nullable" {
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    const alloc = arena.allocator();
+
+    const field_names = &.{ "asd", "qwe" };
+    const dt = data_type.StructType{
+        .field_names = field_names,
+        .field_types = &.{
+            data_type.DataType{ .i32 = {} },
+            data_type.DataType{ .i32 = {} },
+        },
+    };
+
+    const asd = try builder.Int32Builder.from_slice(&.{ 1, 2, 3, 69 }, false, alloc);
+    const asd_a = arr.Array{ .i32 = asd };
+    const qwe = try builder.Int32Builder.from_slice(&.{ 1131, 0, 0, 0 }, false, alloc);
+    const qwe_a = arr.Array{ .i32 = qwe };
+
+    const arr0 = try builder.StructBuilder.from_slice_opt(field_names, &.{ asd_a, qwe_a }, &.{ false, true, false, true }, alloc);
+    const arr1 = try builder.StructBuilder.from_slice_opt(field_names, &.{ qwe_a, asd_a }, &.{ false, false, true, false }, alloc);
+
+    const asd_concat = arr.Array{ .i32 = try builder.Int32Builder.from_slice(&.{ 0, 2, 0, 69, 1131, 0, 0, 0 }, false, alloc) };
+    const qwe_concat = arr.Array{ .i32 = try builder.Int32Builder.from_slice(&.{ 1131, 0, 0, 0, 1, 2, 3, 1131 }, false, alloc) };
+    const expected = try builder.StructBuilder.from_slice_opt(field_names, &.{ asd_concat, qwe_concat }, &.{ false, true, false, true, false, false, true, false }, alloc);
+
+    const result = try concat_struct(dt, &.{ arr0, arr1 }, alloc, alloc);
+
+    try equals.equals_struct(&result, &expected);
+}
+
+test "concat_struct empty" {
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    const alloc = arena.allocator();
+
+    const field_names = &.{ "asd", "qwe" };
+    const dt = data_type.StructType{
+        .field_names = field_names,
+        .field_types = &.{
+            data_type.DataType{ .i32 = {} },
+            data_type.DataType{ .i32 = {} },
+        },
+    };
+
+    const asd = try builder.Int32Builder.from_slice(&.{}, false, alloc);
+    const asd_a = arr.Array{ .i32 = asd };
+    const qwe = try builder.Int32Builder.from_slice(&.{}, false, alloc);
+    const qwe_a = arr.Array{ .i32 = qwe };
+
+    const arr0 = try builder.StructBuilder.from_slice(field_names, &.{ asd_a, qwe_a }, 0, false, alloc);
+    const arr1 = try builder.StructBuilder.from_slice(field_names, &.{ qwe_a, asd_a }, 0, false, alloc);
+
+    const asd_concat = arr.Array{ .i32 = try builder.Int32Builder.from_slice(&.{}, false, alloc) };
+    const qwe_concat = arr.Array{ .i32 = try builder.Int32Builder.from_slice(&.{}, false, alloc) };
+    const expected = try builder.StructBuilder.from_slice(field_names, &.{ asd_concat, qwe_concat }, 0, false, alloc);
+
+    const result = try concat_struct(dt, &.{ arr0, arr1 }, alloc, alloc);
+
+    try equals.equals_struct(&result, &expected);
 }
