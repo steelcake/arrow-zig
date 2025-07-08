@@ -206,7 +206,7 @@ pub fn concat(dt: data_type.DataType, arrays: []const arr.Array, alloc: Allocato
 /// Scratch alloc will be used to allocate intermediary slices, it can be deallocated after this function returns.
 pub fn concat_dict(dt: data_type.DictType, arrays: []const arr.DictArray, alloc: Allocator, scratch_alloc: Allocator) Error!arr.DictArray {
     for (arrays) |array| {
-        const keytype: data_type.DictKeyType = switch(array.keys) {
+        const keytype: data_type.DictKeyType = switch (array.keys.*) {
             .i8 => .i8,
             .i16 => .i16,
             .i32 => .i32,
@@ -215,6 +215,7 @@ pub fn concat_dict(dt: data_type.DictType, arrays: []const arr.DictArray, alloc:
             .u16 => .u16,
             .u32 => .u32,
             .u64 => .u64,
+            else => unreachable,
         };
         std.debug.assert(keytype == dt.key);
         std.debug.assert(data_type.check_data_type(array.values, &dt.value));
@@ -227,39 +228,26 @@ pub fn concat_dict(dt: data_type.DictType, arrays: []const arr.DictArray, alloc:
     const values = try alloc.create(arr.Array);
     values.* = try concat(dt.value, values_list, alloc, scratch_alloc);
 
-    switch(dt.key) {
-        .i8 => {
-
-        },
-        .i16 => .i16,
-        .i32 => .i32,
-        .i64 => .i64,
-        .u8 => .u8,
-        .u16 => .u16,
-        .u32 => .u32,
-        .u64 => .u64,
-    }
-
     const keys_list = try scratch_alloc.alloc(arr.Array, arrays.len);
     for (arrays, 0..) |array, idx| {
-        keys_list[idx] = array.keys;
+        keys_list[idx] = array.keys.*;
     }
+    const keys = try alloc.create(arr.Array);
     keys.* = try concat(dt.key.to_data_type(), keys_list, alloc, scratch_alloc);
+
+    var total_len: u32 = 0;
+
+    for (arrays) |array| {
+        total_len += array.len;
+    }
 
     return .{
         .is_ordered = false,
         .keys = keys,
         .values = values,
+        .len = total_len,
+        .offset = 0,
     };
-}
-
-fn concat_dict_keys(comptime field_name: []const u8, arrays: []const arr.DictArray, alloc: Allocator, scratch_alloc: Allocator) Error!arr.DictKeys {
-    const keys = try alloc.create(arr.Array);
-    const keys_list = try scratch_alloc.alloc(arr.Array, arrays.len);
-    for (arrays, 0..) |array, idx| {
-        keys_list[idx] = @unionInit(arr.Array, field_name, @field(array.keys, field_name));
-    }
-    keys.* = try concat(dt.key.to_data_type(), keys_list, alloc, scratch_alloc);
 }
 
 /// Concatenates given arrays, lifetime of the output array isn't tied to the input arrays

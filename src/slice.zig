@@ -214,18 +214,14 @@ pub fn slice_interval(comptime interval_t: arr.IntervalType, array: *const arr.I
 }
 
 pub fn slice_dict(array: *const arr.DictArray, offset: u32, len: u32) arr.DictArray {
-    const keys: arr.DictKeys = switch (array.keys) {
-        .i8 => |*i| .{ .i8 = slice_primitive(i8, i, offset, len) },
-        .i16 => |*i| .{ .i16 = slice_primitive(i16, i, offset, len) },
-        .i32 => |*i| .{ .i32 = slice_primitive(i32, i, offset, len) },
-        .i64 => |*i| .{ .i64 = slice_primitive(i64, i, offset, len) },
-        .u8 => |*i| .{ .u8 = slice_primitive(u8, i, offset, len) },
-        .u16 => |*i| .{ .u16 = slice_primitive(u16, i, offset, len) },
-        .u32 => |*i| .{ .u32 = slice_primitive(u32, i, offset, len) },
-        .u64 => |*i| .{ .u64 = slice_primitive(u64, i, offset, len) },
+    const offset_len = slice_impl(null, .{ .offset = array.offset, .len = array.len, .null_count = 0 }, offset, len);
+    return arr.DictArray{
+        .values = array.values,
+        .keys = array.keys,
+        .len = offset_len.len,
+        .offset = offset_len.offset,
+        .is_ordered = array.is_ordered,
     };
-
-    return arr.DictArray{ .keys = keys, .values = array.values, .is_ordered = array.is_ordered };
 }
 
 pub fn slice(array: *const arr.Array, offset: u32, len: u32) arr.Array {

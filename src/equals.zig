@@ -447,11 +447,11 @@ pub fn equals_dict(l: *const arr.DictArray, r: *const arr.DictArray) Error!void 
         return Error.NotEqual;
     }
 
-    if (@intFromEnum(l.keys) != @intFromEnum(r.keys)) {
+    if (@intFromEnum(l.keys.*) != @intFromEnum(r.keys.*)) {
         return Error.NotEqual;
     }
 
-    switch (l.keys) {
+    switch (l.keys.*) {
         .i8 => |*lk| try dict_impl(arr.Int8Array, lk, &r.keys.i8, l.values, r.values),
         .i16 => |*lk| try dict_impl(arr.Int16Array, lk, &r.keys.i16, l.values, r.values),
         .i32 => |*lk| try dict_impl(arr.Int32Array, lk, &r.keys.i32, l.values, r.values),
@@ -460,6 +460,7 @@ pub fn equals_dict(l: *const arr.DictArray, r: *const arr.DictArray) Error!void 
         .u16 => |*lk| try dict_impl(arr.UInt16Array, lk, &r.keys.u16, l.values, r.values),
         .u32 => |*lk| try dict_impl(arr.UInt32Array, lk, &r.keys.u32, l.values, r.values),
         .u64 => |*lk| try dict_impl(arr.UInt64Array, lk, &r.keys.u64, l.values, r.values),
+        else => unreachable,
     }
 }
 
