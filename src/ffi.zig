@@ -4,6 +4,8 @@ const ArenaAllocator = std.heap.ArenaAllocator;
 
 const arr = @import("./array.zig");
 pub const abi = @import("./abi.zig");
+const length = @import("./length.zig");
+const slice = @import("./slice.zig");
 
 pub const Error = error{OutOfMemory};
 
@@ -502,7 +504,8 @@ fn import_bool(array: *const FFI_Array) arr.BoolArray {
 
 fn import_dict(array: *const FFI_Array, allocator: Allocator) Error!arr.DictArray {
     const keys_arr = try import_array(array, allocator);
-    const keys: arr.DictKeys = switch (keys_arr) {
+    const keys = try allocator.create(arr.Array);
+    keys.* = switch (keys_arr) {
         .i8 => |x| .{ .i8 = x },
         .i16 => |x| .{ .i16 = x },
         .i32 => |x| .{ .i32 = x },
@@ -529,6 +532,8 @@ fn import_dict(array: *const FFI_Array, allocator: Allocator) Error!arr.DictArra
         .values = values,
         .keys = keys,
         .is_ordered = is_ordered,
+        .len = length.length(keys),
+        .offset = 0,
     };
 }
 
@@ -965,7 +970,7 @@ fn export_null(array: *const arr.NullArray, private_data: *PrivateData) FFI_Arra
 }
 
 fn export_dict(array: *const arr.DictArray, private_data: *PrivateData) Error!FFI_Array {
-    const keys: arr.Array = switch (array.keys) {
+    const keys: arr.Array = switch (array.keys.*) {
         .i8 => |i| .{ .i8 = i },
         .i16 => |i| .{ .i16 = i },
         .i32 => |i| .{ .i32 = i },
@@ -974,8 +979,9 @@ fn export_dict(array: *const arr.DictArray, private_data: *PrivateData) Error!FF
         .u16 => |i| .{ .u16 = i },
         .u32 => |i| .{ .u32 = i },
         .u64 => |i| .{ .u64 = i },
+        else => unreachable,
     };
-    var out = try export_array_impl(&keys, private_data.increment());
+    var out = try export_array_impl(&slice.slice(&keys, array.offset, array.len), private_data.increment());
 
     const allocator = private_data.arena.allocator();
     const dict_ptr = try allocator.create(FFI_Array);

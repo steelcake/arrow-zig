@@ -9,6 +9,7 @@ const ArenaAllocator = std.heap.ArenaAllocator;
 const builder = @import("./builder.zig");
 const get = @import("./get.zig");
 const data_type = @import("./data_type.zig");
+const length = @import("./length.zig");
 
 const Error = error{
     OutOfMemory,
@@ -144,8 +145,14 @@ pub fn concat(dt: data_type.DataType, arrays: []const arr.Array, alloc: Allocato
             const a = try convert_arrays(arr.StructArray, "struct_", arrays, scratch_alloc);
             return .{ .struct_ = try concat_struct(sdt.*, a, alloc, scratch_alloc) };
         },
-        .dense_union => |_| unreachable,
-        .sparse_union => |_| unreachable,
+        .dense_union => |union_t| {
+            const a = try convert_arrays(arr.DenseUnionArray, "dense_union", arrays, scratch_alloc);
+            return .{ .dense_union = try concat_dense_union(union_t.*, a, alloc, scratch_alloc) };
+        },
+        .sparse_union => |union_t| {
+            const a = try convert_arrays(arr.SparseUnionArray, "sparse_union", arrays, scratch_alloc);
+            return .{ .sparse_union = try concat_sparse_union(union_t.*, a, alloc, scratch_alloc) };
+        },
         .fixed_size_binary => |bw| {
             const a = try convert_arrays(arr.FixedSizeBinaryArray, "fixed_size_binary", arrays, scratch_alloc);
             return .{ .fixed_size_binary = try concat_fixed_size_binary(bw, a, alloc) };
@@ -168,7 +175,10 @@ pub fn concat(dt: data_type.DataType, arrays: []const arr.Array, alloc: Allocato
             const a = try convert_arrays(arr.LargeListArray, "large_list", arrays, scratch_alloc);
             return .{ .large_list = try concat_list(.i64, inner_dt.*, a, alloc, scratch_alloc) };
         },
-        .run_end_encoded => |_| unreachable,
+        .run_end_encoded => |reet| {
+            const a = try convert_arrays(arr.RunEndArray, "run_end_encoded", arrays, scratch_alloc);
+            return .{ .run_end_encoded = try concat_run_end_encoded(reet.*, a, alloc, scratch_alloc) };
+        },
         .binary_view => {
             const a = try convert_arrays(arr.BinaryViewArray, "binary_view", arrays, scratch_alloc);
             return .{ .binary_view = try concat_binary_view(a, alloc) };
@@ -177,10 +187,325 @@ pub fn concat(dt: data_type.DataType, arrays: []const arr.Array, alloc: Allocato
             const a = try convert_arrays(arr.Utf8ViewArray, "utf8_view", arrays, scratch_alloc);
             return .{ .utf8_view = try concat_utf8_view(a, alloc, scratch_alloc) };
         },
-        .list_view => |_| unreachable,
-        .large_list_view => |_| unreachable,
-        .dict => |_| unreachable,
+        .list_view => |idt| {
+            const a = try convert_arrays(arr.ListViewArray, "list_view", arrays, scratch_alloc);
+            return .{ .list_view = try concat_list_view(.i32, idt.*, a, alloc, scratch_alloc) };
+        },
+        .large_list_view => |idt| {
+            const a = try convert_arrays(arr.LargeListViewArray, "large_list_view", arrays, scratch_alloc);
+            return .{ .large_list_view = try concat_list_view(.i64, idt.*, a, alloc, scratch_alloc) };
+        },
+        .dict => |dict_t| {
+            const a = try convert_arrays(arr.DictArray, "dict", arrays, scratch_alloc);
+            return .{ .dict = try concat_dict(dict_t.*, a, alloc, scratch_alloc) };
+        },
     }
+}
+
+/// Concatenates given arrays, lifetime of the output array isn't tied to the input arrays
+/// Scratch alloc will be used to allocate intermediary slices, it can be deallocated after this function returns.
+pub fn concat_dict(dt: data_type.DictType, arrays: []const arr.DictArray, alloc: Allocator, scratch_alloc: Allocator) Error!arr.DictArray {
+    for (arrays) |array| {
+        const keytype: data_type.DictKeyType = switch (array.keys.*) {
+            .i8 => .i8,
+            .i16 => .i16,
+            .i32 => .i32,
+            .i64 => .i64,
+            .u8 => .u8,
+            .u16 => .u16,
+            .u32 => .u32,
+            .u64 => .u64,
+            else => unreachable,
+        };
+        std.debug.assert(keytype == dt.key);
+        std.debug.assert(data_type.check_data_type(array.values, &dt.value));
+    }
+
+    const values_list = try scratch_alloc.alloc(arr.Array, arrays.len);
+    for (arrays, 0..) |array, idx| {
+        values_list[idx] = array.values.*;
+    }
+    const values = try alloc.create(arr.Array);
+    values.* = try concat(dt.value, values_list, alloc, scratch_alloc);
+
+    const keys_list = try scratch_alloc.alloc(arr.Array, arrays.len);
+    for (arrays, 0..) |array, idx| {
+        keys_list[idx] = slice.slice(array.keys, array.offset, array.len);
+    }
+    const keys = try alloc.create(arr.Array);
+    keys.* = try concat(dt.key.to_data_type(), keys_list, alloc, scratch_alloc);
+
+    var total_len: u32 = 0;
+
+    for (arrays) |array| {
+        total_len += array.len;
+    }
+
+    return .{
+        .is_ordered = false,
+        .keys = keys,
+        .values = values,
+        .len = total_len,
+        .offset = 0,
+    };
+}
+
+/// Concatenates given arrays, lifetime of the output array isn't tied to the input arrays
+/// Scratch alloc will be used to allocate intermediary slices, it can be deallocated after this function returns.
+pub fn concat_run_end_encoded(reet: data_type.RunEndEncodedType, arrays: []const arr.RunEndArray, alloc: Allocator, scratch_alloc: Allocator) Error!arr.RunEndArray {
+    for (arrays) |array| {
+        const retype: data_type.RunEndType = switch (array.run_ends.*) {
+            .i16 => .i16,
+            .i32 => .i32,
+            .i64 => .i64,
+            else => unreachable,
+        };
+        std.debug.assert(retype == reet.run_end);
+        std.debug.assert(data_type.check_data_type(array.values, &reet.value));
+    }
+
+    var total_len: u32 = 0;
+
+    for (arrays) |array| {
+        total_len += array.len;
+    }
+
+    const values_list = try scratch_alloc.alloc(arr.Array, arrays.len);
+    for (arrays, 0..) |array, idx| {
+        values_list[idx] = array.values.*;
+    }
+    const values = try alloc.create(arr.Array);
+    values.* = try concat(reet.value, values_list, alloc, scratch_alloc);
+
+    const run_ends_list = try scratch_alloc.alloc(arr.Array, arrays.len);
+    for (arrays, 0..) |array, idx| {
+        run_ends_list[idx] = array.run_ends.*;
+    }
+    const run_ends = try alloc.create(arr.Array);
+    run_ends.* = try concat(reet.run_end.to_data_type(), run_ends_list, alloc, scratch_alloc);
+
+    return .{
+        .run_ends = run_ends,
+        .values = values,
+        .len = total_len,
+        .offset = 0,
+    };
+}
+
+/// Concatenates given arrays, lifetime of the output array isn't tied to the input arrays
+/// Scratch alloc will be used to allocate intermediary slices, it can be deallocated after this function returns.
+pub fn concat_list_view(comptime index_t: arr.IndexType, dt: data_type.DataType, arrays: []const arr.GenericListViewArray(index_t), alloc: Allocator, scratch_alloc: Allocator) Error!arr.GenericListViewArray(index_t) {
+    const I = index_t.to_type();
+
+    for (arrays) |array| {
+        std.debug.assert(data_type.check_data_type(array.inner, &dt));
+    }
+
+    const inners = try scratch_alloc.alloc(arr.Array, arrays.len);
+    for (arrays, 0..) |array, idx| {
+        inners[idx] = array.inner.*;
+    }
+    const inner = try alloc.create(arr.Array);
+    inner.* = try concat(dt, inners, alloc, scratch_alloc);
+
+    var total_len: u32 = 0;
+    var total_null_count: u32 = 0;
+
+    for (arrays) |array| {
+        total_len += array.len;
+        total_null_count += array.null_count;
+    }
+
+    const offsets = try alloc.alloc(I, total_len);
+    const sizes = try alloc.alloc(I, total_len);
+    {
+        var write_offset: u32 = 0;
+        var offset_offset: I = 0;
+        for (arrays) |array| {
+            var w_idx = write_offset;
+            var idx = array.offset;
+            while (idx < array.offset + array.len) : ({
+                w_idx += 1;
+                idx += 1;
+            }) {
+                sizes.ptr[w_idx] = array.sizes.ptr[idx];
+                offsets.ptr[w_idx] = array.offsets.ptr[idx] +% offset_offset;
+            }
+
+            write_offset += array.len;
+            offset_offset += @as(I, @intCast(length.length(array.inner)));
+        }
+    }
+
+    const has_nulls = total_null_count > 0;
+    const bitmap_len = (total_len + 7) / 8;
+
+    const validity: []u8 = if (has_nulls) has_n: {
+        const v = try alloc.alloc(u8, bitmap_len);
+        @memset(v, 0xff);
+        break :has_n v;
+    } else &.{};
+
+    if (has_nulls) {
+        var write_offset: u32 = 0;
+        for (arrays) |array| {
+            if (array.null_count > 0) {
+                const v = (array.validity orelse unreachable).ptr;
+
+                var idx: u32 = array.offset;
+                var w_idx: u32 = write_offset;
+                while (idx < array.offset + array.len) : ({
+                    idx += 1;
+                    w_idx += 1;
+                }) {
+                    if (!bitmap.get(v, idx)) {
+                        bitmap.unset(validity.ptr, w_idx);
+                    }
+                }
+            }
+
+            write_offset += array.len;
+        }
+    }
+
+    return .{
+        .inner = inner,
+        .offsets = offsets,
+        .sizes = sizes,
+        .validity = if (has_nulls) validity else null,
+        .len = total_len,
+        .offset = 0,
+        .null_count = total_null_count,
+    };
+}
+
+/// Concatenates given arrays, lifetime of the output array isn't tied to the input arrays
+/// Scratch alloc will be used to allocate intermediary slices, it can be deallocated after this function returns.
+pub fn concat_sparse_union(dt: data_type.UnionType, arrays: []const arr.SparseUnionArray, alloc: Allocator, scratch_alloc: Allocator) Error!arr.SparseUnionArray {
+    for (arrays) |array| {
+        std.debug.assert(dt.check(&array.inner));
+    }
+
+    const field_arrays = try scratch_alloc.alloc(arr.Array, arrays.len);
+    const field_values = try alloc.alloc(arr.Array, dt.field_types.len);
+
+    for (0..dt.field_names.len) |field_idx| {
+        for (arrays, 0..) |array, array_idx| {
+            field_arrays[array_idx] = array.inner.children[field_idx];
+        }
+
+        field_values[field_idx] = try concat(dt.field_types[field_idx], field_arrays, alloc, scratch_alloc);
+    }
+
+    const field_names = try alloc.alloc([:0]const u8, dt.field_names.len);
+    for (dt.field_names, 0..) |name, idx| {
+        const field_name = try alloc.allocSentinel(u8, name.len, 0);
+        @memcpy(field_name, name);
+        field_names[idx] = field_name;
+    }
+
+    var total_len: u32 = 0;
+
+    for (arrays) |array| {
+        total_len += array.inner.len;
+    }
+
+    const type_ids = try alloc.alloc(i8, total_len);
+    var write_offset: i32 = 0;
+    for (arrays) |array| {
+        var w_idx: usize = @intCast(write_offset);
+        var idx: u32 = array.inner.offset;
+        while (idx < array.inner.offset + array.inner.len) : ({
+            idx += 1;
+            w_idx += 1;
+        }) {
+            type_ids.ptr[w_idx] = array.inner.type_ids.ptr[idx];
+        }
+
+        write_offset = @intCast(w_idx);
+    }
+
+    const type_id_set = try alloc.alloc(i8, dt.type_id_set.len);
+    for (dt.type_id_set, 0..) |tid, idx| {
+        type_id_set[idx] = tid;
+    }
+
+    return .{
+        .inner = .{
+            .type_id_set = type_id_set,
+            .field_names = field_names,
+            .type_ids = type_ids,
+            .children = field_values,
+            .len = total_len,
+            .offset = 0,
+        },
+    };
+}
+
+/// Concatenates given arrays, lifetime of the output array isn't tied to the input arrays
+/// Scratch alloc will be used to allocate intermediary slices, it can be deallocated after this function returns.
+pub fn concat_dense_union(dt: data_type.UnionType, arrays: []const arr.DenseUnionArray, alloc: Allocator, scratch_alloc: Allocator) Error!arr.DenseUnionArray {
+    for (arrays) |array| {
+        std.debug.assert(dt.check(&array.inner));
+    }
+
+    const field_arrays = try scratch_alloc.alloc(arr.Array, arrays.len);
+    const field_values = try alloc.alloc(arr.Array, dt.field_types.len);
+
+    for (0..dt.field_names.len) |field_idx| {
+        for (arrays, 0..) |array, array_idx| {
+            field_arrays[array_idx] = array.inner.children[field_idx];
+        }
+
+        field_values[field_idx] = try concat(dt.field_types[field_idx], field_arrays, alloc, scratch_alloc);
+    }
+
+    const field_names = try alloc.alloc([:0]const u8, dt.field_names.len);
+    for (dt.field_names, 0..) |name, idx| {
+        const field_name = try alloc.allocSentinel(u8, name.len, 0);
+        @memcpy(field_name, name);
+        field_names[idx] = field_name;
+    }
+
+    var total_len: u32 = 0;
+
+    for (arrays) |array| {
+        total_len += array.inner.len;
+    }
+
+    const offsets = try alloc.alloc(i32, total_len);
+    const type_ids = try alloc.alloc(i8, total_len);
+    var write_offset: i32 = 0;
+    for (arrays) |array| {
+        var w_idx: usize = @intCast(write_offset);
+        var idx: u32 = array.inner.offset;
+        while (idx < array.inner.offset + array.inner.len) : ({
+            idx += 1;
+            w_idx += 1;
+        }) {
+            offsets.ptr[w_idx] = array.offsets.ptr[idx] +% write_offset;
+            type_ids.ptr[w_idx] = array.inner.type_ids.ptr[idx];
+        }
+
+        write_offset = @intCast(w_idx);
+    }
+
+    const type_id_set = try alloc.alloc(i8, dt.type_id_set.len);
+    for (dt.type_id_set, 0..) |tid, idx| {
+        type_id_set[idx] = tid;
+    }
+
+    return .{
+        .offsets = offsets,
+        .inner = .{
+            .type_id_set = type_id_set,
+            .field_names = field_names,
+            .type_ids = type_ids,
+            .children = field_values,
+            .len = total_len,
+            .offset = 0,
+        },
+    };
 }
 
 /// Concatenates given arrays, lifetime of the output array isn't tied to the input arrays

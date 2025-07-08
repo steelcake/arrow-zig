@@ -56,6 +56,10 @@ pub const UnionType = struct {
 
         return std.mem.eql(i8, self.type_id_set, other.type_id_set);
     }
+
+    pub fn check(self: *const UnionType, array: *const arr.UnionArray) bool {
+        return check_union_data_type(array, self);
+    }
 };
 
 pub const MapKeyType = enum {
@@ -122,14 +126,14 @@ pub const DictKeyType = enum {
 
     pub fn to_data_type(self: DictKeyType) DataType {
         return switch (self) {
-            i8 => .{ .i8 = {} },
-            i16 => .{ .i16 = {} },
-            i32 => .{ .i32 = {} },
-            i64 => .{ .i64 = {} },
-            u8 => .{ .u8 = {} },
-            u16 => .{ .u16 = {} },
-            u32 => .{ .u32 = {} },
-            u64 => .{ .u64 = {} },
+            .i8 => .{ .i8 = {} },
+            .i16 => .{ .i16 = {} },
+            .i32 => .{ .i32 = {} },
+            .i64 => .{ .i64 = {} },
+            .u8 => .{ .u8 = {} },
+            .u16 => .{ .u16 = {} },
+            .u32 => .{ .u32 = {} },
+            .u64 => .{ .u64 = {} },
         };
     }
 };
@@ -487,7 +491,7 @@ pub fn get_data_type(array: *const arr.Array, alloc: Allocator) Error!DataType {
             return .{ .run_end_encoded = ree_type };
         },
         .dict => |*a| {
-            const key: DictKeyType = switch (a.keys) {
+            const key: DictKeyType = switch (a.keys.*) {
                 .i8 => .i8,
                 .i16 => .i16,
                 .i32 => .i32,
@@ -496,6 +500,7 @@ pub fn get_data_type(array: *const arr.Array, alloc: Allocator) Error!DataType {
                 .u16 => .u16,
                 .u32 => .u32,
                 .u64 => .u64,
+                else => unreachable,
             };
 
             const value = try get_data_type(a.values, alloc);
@@ -712,50 +717,7 @@ pub fn check_data_type(array: *const arr.Array, expected: *const DataType) bool 
         .dict => |*a| {
             switch (expected.*) {
                 .dict => |dt| {
-                    switch (a.keys) {
-                        .i8 => {
-                            if (dt.key != DictKeyType.i8) {
-                                return false;
-                            }
-                        },
-                        .i16 => {
-                            if (dt.key != DictKeyType.i16) {
-                                return false;
-                            }
-                        },
-                        .i32 => {
-                            if (dt.key != DictKeyType.i32) {
-                                return false;
-                            }
-                        },
-                        .i64 => {
-                            if (dt.key != DictKeyType.i64) {
-                                return false;
-                            }
-                        },
-                        .u8 => {
-                            if (dt.key != DictKeyType.u8) {
-                                return false;
-                            }
-                        },
-                        .u16 => {
-                            if (dt.key != DictKeyType.u16) {
-                                return false;
-                            }
-                        },
-                        .u32 => {
-                            if (dt.key != DictKeyType.u32) {
-                                return false;
-                            }
-                        },
-                        .u64 => {
-                            if (dt.key != DictKeyType.u64) {
-                                return false;
-                            }
-                        },
-                    }
-
-                    return check_data_type(a.values, &dt.value);
+                    return check_data_type(a.keys, &dt.key.to_data_type()) and check_data_type(a.values, &dt.value);
                 },
                 else => return false,
             }
