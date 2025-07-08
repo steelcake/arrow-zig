@@ -56,6 +56,10 @@ pub const UnionType = struct {
 
         return std.mem.eql(i8, self.type_id_set, other.type_id_set);
     }
+
+    pub fn check(self: *const UnionType, array: *const arr.UnionArray) bool {
+        return check_union_data_type(array, self);
+    }
 };
 
 pub const MapKeyType = enum {
