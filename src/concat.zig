@@ -230,7 +230,7 @@ pub fn concat_dict(dt: data_type.DictType, arrays: []const arr.DictArray, alloc:
 
     const keys_list = try scratch_alloc.alloc(arr.Array, arrays.len);
     for (arrays, 0..) |array, idx| {
-        keys_list[idx] = array.keys.*;
+        keys_list[idx] = slice.slice(array.keys, array.offset, array.len);
     }
     const keys = try alloc.create(arr.Array);
     keys.* = try concat(dt.key.to_data_type(), keys_list, alloc, scratch_alloc);

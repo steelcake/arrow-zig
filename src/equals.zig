@@ -451,15 +451,18 @@ pub fn equals_dict(l: *const arr.DictArray, r: *const arr.DictArray) Error!void 
         return Error.NotEqual;
     }
 
-    switch (l.keys.*) {
-        .i8 => |*lk| try dict_impl(arr.Int8Array, lk, &r.keys.i8, l.values, r.values),
-        .i16 => |*lk| try dict_impl(arr.Int16Array, lk, &r.keys.i16, l.values, r.values),
-        .i32 => |*lk| try dict_impl(arr.Int32Array, lk, &r.keys.i32, l.values, r.values),
-        .i64 => |*lk| try dict_impl(arr.Int64Array, lk, &r.keys.i64, l.values, r.values),
-        .u8 => |*lk| try dict_impl(arr.UInt8Array, lk, &r.keys.u8, l.values, r.values),
-        .u16 => |*lk| try dict_impl(arr.UInt16Array, lk, &r.keys.u16, l.values, r.values),
-        .u32 => |*lk| try dict_impl(arr.UInt32Array, lk, &r.keys.u32, l.values, r.values),
-        .u64 => |*lk| try dict_impl(arr.UInt64Array, lk, &r.keys.u64, l.values, r.values),
+    const l_keys = slice(l.keys, l.offset, l.len);
+    const r_keys = slice(r.keys, r.offset, r.len);
+
+    switch (l_keys) {
+        .i8 => |*lk| try dict_impl(arr.Int8Array, lk, &r_keys.i8, l.values, r.values),
+        .i16 => |*lk| try dict_impl(arr.Int16Array, lk, &r_keys.i16, l.values, r.values),
+        .i32 => |*lk| try dict_impl(arr.Int32Array, lk, &r_keys.i32, l.values, r.values),
+        .i64 => |*lk| try dict_impl(arr.Int64Array, lk, &r_keys.i64, l.values, r.values),
+        .u8 => |*lk| try dict_impl(arr.UInt8Array, lk, &r_keys.u8, l.values, r.values),
+        .u16 => |*lk| try dict_impl(arr.UInt16Array, lk, &r_keys.u16, l.values, r.values),
+        .u32 => |*lk| try dict_impl(arr.UInt32Array, lk, &r_keys.u32, l.values, r.values),
+        .u64 => |*lk| try dict_impl(arr.UInt64Array, lk, &r_keys.u64, l.values, r.values),
         else => unreachable,
     }
 }
@@ -481,8 +484,14 @@ pub fn equals_run_end_encoded(l: *const arr.RunEndArray, r: *const arr.RunEndArr
         return;
     }
 
-    try equals(l.run_ends, r.run_ends);
-    try equals(l.values, r.values);
+    const l_run_ends = slice(l.run_ends, l.offset, l.len);
+    const l_values = slice(l.values, l.offset, l.len);
+
+    const r_run_ends = slice(r.run_ends, r.offset, r.len);
+    const r_values = slice(r.values, r.offset, r.len);
+
+    try equals(&l_run_ends, &r_run_ends);
+    try equals(&l_values, &r_values);
 }
 
 /// Checks if two arrays are logically equal.
