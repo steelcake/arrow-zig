@@ -25,7 +25,7 @@ pub const Timestamp = struct {
     timezone: ?[]const u8,
 };
 
-pub const Array = union(enum(u8)) {
+pub const Array = union(enum) {
     null: NullArray,
     i8: Int8Array,
     i16: Int16Array,
