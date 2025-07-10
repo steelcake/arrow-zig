@@ -60,30 +60,30 @@ pub const FuzzInput = struct {
         return out;
     }
 
-    pub fn validity(self: *FuzzInput, len: u32, alloc: Allocator) Error!?Validity {
+    pub fn validity(self: *FuzzInput, offset: u32, len: u32, alloc: Allocator) Error!?Validity {
         const has_validity = try self.boolean();
+
+        const total_len = offset + len;
 
         if (!has_validity) {
             return null;
         }
 
-        const v_len = (len + 7) / 8;
+        const v_len = (total_len + 7) / 8;
         const v = try alloc.alloc(u8, v_len);
         @memset(v, 0);
-        var null_count = len;
 
         var prng = try self.make_prng();
         const rand = prng.random();
 
         var idx: u32 = 0;
-        while (idx < len) : (idx += 1) {
+        while (idx < total_len) : (idx += 1) {
             if (rand.boolean()) {
-                null_count -%= 1;
                 bitmap.set(v.ptr, idx);
             }
         }
 
-        return .{ .validity = v, .null_count = null_count };
+        return .{ .validity = v, .null_count = bitmap.count_nulls(v, offset, len) };
     }
 
     pub fn null_array(len: u32) arr.NullArray {
@@ -118,7 +118,7 @@ pub const FuzzInput = struct {
             .null_count = 0,
         };
 
-        if (try self.validity(total_len, alloc)) |v| {
+        if (try self.validity(offset, len, alloc)) |v| {
             array.validity = v.validity;
             array.null_count = v.null_count;
         }
@@ -161,7 +161,7 @@ pub const FuzzInput = struct {
             .null_count = 0,
         };
 
-        if (try self.validity(total_len, alloc)) |v| {
+        if (try self.validity(offset, len, alloc)) |v| {
             array.validity = v.validity;
             array.null_count = v.null_count;
         }
@@ -199,7 +199,7 @@ pub const FuzzInput = struct {
             .null_count = 0,
         };
 
-        if (try self.validity(total_len, alloc)) |v| {
+        if (try self.validity(offset, len, alloc)) |v| {
             array.validity = v.validity;
             array.null_count = v.null_count;
         }
@@ -297,7 +297,7 @@ pub const FuzzInput = struct {
             .byte_width = byte_width,
         };
 
-        if (try self.validity(total_len, alloc)) |v| {
+        if (try self.validity(offset, len, alloc)) |v| {
             array.validity = v.validity;
             array.null_count = v.null_count;
         }
@@ -351,7 +351,7 @@ pub const FuzzInput = struct {
             .null_count = 0,
         };
 
-        if (try self.validity(total_len, alloc)) |v| {
+        if (try self.validity(offset, len, alloc)) |v| {
             array.validity = v.validity;
             array.null_count = v.null_count;
         }
@@ -447,7 +447,7 @@ pub const FuzzInput = struct {
             .null_count = 0,
         };
 
-        if (try self.validity(total_len, alloc)) |v| {
+        if (try self.validity(offset, len, alloc)) |v| {
             array.validity = v.validity;
             array.null_count = v.null_count;
         }
@@ -497,7 +497,7 @@ pub const FuzzInput = struct {
             .null_count = 0,
         };
 
-        if (try self.validity(total_len, alloc)) |v| {
+        if (try self.validity(offset, len, alloc)) |v| {
             array.validity = v.validity;
             array.null_count = v.null_count;
         }
@@ -536,7 +536,7 @@ pub const FuzzInput = struct {
             .null_count = 0,
         };
 
-        if (try self.validity(total_len, alloc)) |v| {
+        if (try self.validity(offset, len, alloc)) |v| {
             array.validity = v.validity;
             array.null_count = v.null_count;
         }
@@ -654,7 +654,7 @@ pub const FuzzInput = struct {
             .item_width = item_width,
         };
 
-        if (try self.validity(total_len, alloc)) |v| {
+        if (try self.validity(offset, len, alloc)) |v| {
             array.validity = v.validity;
             array.null_count = v.null_count;
         }
@@ -712,7 +712,7 @@ pub const FuzzInput = struct {
             .null_count = 0,
         };
 
-        if (try self.validity(total_len, alloc)) |v| {
+        if (try self.validity(offset, len, alloc)) |v| {
             array.validity = v.validity;
             array.null_count = v.null_count;
         }

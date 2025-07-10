@@ -2062,9 +2062,10 @@ fn to_fuzz(_: void, data: []const u8) !void {
 
     const slice0_len = length.length(&slice0);
     const slice1_len = length.length(&slice1);
-    const slice0_out = slice.slice(&concated, 0, length.length(&slice0));
-    const slice1_out = slice.slice(&concated, slice0_len, length.length(&slice1));
-    const slice2_out = slice.slice(&concated, slice0_len + slice1_len, length.length(&slice2));
+    const slice2_len = length.length(&slice2);
+    const slice0_out = slice.slice(&concated, 0, slice0_len);
+    const slice1_out = slice.slice(&concated, slice0_len, slice1_len);
+    const slice2_out = slice.slice(&concated, slice0_len + slice1_len, slice2_len);
 
     equals.equals(&slice0_out, &slice0);
     equals.equals(&slice1_out, &slice1);

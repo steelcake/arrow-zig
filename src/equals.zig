@@ -20,7 +20,8 @@ pub fn equals_null(l: *const arr.NullArray, r: *const arr.NullArray) void {
 }
 
 fn equals_impl(comptime array_t: type, l: *const array_t, r: *const array_t, comptime equals_fn: fn (l: *const array_t, r: *const array_t, li: u32, ri: u32) void) void {
-    assert(l.len == r.len and r.null_count == l.null_count);
+    assert_equal(l.len, r.len);
+    assert_equal(l.null_count, r.null_count);
 
     if (l.len == 0) {
         return;
