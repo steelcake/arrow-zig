@@ -158,8 +158,14 @@ pub fn concat(dt: data_type.DataType, arrays: []const arr.Array, alloc: Allocato
             const a = try convert_arrays(arr.FixedSizeBinaryArray, "fixed_size_binary", arrays, scratch_alloc);
             return .{ .fixed_size_binary = try concat_fixed_size_binary(bw, a, alloc) };
         },
-        .fixed_size_list => |_| unreachable,
-        .map => |_| unreachable,
+        .fixed_size_list => |fsl_t| {
+            const a = try convert_arrays(arr.FixedSizeListArray, "fixed_size_list", arrays, scratch_alloc);
+            return .{ .fixed_size_list = try concat_fixed_size_list(fsl_t.*, a, alloc, scratch_alloc) };
+        },
+        .map => |map_t| {
+            const a = try convert_arrays(arr.MapArray, "map", arrays, scratch_alloc);
+            return .{ .map = try concat_map(map_t.*, a, alloc, scratch_alloc) };
+        },
         .duration => |unit| {
             const a = try convert_arrays(arr.DurationArray, "duration", arrays, scratch_alloc);
             return .{ .duration = try concat_duration(unit, a, alloc, scratch_alloc) };
@@ -201,6 +207,89 @@ pub fn concat(dt: data_type.DataType, arrays: []const arr.Array, alloc: Allocato
             return .{ .dict = try concat_dict(dict_t.*, a, alloc, scratch_alloc) };
         },
     }
+}
+
+/// Concatenates given arrays, lifetime of the output array isn't tied to the input arrays
+/// Scratch alloc will be used to allocate intermediary slices, it can be deallocated after this function returns.
+pub fn concat_map(map_t: data_type.MapType, arrays: []const arr.MapArray, alloc: Allocator, scratch_alloc: Allocator) Error!arr.MapArray {
+    var total_len: u32 = 0;
+    var total_null_count: u32 = 0;
+
+    for (arrays) |array| {
+        total_len += array.len;
+        total_null_count += array.null_count;
+    }
+
+    const has_nulls = total_null_count > 0;
+    const bitmap_len = (total_len + 7) / 8;
+
+    const validity: []u8 = if (has_nulls) has_n: {
+        const v = try alloc.alloc(u8, bitmap_len);
+        @memset(v, 0xff);
+        break :has_n v;
+    } else &.{};
+    const offsets = try alloc.alloc(i32, total_len + 1);
+
+    const entries_list = try scratch_alloc.alloc(arr.StructArray, arrays.len);
+
+    var inner_offset: u32 = 0;
+    var write_offset: u32 = 0;
+    for (arrays, 0..) |array, arr_idx| {
+        const input_start: usize = @intCast(array.offsets.ptr[array.offset]);
+        const input_end: usize = @intCast(array.offsets.ptr[array.offset + array.len]);
+        const input_len = input_end - input_start;
+
+        entries_list[arr_idx] = slice.slice_struct(array.entries, @intCast(input_start), @intCast(input_len));
+
+        {
+            var idx: u32 = array.offset;
+            var w_idx: u32 = write_offset;
+            const offset_diff: i32 = @as(i32, @intCast(inner_offset)) - array.offsets.ptr[array.offset];
+            while (idx < array.offset + array.len) : ({
+                idx += 1;
+                w_idx += 1;
+            }) {
+                offsets.ptr[w_idx] = array.offsets.ptr[idx] +% offset_diff;
+            }
+        }
+
+        if (array.null_count > 0) {
+            const v = (array.validity orelse unreachable).ptr;
+
+            var idx: u32 = array.offset;
+            var w_idx: u32 = write_offset;
+            while (idx < array.offset + array.len) : ({
+                idx += 1;
+                w_idx += 1;
+            }) {
+                if (!bitmap.get(v, idx)) {
+                    bitmap.unset(validity.ptr, w_idx);
+                }
+            }
+        }
+
+        write_offset += array.len;
+        inner_offset += @as(u32, @intCast(input_len));
+    }
+
+    offsets.ptr[total_len] = @intCast(inner_offset);
+
+    const entries_dt = data_type.StructType{
+        .field_names = &.{ "keys", "values" },
+        .field_types = &.{ map_t.key.to_data_type(), map_t.value },
+    };
+    const entries = try alloc.create(arr.StructArray);
+    entries.* = try concat_struct(entries_dt, entries_list, alloc, scratch_alloc);
+
+    return arr.MapArray{
+        .entries = entries,
+        .len = total_len,
+        .offset = 0,
+        .offsets = offsets,
+        .validity = if (has_nulls) validity else null,
+        .null_count = total_null_count,
+        .keys_are_sorted = false,
+    };
 }
 
 /// Concatenates given arrays, lifetime of the output array isn't tied to the input arrays
@@ -589,6 +678,66 @@ pub fn concat_struct(dt: data_type.StructType, arrays: []const arr.StructArray, 
         .len = total_len,
         .null_count = total_null_count,
         .validity = if (has_nulls) validity else null,
+    };
+}
+
+/// Concatenates given arrays, lifetime of the output array isn't tied to the input arrays
+/// Scratch alloc will be used to allocate intermediary slices, it can be deallocated after this function returns.
+pub fn concat_fixed_size_list(fsl_t: data_type.FixedSizeListType, arrays: []const arr.FixedSizeListArray, alloc: Allocator, scratch_alloc: Allocator) Error!arr.FixedSizeListArray {
+    var total_len: u32 = 0;
+    var total_null_count: u32 = 0;
+
+    for (arrays) |array| {
+        std.debug.assert(array.item_width == fsl_t.item_width);
+
+        total_len += array.len;
+        total_null_count += array.null_count;
+    }
+
+    const has_nulls = total_null_count > 0;
+    const bitmap_len = (total_len + 7) / 8;
+
+    const validity: []u8 = if (has_nulls) has_n: {
+        const v = try alloc.alloc(u8, bitmap_len);
+        @memset(v, 0xff);
+        break :has_n v;
+    } else &.{};
+
+    var write_offset: u32 = 0;
+    for (arrays) |array| {
+        if (array.null_count > 0) {
+            const v = (array.validity orelse unreachable).ptr;
+
+            var idx: u32 = array.offset;
+            var w_idx: u32 = write_offset;
+            while (idx < array.offset + array.len) : ({
+                idx += 1;
+                w_idx += 1;
+            }) {
+                if (!bitmap.get(v, idx)) {
+                    bitmap.unset(validity.ptr, w_idx);
+                }
+            }
+        }
+
+        write_offset += array.len;
+    }
+
+    const inners = try scratch_alloc.alloc(arr.Array, arrays.len);
+    for (0..arrays.len) |idx| {
+        inners[idx] = arrays[idx].inner.*;
+    }
+
+    const inner = try alloc.create(arr.Array);
+    inner.* = try concat(fsl_t.inner, inners, alloc, scratch_alloc);
+
+    return .{
+        .inner = inner,
+        .len = total_len,
+        .null_count = total_null_count,
+        .validity = if (has_nulls) validity else null,
+        .offset = 0,
+        .item_width = fsl_t.item_width,
     };
 }
 
