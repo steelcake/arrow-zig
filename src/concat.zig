@@ -10,6 +10,7 @@ const builder = @import("./builder.zig");
 const get = @import("./get.zig");
 const data_type = @import("./data_type.zig");
 const length = @import("./length.zig");
+const FuzzInput = @import("./fuzz_input.zig").FuzzInput;
 
 const Error = error{
     OutOfMemory,
@@ -623,7 +624,7 @@ pub fn concat_list(comptime index_t: arr.IndexType, inner_dt: data_type.DataType
         const input_end: usize = @intCast(array.offsets.ptr[array.offset + array.len]);
         const input_len = input_end - input_start;
 
-        inners[arr_idx] = slice.slice(array.inner, @intCast(input_start), @intCast(input_end));
+        inners[arr_idx] = slice.slice(array.inner, @intCast(input_start), @intCast(input_len));
 
         {
             var idx: u32 = array.offset;
@@ -1201,7 +1202,7 @@ test concat_utf8_view {
     const result = try concat_utf8_view(&.{ arr0, arr1, arr2, arr3 }, alloc, alloc);
     const expected = try builder.Utf8ViewBuilder.from_slice(&.{ "1", "2", "3", "4", "5", "6", "7", "8", "9", "10" }, false, alloc);
 
-    try equals.equals_utf8_view(&result, &expected);
+    equals.equals_utf8_view(&result, &expected);
 }
 
 test concat_utf8 {
@@ -1218,7 +1219,7 @@ test concat_utf8 {
     const result = try concat_utf8(.i32, &.{ arr0, arr1, arr2, arr3 }, alloc, alloc);
     const expected = try builder.Utf8Builder.from_slice(&.{ "1", "2", "3", "4", "5", "6", "7", "8", "9", "10" }, false, alloc);
 
-    try equals.equals_utf8(.i32, &result, &expected);
+    equals.equals_utf8(.i32, &result, &expected);
 }
 
 test concat_interval {
@@ -1235,7 +1236,7 @@ test concat_interval {
     const result = try concat_interval(.year_month, &.{ arr0, arr1, arr2, arr3 }, alloc, alloc);
     const expected = try builder.IntervalYearMonthBuilder.from_slice(&.{ 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 }, false, alloc);
 
-    try equals.equals_interval_year_month(&result, &expected);
+    equals.equals_interval_year_month(&result, &expected);
 }
 
 test concat_duration {
@@ -1254,7 +1255,7 @@ test concat_duration {
     const result = try concat_duration(unit, &.{ arr0, arr1, arr2, arr3 }, alloc, alloc);
     const expected = try builder.DurationBuilder.from_slice(unit, &.{ 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 }, false, alloc);
 
-    try equals.equals_duration(&result, &expected);
+    equals.equals_duration(&result, &expected);
 }
 
 test concat_timestamp {
@@ -1276,7 +1277,7 @@ test concat_timestamp {
     const result = try concat_timestamp(ts, &.{ arr0, arr1, arr2, arr3 }, alloc, alloc);
     const expected = try builder.TimestampBuilder.from_slice(ts, &.{ 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 }, false, alloc);
 
-    try equals.equals_timestamp(&result, &expected);
+    equals.equals_timestamp(&result, &expected);
 }
 
 test concat_time {
@@ -1295,7 +1296,7 @@ test concat_time {
     const result = try concat_time(.i32, unit, &.{ arr0, arr1, arr2, arr3 }, alloc, alloc);
     const expected = try builder.Time32Builder.from_slice(unit, &.{ 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 }, false, alloc);
 
-    try equals.equals_time(.i32, &result, &expected);
+    equals.equals_time(.i32, &result, &expected);
 }
 
 test concat_date {
@@ -1312,7 +1313,7 @@ test concat_date {
     const result = try concat_date(.i64, &.{ arr0, arr1, arr2, arr3 }, alloc, alloc);
     const expected = try builder.Date64Builder.from_slice(&.{ 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 }, false, alloc);
 
-    try equals.equals_date(.i64, &result, &expected);
+    equals.equals_date(.i64, &result, &expected);
 }
 
 test concat_decimal {
@@ -1334,7 +1335,7 @@ test concat_decimal {
     const result = try concat_decimal(.i128, params, &.{ arr0, arr1, arr2, arr3 }, alloc, alloc);
     const expected = try builder.Decimal128Builder.from_slice(params, &.{ 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 }, false, alloc);
 
-    try equals.equals_decimal(.i128, &result, &expected);
+    equals.equals_decimal(.i128, &result, &expected);
 }
 
 test "concat_primitive empty-input" {
@@ -1347,7 +1348,7 @@ test "concat_primitive empty-input" {
         .null_count = 0,
     };
 
-    try equals.equals_primitive(i32, &result, &expected);
+    equals.equals_primitive(i32, &result, &expected);
 }
 
 test "concat_primitive non-null" {
@@ -1364,7 +1365,7 @@ test "concat_primitive non-null" {
     const result = try concat_primitive(i32, &.{ arr0, arr1, arr2, arr3 }, alloc);
     const expected = try builder.Int32Builder.from_slice(&.{ 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 }, false, alloc);
 
-    try equals.equals_primitive(i32, &result, &expected);
+    equals.equals_primitive(i32, &result, &expected);
 }
 
 test "concat_primitive nullable" {
@@ -1381,7 +1382,7 @@ test "concat_primitive nullable" {
     const result = try concat_primitive(i32, &.{ arr0, arr1, arr2, slice.slice_primitive(i32, &arr3, 1, 2) }, alloc);
     const expected = try builder.Int32Builder.from_slice_opt(&.{ 1, 2, 3, null, null, 4, 5, 6, null, 8, 9 }, alloc);
 
-    try equals.equals_primitive(i32, &result, &expected);
+    equals.equals_primitive(i32, &result, &expected);
 }
 
 test "concat_primitive empty" {
@@ -1398,7 +1399,7 @@ test "concat_primitive empty" {
     const result = try concat_primitive(i32, &.{ arr0, arr1, arr2, arr3 }, alloc);
     const expected = try builder.Int32Builder.from_slice_opt(&.{}, alloc);
 
-    try equals.equals_primitive(i32, &result, &expected);
+    equals.equals_primitive(i32, &result, &expected);
 }
 
 test "concat_binary empty-input" {
@@ -1417,7 +1418,7 @@ test "concat_binary empty-input" {
         .null_count = 0,
     };
 
-    try equals.equals_binary(.i32, &result, &expected);
+    equals.equals_binary(.i32, &result, &expected);
 }
 
 test "concat_binary non-null" {
@@ -1434,7 +1435,7 @@ test "concat_binary non-null" {
     const result = try concat_binary(.i32, &.{ arr0, arr1, arr2, arr3 }, alloc);
     const expected = try builder.BinaryBuilder.from_slice(&.{ "abc", "qq", "ww", "dd", "s", "xzc", "helloworld" }, false, alloc);
 
-    try equals.equals_binary(.i32, &result, &expected);
+    equals.equals_binary(.i32, &result, &expected);
 }
 
 test "concat_binary nullable" {
@@ -1451,7 +1452,7 @@ test "concat_binary nullable" {
     const result = try concat_binary(.i64, &.{ arr0, arr1, arr2, slice.slice_binary(.i64, &arr3, 1, 2) }, alloc);
     const expected = try builder.LargeBinaryBuilder.from_slice_opt(&.{ "abc", "qq", "ww", null, null, "dd", "s", "xzc", null, "helloworld", "gz" }, alloc);
 
-    try equals.equals_binary(.i64, &result, &expected);
+    equals.equals_binary(.i64, &result, &expected);
 }
 
 test "concat_binary empty" {
@@ -1468,7 +1469,7 @@ test "concat_binary empty" {
     const result = try concat_binary(.i32, &.{ arr0, arr1, arr2, arr3 }, alloc);
     const expected = try builder.BinaryBuilder.from_slice_opt(&.{}, alloc);
 
-    try equals.equals_binary(.i32, &result, &expected);
+    equals.equals_binary(.i32, &result, &expected);
 }
 
 test "concat_binary_view empty-input" {
@@ -1487,7 +1488,7 @@ test "concat_binary_view empty-input" {
         .null_count = 0,
     };
 
-    try equals.equals_binary_view(&result, &expected);
+    equals.equals_binary_view(&result, &expected);
 }
 
 test "concat_binary_view non-null" {
@@ -1504,7 +1505,7 @@ test "concat_binary_view non-null" {
     const result = try concat_binary_view(&.{ arr0, arr1, arr2, arr3 }, alloc);
     const expected = try builder.BinaryViewBuilder.from_slice(&.{ "abc", "qq", "ww", "dd", "s", "xzc", "helloworld" }, false, alloc);
 
-    try equals.equals_binary_view(&result, &expected);
+    equals.equals_binary_view(&result, &expected);
 }
 
 test "concat_binary_view nullable" {
@@ -1521,7 +1522,7 @@ test "concat_binary_view nullable" {
     const result = try concat_binary_view(&.{ arr0, arr1, arr2, slice.slice_binary_view(&arr3, 1, 2) }, alloc);
     const expected = try builder.BinaryViewBuilder.from_slice_opt(&.{ "abc", "qq", "ww", null, null, "dd", "s", "xzc", null, "helloworld", "gz" }, alloc);
 
-    try equals.equals_binary_view(&result, &expected);
+    equals.equals_binary_view(&result, &expected);
 }
 
 test "concat_binary_view empty" {
@@ -1538,7 +1539,7 @@ test "concat_binary_view empty" {
     const result = try concat_binary_view(&.{ arr0, arr1, arr2, arr3 }, alloc);
     const expected = try builder.BinaryViewBuilder.from_slice_opt(&.{}, alloc);
 
-    try equals.equals_binary_view(&result, &expected);
+    equals.equals_binary_view(&result, &expected);
 }
 
 test "concat_bool empty-input" {
@@ -1551,7 +1552,7 @@ test "concat_bool empty-input" {
         .null_count = 0,
     };
 
-    try equals.equals_bool(&result, &expected);
+    equals.equals_bool(&result, &expected);
 }
 
 test "concat_bool non-null" {
@@ -1568,7 +1569,7 @@ test "concat_bool non-null" {
     const result = try concat_bool(&.{ arr0, arr1, arr2, arr3 }, alloc);
     const expected = try builder.BoolBuilder.from_slice(&.{ true, false, true, false, false, false, true, true, true }, false, alloc);
 
-    try equals.equals_bool(&result, &expected);
+    equals.equals_bool(&result, &expected);
 }
 
 test "concat_bool nullable" {
@@ -1585,7 +1586,7 @@ test "concat_bool nullable" {
     const result = try concat_bool(&.{ arr0, arr1, arr2, slice.slice_bool(&arr3, 2, 2) }, alloc);
     const expected = try builder.BoolBuilder.from_slice_opt(&.{ false, true, true, null, null, true, false, false, null, false, false }, alloc);
 
-    try equals.equals_bool(&result, &expected);
+    equals.equals_bool(&result, &expected);
 }
 
 test "concat_bool empty" {
@@ -1602,7 +1603,7 @@ test "concat_bool empty" {
     const result = try concat_bool(&.{ arr0, arr1, arr2, arr3 }, alloc);
     const expected = try builder.BoolBuilder.from_slice_opt(&.{}, alloc);
 
-    try equals.equals_bool(&result, &expected);
+    equals.equals_bool(&result, &expected);
 }
 
 test "concat_fixed_size_binary empty-input" {
@@ -1616,7 +1617,7 @@ test "concat_fixed_size_binary empty-input" {
         .byte_width = 69,
     };
 
-    try equals.equals_fixed_size_binary(&result, &expected);
+    equals.equals_fixed_size_binary(&result, &expected);
 }
 
 test "concat_fixed_size_binary non-null" {
@@ -1633,7 +1634,7 @@ test "concat_fixed_size_binary non-null" {
     const result = try concat_fixed_size_binary(3, &.{ arr0, arr1, arr2, arr3 }, alloc);
     const expected = try builder.FixedSizeBinaryBuilder.from_slice(3, &.{ "abc", "qqq", "www", "ddd", "sss", "xzc", "hww" }, false, alloc);
 
-    try equals.equals_fixed_size_binary(&result, &expected);
+    equals.equals_fixed_size_binary(&result, &expected);
 }
 
 test "concat_fixed_size_binary nullable" {
@@ -1650,7 +1651,7 @@ test "concat_fixed_size_binary nullable" {
     const result = try concat_fixed_size_binary(3, &.{ arr0, arr1, arr2, slice.slice_fixed_size_binary(&arr3, 1, 2) }, alloc);
     const expected = try builder.FixedSizeBinaryBuilder.from_slice_opt(3, &.{ "abc", "qqq", "www", null, null, "ddd", "sss", "xzc", null, "hww", "ggz" }, alloc);
 
-    try equals.equals_fixed_size_binary(&result, &expected);
+    equals.equals_fixed_size_binary(&result, &expected);
 }
 
 test "concat_fixed_size_binary empty" {
@@ -1667,7 +1668,7 @@ test "concat_fixed_size_binary empty" {
     const result = try concat_fixed_size_binary(5, &.{ arr0, arr1, arr2, arr3 }, alloc);
     const expected = try builder.FixedSizeBinaryBuilder.from_slice_opt(5, &.{}, alloc);
 
-    try equals.equals_fixed_size_binary(&result, &expected);
+    equals.equals_fixed_size_binary(&result, &expected);
 }
 
 test "concat_list empty-input" {
@@ -1692,7 +1693,7 @@ test "concat_list empty-input" {
         .offsets = &.{0},
     };
 
-    try equals.equals_list(.i32, &result, &expected);
+    equals.equals_list(.i32, &result, &expected);
 }
 
 test "concat_list non-null" {
@@ -1712,7 +1713,7 @@ test "concat_list non-null" {
     const expected_inner = arr.Array{ .binary = try concat_binary(.i32, &.{ inner, slice.slice_binary(.i32, &inner, 0, 6) }, alloc) };
     const expected = try builder.ListBuilder.from_slice(&.{ 2, 1, 1, 0, 3, 0, 1, 2, 0, 3 }, false, &expected_inner, alloc);
 
-    try equals.equals_list(.i32, &result, &expected);
+    equals.equals_list(.i32, &result, &expected);
 }
 
 test "concat_list nullable" {
@@ -1732,7 +1733,7 @@ test "concat_list nullable" {
     const expected_inner = arr.Array{ .binary = try concat_binary(.i32, &.{ inner, slice.slice_binary(.i32, &inner, 0, 6) }, alloc) };
     const expected = try builder.ListBuilder.from_slice_opt(&.{ 2, 1, 1, 0, 3, null, null, null, null, 0, 1, 2, 0, 3, null }, &expected_inner, alloc);
 
-    try equals.equals_list(.i32, &result, &expected);
+    equals.equals_list(.i32, &result, &expected);
 }
 
 test "concat_list empty" {
@@ -1752,7 +1753,7 @@ test "concat_list empty" {
     const expected_inner = arr.Array{ .binary = .{ .len = 0, .offset = 0, .null_count = 0, .offsets = &.{0}, .data = &.{}, .validity = null } };
     const expected = try builder.ListBuilder.from_slice_opt(&.{}, &expected_inner, alloc);
 
-    try equals.equals_list(.i32, &result, &expected);
+    equals.equals_list(.i32, &result, &expected);
     try testing.expectEqual(result.inner.*.binary.data.len, 0);
     try testing.expectEqual(result.inner.*.binary.len, 0);
 }
@@ -1784,7 +1785,7 @@ test "concat_struct empty-input" {
         },
     };
 
-    try equals.equals_struct(&result, &expected);
+    equals.equals_struct(&result, &expected);
 }
 
 test "concat_struct non-null" {
@@ -1816,7 +1817,7 @@ test "concat_struct non-null" {
 
     const result = try concat_struct(dt, &.{ arr0, arr1 }, alloc, alloc);
 
-    try equals.equals_struct(&result, &expected);
+    equals.equals_struct(&result, &expected);
 }
 
 test "concat_struct nullable" {
@@ -1848,7 +1849,7 @@ test "concat_struct nullable" {
 
     const result = try concat_struct(dt, &.{ arr0, arr1 }, alloc, alloc);
 
-    try equals.equals_struct(&result, &expected);
+    equals.equals_struct(&result, &expected);
 }
 
 test "concat_struct empty" {
@@ -1880,5 +1881,53 @@ test "concat_struct empty" {
 
     const result = try concat_struct(dt, &.{ arr0, arr1 }, alloc, alloc);
 
-    try equals.equals_struct(&result, &expected);
+    equals.equals_struct(&result, &expected);
+}
+
+fn to_fuzz(_: void, data: []const u8) !void {
+    var general_purpose_allocator: std.heap.GeneralPurposeAllocator(.{}) = .init;
+    const gpa = general_purpose_allocator.allocator();
+
+    var arena = ArenaAllocator.init(gpa);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var input = FuzzInput{ .data = data };
+
+    const array_len = try input.int(u8);
+
+    const array = try input.make_array(array_len, alloc);
+
+    const slice0 = try input.slice_array(&array);
+    const slice1 = try input.slice_array(&array);
+    const slice2 = try input.slice_array(&array);
+
+    const dt = try data_type.get_data_type(&array, alloc);
+
+    const concated = conc: {
+        var scratch_arena = ArenaAllocator.init(gpa);
+        defer scratch_arena.deinit();
+        const scratch_alloc = scratch_arena.allocator();
+        break :conc try concat(dt, &.{ slice0, slice1, slice2 }, alloc, scratch_alloc);
+    };
+
+    const slice0_len = length.length(&slice0);
+    const slice1_len = length.length(&slice1);
+    const slice0_out = slice.slice(&concated, 0, length.length(&slice0));
+    const slice1_out = slice.slice(&concated, slice0_len, length.length(&slice1));
+    const slice2_out = slice.slice(&concated, slice0_len + slice1_len, length.length(&slice2));
+
+    equals.equals(&slice0_out, &slice0);
+    equals.equals(&slice1_out, &slice1);
+    equals.equals(&slice2_out, &slice2);
+}
+
+fn to_fuzz_wrap(ctx: void, data: []const u8) anyerror!void {
+    return to_fuzz(ctx, data) catch |e| {
+        if (e == error.ShortInput) return {} else return e;
+    };
+}
+
+test "fuzz concat" {
+    try testing.fuzz({}, to_fuzz_wrap, .{});
 }

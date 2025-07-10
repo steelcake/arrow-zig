@@ -26,7 +26,7 @@ fn ffi_test_case(id: u8, array: ffi.abi.ArrowArray, schema: ffi.abi.ArrowSchema,
     var make_arena = ArenaAllocator.init(testing.allocator);
     const made_arr = test_array.make_array(id, make_arena.allocator()) catch unreachable;
 
-    equals(&imported_arr, &made_arr) catch unreachable;
+    equals(&imported_arr, &made_arr);
 
     const export_ffi_arr = ffi.export_array(.{ .array = &made_arr, .arena = make_arena }) catch unreachable;
 
@@ -53,7 +53,7 @@ fn run_test_impl(id: u8) !void {
 
     const output_array = try make_array(id, allocator);
     const input_array = try ffi.import_array(&input_ffi_array, allocator);
-    try equals(&output_array, &input_array);
+    equals(&output_array, &input_array);
 }
 
 fn run_test(id: u8) !void {

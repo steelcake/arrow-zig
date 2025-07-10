@@ -12,6 +12,7 @@ pub fn build(b: *std.Build) void {
 
     const lib_unit_tests = b.addTest(.{
         .root_module = lib_mod,
+        .use_llvm = true,
     });
 
     const run_lib_unit_tests = b.addRunArtifact(lib_unit_tests);

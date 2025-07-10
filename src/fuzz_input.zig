@@ -3,6 +3,8 @@ const Allocator = std.mem.Allocator;
 const arr = @import("./array.zig");
 const Prng = std.Random.DefaultPrng;
 const bitmap = @import("./bitmap.zig");
+const length = @import("./length.zig");
+const slice_array_impl = @import("./slice.zig").slice;
 
 const Error = error{ OutOfMemory, ShortInput };
 
@@ -23,7 +25,7 @@ pub const FuzzInput = struct {
         if (self.data.len < size) {
             return Error.ShortInput;
         }
-        const i = std.mem.readVarInt(T, self.data[0..size]);
+        const i = std.mem.readVarInt(T, self.data[0..size], .little);
         self.data = self.data[size..];
         return i;
     }
@@ -43,7 +45,7 @@ pub const FuzzInput = struct {
     }
 
     pub fn bytes(self: *FuzzInput, len: u32) Error![]const u8 {
-        if (self.bytes.len < len) {
+        if (self.data.len < len) {
             return Error.ShortInput;
         }
         const b = self.data[0..len];
@@ -54,7 +56,7 @@ pub const FuzzInput = struct {
     pub fn slice(self: *FuzzInput, comptime T: type, len: u32, alloc: Allocator) Error![]T {
         const out = try alloc.alloc(T, len);
         const out_raw: []u8 = @ptrCast(out);
-        @memcpy(out_raw, try self.bytes(out_raw.len));
+        @memcpy(out_raw, try self.bytes(@intCast(out_raw.len)));
         return out;
     }
 
@@ -88,7 +90,7 @@ pub const FuzzInput = struct {
         return .{ .len = len };
     }
 
-    pub fn primitive_array(self: *FuzzInput, comptime T: type, len: u32, alloc: Allocator) Error!arr.PrimitiveArray {
+    pub fn primitive_array(self: *FuzzInput, comptime T: type, len: u32, alloc: Allocator) Error!arr.PrimitiveArray(T) {
         const offset: u32 = try self.int(u8);
         const total_len = len + offset;
 
@@ -96,10 +98,19 @@ pub const FuzzInput = struct {
         const rand = prng.random();
         const values = try alloc.alloc(T, total_len);
 
-        const values_raw: []u8 = @ptrCast(values);
-        rand.bytes(values_raw);
+        switch (T) {
+            f16, f32, f64 => {
+                for (0..total_len) |idx| {
+                    values.ptr[idx] = @floatCast(rand.float(f64));
+                }
+            },
+            else => {
+                const values_raw: []u8 = @ptrCast(values);
+                rand.bytes(values_raw);
+            },
+        }
 
-        var array = arr.PrimitiveArray{
+        var array = arr.PrimitiveArray(T){
             .len = len,
             .offset = offset,
             .values = values,
@@ -138,10 +149,10 @@ pub const FuzzInput = struct {
 
         const data_len = offsets[total_len];
 
-        const data = try alloc.alloc(u8, data_len);
+        const data = try alloc.alloc(u8, @intCast(data_len));
         rand.bytes(data);
 
-        const array = arr.GenericBinaryArray(index_t){
+        var array = arr.GenericBinaryArray(index_t){
             .len = len,
             .offset = offset,
             .data = data,
@@ -225,12 +236,13 @@ pub const FuzzInput = struct {
     }
 
     fn timestamp_unit(self: *FuzzInput) Error!arr.TimestampUnit {
-        const unit_int: u2 = (try self.int(u8)) % 4;
+        const unit_int: u8 = (try self.int(u8)) % 4;
         return switch (unit_int) {
             0 => .second,
             1 => .millisecond,
             2 => .microsecond,
             3 => .nanosecond,
+            else => unreachable,
         };
     }
 
@@ -302,19 +314,19 @@ pub const FuzzInput = struct {
         const total_len: u32 = len + offset;
 
         const max_str_len = 40;
-        const num_buffers = (try self.int(u8)) % 5;
+        const num_buffers = (try self.int(u8)) % 5 + 1;
         const buffer_len = max_str_len * total_len;
 
-        const views = try self.slice(arr.BinaryView, total_len);
+        const views = try self.slice(arr.BinaryView, total_len, alloc);
         for (0..views.len) |view_idx| {
             var view = views.ptr[view_idx];
-            const length = @as(u32, @bitCast(view.length)) % (max_str_len + 1);
+            const view_len = @as(u32, @bitCast(view.length)) % (max_str_len + 1);
 
-            if (length > 12) {
+            if (view_len > 12) {
                 const buffer_idx = @as(u32, @bitCast(view.buffer_idx)) % num_buffers;
                 view.buffer_idx = @bitCast(buffer_idx);
-                const max_offset = buffer_len - length;
-                view.offset = @intCast(view.offset % max_offset);
+                const max_offset = buffer_len - view_len;
+                view.offset = @intCast(@as(u32, @bitCast(view.offset)) % max_offset);
             }
 
             views.ptr[view_idx] = view;
@@ -327,10 +339,10 @@ pub const FuzzInput = struct {
         for (0..num_buffers) |buffer_idx| {
             const buffer = try alloc.alloc(u8, buffer_len);
             rand.bytes(buffer);
-            buffers[buffer_idx] = buffer;
+            buffers[buffer_idx] = buffer.ptr;
         }
 
-        const array = arr.BinaryViewArray{
+        var array = arr.BinaryViewArray{
             .len = len,
             .offset = offset,
             .buffers = buffers,
@@ -348,14 +360,14 @@ pub const FuzzInput = struct {
     }
 
     pub fn utf8_view_array(self: *FuzzInput, len: u32, alloc: Allocator) Error!arr.Utf8ViewArray {
-        return .{ .inner = try self.binary_view(len, alloc) };
+        return .{ .inner = try self.binary_view_array(len, alloc) };
     }
 
     pub fn make_array(self: *FuzzInput, len: u32, alloc: Allocator) Error!arr.Array {
         const kind = (try self.int(u8)) % 44;
 
         switch (kind) {
-            0 => return null_array(len),
+            0 => return .{ .null = null_array(len) },
             1 => return .{ .i8 = try self.primitive_array(i8, len, alloc) },
             2 => return .{ .i16 = try self.primitive_array(i16, len, alloc) },
             3 => return .{ .i32 = try self.primitive_array(i32, len, alloc) },
@@ -424,9 +436,9 @@ pub const FuzzInput = struct {
         const inner_len = offsets[total_len];
 
         const inner = try alloc.create(arr.Array);
-        inner.* = try self.make_array(inner_len, alloc);
+        inner.* = try self.make_array(@intCast(inner_len), alloc);
 
-        const array = arr.GenericListArray(index_t){
+        var array = arr.GenericListArray(index_t){
             .len = len,
             .offset = offset,
             .inner = inner,
@@ -445,6 +457,10 @@ pub const FuzzInput = struct {
 
     pub fn list_view_array(self: *FuzzInput, comptime index_t: arr.IndexType, len: u32, alloc: Allocator) Error!arr.GenericListViewArray(index_t) {
         const I = index_t.to_type();
+        const U = switch (index_t) {
+            .i32 => u32,
+            .i64 => u64,
+        };
 
         const offset: u32 = try self.int(u8);
         const total_len: u32 = len + offset;
@@ -463,15 +479,15 @@ pub const FuzzInput = struct {
 
         const offsets = try self.slice(I, total_len, alloc);
         for (0..total_len) |idx| {
-            offsets.ptr[idx] %= total_size -% sizes.ptr[idx];
+            offsets.ptr[idx] = @bitCast(@as(U, @bitCast(offsets.ptr[idx])) % @as(U, @bitCast(total_size -% sizes.ptr[idx])));
         }
 
         const inner_len = offsets[total_len];
 
         const inner = try alloc.create(arr.Array);
-        inner.* = try self.make_array(inner_len, alloc);
+        inner.* = try self.make_array(@intCast(inner_len), alloc);
 
-        const array = arr.GenericListViewArray(index_t){
+        var array = arr.GenericListViewArray(index_t){
             .len = len,
             .offset = offset,
             .inner = inner,
@@ -511,7 +527,7 @@ pub const FuzzInput = struct {
             field_names[field_idx] = field_name;
         }
 
-        const array = arr.StructArray{
+        var array = arr.StructArray{
             .len = len,
             .offset = offset,
             .field_names = field_names,
@@ -620,7 +636,7 @@ pub const FuzzInput = struct {
         };
     }
 
-    pub fn fixed_size_list_array(self: *FuzzInput, len: u32, alloc: Allocator) Error!arr.FixedSizeBinaryArray {
+    pub fn fixed_size_list_array(self: *FuzzInput, len: u32, alloc: Allocator) Error!arr.FixedSizeListArray {
         const offset: u32 = try self.int(u8);
         const total_len: u32 = len + offset;
 
@@ -686,7 +702,7 @@ pub const FuzzInput = struct {
             offsets.ptr[total_len] = start_offset;
         }
 
-        const array = arr.MapArray{
+        var array = arr.MapArray{
             .len = len,
             .offset = offset,
             .offsets = offsets,
@@ -725,7 +741,7 @@ pub const FuzzInput = struct {
         run_ends.* = .{ .i32 = arr.Int32Array{ .len = total_len, .offset = run_ends_offset, .values = run_ends_values, .null_count = 0, .validity = null } };
 
         const values = try alloc.create(arr.Array);
-        values.* = .{ .binary = try self.binary_array(i32, run_ends_total_len, alloc) };
+        values.* = .{ .binary = try self.binary_array(.i32, run_ends_total_len, alloc) };
 
         return .{
             .len = len,
@@ -741,16 +757,25 @@ pub const FuzzInput = struct {
 
         const num_values = try self.int(u8);
 
-        const keys_data = try self.primitive_array(i32, total_len, alloc);
-        for (0..keys_data.len + keys_data.offset) |idx| {
-            keys_data.values[idx] %= num_values;
+        const keys_offset = try self.int(u8);
+        const keys_total_len = keys_offset + total_len;
+
+        const keys_data = try self.slice(u32, keys_total_len, alloc);
+        for (0..keys_total_len) |idx| {
+            keys_data.ptr[idx] %= num_values;
         }
 
         const keys = try alloc.create(arr.Array);
-        keys.* = .{ .i32 = keys_data };
+        keys.* = .{ .i32 = .{
+            .values = @ptrCast(keys_data),
+            .len = total_len,
+            .offset = keys_offset,
+            .validity = null,
+            .null_count = 0,
+        } };
 
         const values = try alloc.create(arr.Array);
-        values.* = arr.Array{ .binary_view = try self.binary_view_array(.i32, num_values, alloc) };
+        values.* = arr.Array{ .binary_view = try self.binary_view_array(num_values, alloc) };
 
         return arr.DictArray{
             .len = len,
@@ -759,5 +784,16 @@ pub const FuzzInput = struct {
             .values = values,
             .is_ordered = false,
         };
+    }
+
+    pub fn slice_array(self: *FuzzInput, array: *const arr.Array) Error!arr.Array {
+        const array_len = length.length(array);
+        if (array_len == 0) {
+            return array.*;
+        }
+        const slice0_len = (try self.int(u8)) % array_len;
+        const slice0_offset = (try self.int(u8)) % (array_len - slice0_len);
+        const slice0 = slice_array_impl(array, slice0_offset, slice0_len);
+        return slice0;
     }
 };
