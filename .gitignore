@@ -11,6 +11,7 @@ zig-cache/
 *.so
 
 fuzz_corpus/
+fuzz_out/
 
 fuzzer
 crash*
