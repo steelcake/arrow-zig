@@ -10,3 +10,5 @@ zig-cache/
 
 *.so
 
+fuzzer
+crash*

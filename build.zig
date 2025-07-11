@@ -15,6 +15,27 @@ pub fn build(b: *std.Build) void {
         .use_llvm = true,
     });
 
+    const fuzz_lib = b.addStaticLibrary(.{
+        .name = "arrow_zig_fuzz",
+        .use_llvm = true,
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/fuzz_lib.zig"),
+            .target = target,
+            .optimize = optimize,
+            // .fuzz = true,
+            .pic = true,
+        }),
+        .pic = true,
+        .link_libc = true,
+    });
+    fuzz_lib.bundle_compiler_rt = true;
+    // fuzz_lib.pie = true;
+
+    const fuzz_lib_artifact = b.addInstallArtifact(fuzz_lib, .{});
+
+    const fuzz_lib_step = b.step("fuzzlib", "build fuzz library");
+    fuzz_lib_step.dependOn(&fuzz_lib_artifact.step);
+
     const run_lib_unit_tests = b.addRunArtifact(lib_unit_tests);
 
     const test_step = b.step("test", "Run unit tests");
