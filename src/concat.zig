@@ -362,14 +362,14 @@ pub fn concat_run_end_encoded(reet: data_type.RunEndEncodedType, arrays: []const
 
     const values_list = try scratch_alloc.alloc(arr.Array, arrays.len);
     for (arrays, 0..) |array, idx| {
-        values_list[idx] = array.values.*;
+        values_list[idx] = slice.slice(array.values, array.offset, array.len);
     }
     const values = try alloc.create(arr.Array);
     values.* = try concat(reet.value, values_list, alloc, scratch_alloc);
 
     const run_ends_list = try scratch_alloc.alloc(arr.Array, arrays.len);
     for (arrays, 0..) |array, idx| {
-        run_ends_list[idx] = array.run_ends.*;
+        run_ends_list[idx] = slice.slice(array.run_ends, array.offset, array.len);
     }
     const run_ends = try alloc.create(arr.Array);
     run_ends.* = try concat(reet.run_end.to_data_type(), run_ends_list, alloc, scratch_alloc);
