@@ -482,7 +482,7 @@ pub const FuzzInput = struct {
             offsets[0] = 0;
         } else {
             for (0..total_len) |idx| {
-                offsets.ptr[idx] = @bitCast(@as(U, @bitCast(offsets.ptr[idx])) % @as(U, @bitCast(total_size -% sizes.ptr[idx])));
+                offsets.ptr[idx] = @bitCast(@as(U, @bitCast(offsets.ptr[idx])) % @as(U, @bitCast(total_size -% sizes.ptr[idx] +% 1)));
             }
         }
 

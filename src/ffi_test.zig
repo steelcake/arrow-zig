@@ -71,8 +71,10 @@ test "ffi basic" {
 }
 
 fn to_fuzz(_: void, data: []const u8) !void {
-    var general_purpose_allocator: std.heap.GeneralPurposeAllocator(.{}) = .init;
-    const gpa = general_purpose_allocator.allocator();
+    // var general_purpose_allocator: std.heap.GeneralPurposeAllocator(.{}) = .init;
+    // const gpa = general_purpose_allocator.allocator();
+
+    const gpa = testing.allocator;
 
     var export_arena = ArenaAllocator.init(gpa);
     const export_alloc = export_arena.allocator();
