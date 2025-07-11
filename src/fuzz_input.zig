@@ -685,8 +685,15 @@ pub const FuzzInput = struct {
         const offset: u32 = try self.int(u8);
         const total_len: u32 = len + offset;
 
+        const sizes = try self.bytes(total_len);
+
+        var entries_len: u32 = 0;
+        for (sizes) |sz| {
+            entries_len += sz;
+        }
+
         const entries_offset: u32 = try self.int(u8);
-        const entries_total_len: u32 = total_len + entries_offset;
+        const entries_total_len: u32 = entries_len + entries_offset;
 
         const field_names = try alloc.alloc([:0]const u8, 2);
         field_names[0] = "keys";
@@ -703,13 +710,11 @@ pub const FuzzInput = struct {
         entries.* = arr.StructArray{
             .field_names = field_names,
             .field_values = field_values,
-            .len = total_len,
+            .len = entries_len,
             .offset = entries_offset,
             .validity = null,
             .null_count = 0,
         };
-
-        const sizes = try self.bytes(total_len);
 
         const offsets = try alloc.alloc(i32, total_len + 1);
         {
