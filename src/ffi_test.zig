@@ -100,6 +100,6 @@ fn to_fuzz_wrap(ctx: void, data: []const u8) anyerror!void {
     };
 }
 
-test "fuzz concat" {
+test "fuzz ffi_test" {
     try testing.fuzz({}, to_fuzz_wrap, .{});
 }

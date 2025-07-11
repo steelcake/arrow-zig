@@ -478,8 +478,12 @@ pub const FuzzInput = struct {
         }
 
         const offsets = try self.slice(I, total_len, alloc);
-        for (0..total_len) |idx| {
-            offsets.ptr[idx] = @bitCast(@as(U, @bitCast(offsets.ptr[idx])) % @as(U, @bitCast(total_size -% sizes.ptr[idx])));
+        if (total_len == 1) {
+            offsets[0] = 0;
+        } else {
+            for (0..total_len) |idx| {
+                offsets.ptr[idx] = @bitCast(@as(U, @bitCast(offsets.ptr[idx])) % @as(U, @bitCast(total_size -% sizes.ptr[idx])));
+            }
         }
 
         const inner_len = if (total_len > 0) offsets[total_len - 1] else 0;

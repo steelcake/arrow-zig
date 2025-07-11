@@ -110,8 +110,7 @@ pub fn get_list_view_opt(comptime index_type: arr.IndexType, inner: *const arr.A
 pub fn get_fixed_size_list(inner: *const arr.Array, item_width: i32, index: u32) arr.Array {
     const iw = @as(u32, @bitCast(item_width));
     const start = iw *% index;
-    const end = start +% iw;
-    return slice(inner, start, end);
+    return slice(inner, start, iw);
 }
 
 pub fn get_fixed_size_list_opt(inner: *const arr.Array, item_width: i32, validity: [*]const u8, index: u32) ?arr.Array {
