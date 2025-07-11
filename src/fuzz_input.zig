@@ -13,6 +13,8 @@ const Validity = struct {
     null_count: u32,
 };
 
+const MAX_DEPTH = 5;
+
 /// This struct implements structured fuzzing.
 ///
 /// It generates arrow arrays based on given fuzzer generated random data.
@@ -364,6 +366,14 @@ pub const FuzzInput = struct {
     }
 
     pub fn make_array(self: *FuzzInput, len: u32, alloc: Allocator) Error!arr.Array {
+        return make_array_impl(self, len, alloc, 0);
+    }
+
+    fn make_array_impl(self: *FuzzInput, len: u32, alloc: Allocator, depth: u8) Error!arr.Array {
+        if (depth > MAX_DEPTH) {
+            return .{ .null = null_array(len) };
+        }
+
         const kind = (try self.int(u8)) % 44;
 
         switch (kind) {
@@ -394,34 +404,39 @@ pub const FuzzInput = struct {
             24 => return .{ .interval_year_month = try self.interval_array(.year_month, len, alloc) },
             25 => return .{ .interval_day_time = try self.interval_array(.day_time, len, alloc) },
             26 => return .{ .interval_month_day_nano = try self.interval_array(.month_day_nano, len, alloc) },
-            27 => return .{ .list = try self.list_array(.i32, len, alloc) },
-            28 => return .{ .struct_ = try self.struct_array(len, alloc) },
-            29 => return .{ .dense_union = try self.dense_union_array(len, alloc) },
-            30 => return .{ .sparse_union = try self.sparse_union_array(len, alloc) },
+            27 => return .{ .list = try self.list_array(.i32, len, alloc, depth) },
+            28 => return .{ .struct_ = try self.struct_array(len, alloc, depth) },
+            29 => return .{ .dense_union = try self.dense_union_array(len, alloc, depth) },
+            30 => return .{ .sparse_union = try self.sparse_union_array(len, alloc, depth) },
             31 => return .{ .fixed_size_binary = try self.fixed_size_binary_array(len, alloc) },
-            32 => return .{ .fixed_size_list = try self.fixed_size_list_array(len, alloc) },
-            33 => return .{ .map = try self.map_array(len, alloc) },
+            32 => return .{ .fixed_size_list = try self.fixed_size_list_array(len, alloc, depth) },
+            33 => return .{ .map = try self.map_array(len, alloc, depth) },
             34 => return .{ .duration = try self.duration_array(len, alloc) },
             35 => return .{ .large_binary = try self.binary_array(.i64, len, alloc) },
             36 => return .{ .large_utf8 = try self.utf8_array(.i64, len, alloc) },
-            37 => return .{ .large_list = try self.list_array(.i64, len, alloc) },
+            37 => return .{ .large_list = try self.list_array(.i64, len, alloc, depth) },
             38 => return .{ .run_end_encoded = try self.run_end_encoded_array(len, alloc) },
             39 => return .{ .binary_view = try self.binary_view_array(len, alloc) },
             40 => return .{ .utf8_view = try self.utf8_view_array(len, alloc) },
-            41 => return .{ .list_view = try self.list_view_array(.i32, len, alloc) },
-            42 => return .{ .large_list_view = try self.list_view_array(.i64, len, alloc) },
+            41 => return .{ .list_view = try self.list_view_array(.i32, len, alloc, depth) },
+            42 => return .{ .large_list_view = try self.list_view_array(.i64, len, alloc, depth) },
             43 => return .{ .dict = try self.dict_array(len, alloc) },
             else => unreachable,
         }
     }
 
-    pub fn list_array(self: *FuzzInput, comptime index_t: arr.IndexType, len: u32, alloc: Allocator) Error!arr.GenericListArray(index_t) {
+    pub fn list_array(self: *FuzzInput, comptime index_t: arr.IndexType, len: u32, alloc: Allocator, depth: u8) Error!arr.GenericListArray(index_t) {
         const I = index_t.to_type();
 
         const offset: u32 = try self.int(u8);
         const total_len: u32 = len + offset;
 
-        const sizes = try self.bytes(total_len);
+        const sizes_b = try self.bytes(total_len);
+
+        const sizes = try alloc.alloc(u8, sizes_b.len);
+        for (0..total_len) |idx| {
+            sizes.ptr[idx] = sizes_b.ptr[idx] % 10;
+        }
 
         const offsets = try alloc.alloc(I, total_len + 1);
         {
@@ -436,7 +451,7 @@ pub const FuzzInput = struct {
         const inner_len = offsets[total_len];
 
         const inner = try alloc.create(arr.Array);
-        inner.* = try self.make_array(@intCast(inner_len), alloc);
+        inner.* = try self.make_array_impl(@intCast(inner_len), alloc, depth + 1);
 
         var array = arr.GenericListArray(index_t){
             .len = len,
@@ -455,7 +470,7 @@ pub const FuzzInput = struct {
         return array;
     }
 
-    pub fn list_view_array(self: *FuzzInput, comptime index_t: arr.IndexType, len: u32, alloc: Allocator) Error!arr.GenericListViewArray(index_t) {
+    pub fn list_view_array(self: *FuzzInput, comptime index_t: arr.IndexType, len: u32, alloc: Allocator, depth: u8) Error!arr.GenericListViewArray(index_t) {
         const I = index_t.to_type();
         const U = switch (index_t) {
             .i32 => u32,
@@ -469,7 +484,7 @@ pub const FuzzInput = struct {
 
         const sizes = try alloc.alloc(I, total_len);
         for (0..total_len) |idx| {
-            sizes.ptr[idx] = sizes_b.ptr[idx];
+            sizes.ptr[idx] = sizes_b.ptr[idx] % 10;
         }
 
         var total_size: I = 0;
@@ -489,7 +504,7 @@ pub const FuzzInput = struct {
         const inner_len = if (total_len > 0) offsets[total_len - 1] else 0;
 
         const inner = try alloc.create(arr.Array);
-        inner.* = try self.make_array(@intCast(inner_len), alloc);
+        inner.* = try self.make_array_impl(@intCast(inner_len), alloc, depth + 1);
 
         var array = arr.GenericListViewArray(index_t){
             .len = len,
@@ -509,11 +524,11 @@ pub const FuzzInput = struct {
         return array;
     }
 
-    pub fn struct_array(self: *FuzzInput, len: u32, alloc: Allocator) Error!arr.StructArray {
+    pub fn struct_array(self: *FuzzInput, len: u32, alloc: Allocator, depth: u8) Error!arr.StructArray {
         const offset: u32 = try self.int(u8);
         const total_len: u32 = len + offset;
 
-        const num_fields = (try self.int(u8)) % 20 + 1;
+        const num_fields = (try self.int(u8)) % 5 + 1;
 
         const field_values = try alloc.alloc(arr.Array, num_fields);
         const field_names = try alloc.alloc([:0]const u8, num_fields);
@@ -522,7 +537,7 @@ pub const FuzzInput = struct {
         const rand = prng.random();
 
         for (0..num_fields) |field_idx| {
-            field_values[field_idx] = try self.make_array(total_len, alloc);
+            field_values[field_idx] = try self.make_array_impl(total_len, alloc, depth + 1);
 
             const field_name_len = (try self.int(u8)) % 48;
             const field_name = try alloc.allocSentinel(u8, field_name_len, 0);
@@ -548,11 +563,11 @@ pub const FuzzInput = struct {
         return array;
     }
 
-    pub fn dense_union_array(self: *FuzzInput, len: u32, alloc: Allocator) Error!arr.DenseUnionArray {
+    pub fn dense_union_array(self: *FuzzInput, len: u32, alloc: Allocator, depth: u8) Error!arr.DenseUnionArray {
         const offset: u32 = try self.int(u8);
         const total_len: u32 = len + offset;
 
-        const num_children = (try self.int(u8)) % 20 + 1;
+        const num_children = (try self.int(u8)) % 5 + 1;
 
         const children = try alloc.alloc(arr.Array, num_children);
         const type_id_set: []const i8 = @ptrCast(try self.bytes(num_children));
@@ -576,7 +591,7 @@ pub const FuzzInput = struct {
         }
 
         for (0..num_children) |child_idx| {
-            children[child_idx] = try self.make_array(@intCast(current_offsets[child_idx]), alloc);
+            children[child_idx] = try self.make_array_impl(@intCast(current_offsets[child_idx]), alloc, depth + 1);
 
             const field_name_len = (try self.int(u8)) % 48;
             const field_name = try alloc.allocSentinel(u8, field_name_len, 0);
@@ -598,11 +613,11 @@ pub const FuzzInput = struct {
         };
     }
 
-    pub fn sparse_union_array(self: *FuzzInput, len: u32, alloc: Allocator) Error!arr.SparseUnionArray {
+    pub fn sparse_union_array(self: *FuzzInput, len: u32, alloc: Allocator, depth: u8) Error!arr.SparseUnionArray {
         const offset: u32 = try self.int(u8);
         const total_len: u32 = len + offset;
 
-        const num_children = (try self.int(u8)) % 20 + 1;
+        const num_children = (try self.int(u8)) % 5 + 1;
 
         const children = try alloc.alloc(arr.Array, num_children);
         const type_id_set: []const i8 = @ptrCast(try self.bytes(num_children));
@@ -612,7 +627,7 @@ pub const FuzzInput = struct {
         const rand = prng.random();
 
         for (0..num_children) |child_idx| {
-            children[child_idx] = try self.make_array(total_len, alloc);
+            children[child_idx] = try self.make_array_impl(total_len, alloc, depth + 1);
 
             const field_name_len = (try self.int(u8)) % 48;
             const field_name = try alloc.allocSentinel(u8, field_name_len, 0);
@@ -640,14 +655,14 @@ pub const FuzzInput = struct {
         };
     }
 
-    pub fn fixed_size_list_array(self: *FuzzInput, len: u32, alloc: Allocator) Error!arr.FixedSizeListArray {
+    pub fn fixed_size_list_array(self: *FuzzInput, len: u32, alloc: Allocator, depth: u8) Error!arr.FixedSizeListArray {
         const offset: u32 = try self.int(u8);
         const total_len: u32 = len + offset;
 
-        const item_width = try self.int(u8);
+        const item_width = (try self.int(u8)) % 10;
 
         const inner = try alloc.create(arr.Array);
-        inner.* = try self.make_array(item_width * total_len, alloc);
+        inner.* = try self.make_array_impl(item_width * total_len, alloc, depth + 1);
 
         var array = arr.FixedSizeListArray{
             .len = len,
@@ -666,7 +681,7 @@ pub const FuzzInput = struct {
         return array;
     }
 
-    pub fn map_array(self: *FuzzInput, len: u32, alloc: Allocator) Error!arr.MapArray {
+    pub fn map_array(self: *FuzzInput, len: u32, alloc: Allocator, depth: u8) Error!arr.MapArray {
         const offset: u32 = try self.int(u8);
         const total_len: u32 = len + offset;
 
@@ -682,7 +697,7 @@ pub const FuzzInput = struct {
         keys.null_count = 0;
         keys.validity = null;
         field_values[0] = .{ .binary = keys };
-        field_values[1] = try self.make_array(entries_total_len, alloc);
+        field_values[1] = try self.make_array_impl(entries_total_len, alloc, depth + 1);
 
         const entries = try alloc.create(arr.StructArray);
         entries.* = arr.StructArray{
@@ -733,7 +748,7 @@ pub const FuzzInput = struct {
 
         const sizes = try self.bytes(run_ends_total_len);
         const run_ends_values = try alloc.alloc(i32, run_ends_total_len);
-        {
+        if (run_ends_total_len > 0) {
             var run_end: i32 = sizes[0];
             for (1..run_ends_total_len) |idx| {
                 run_ends_values.ptr[idx] = run_end;

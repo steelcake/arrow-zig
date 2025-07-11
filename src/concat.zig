@@ -2117,6 +2117,6 @@ pub fn run_fuzz_test(data: []const u8) anyerror!void {
     return to_fuzz_wrap({}, data);
 }
 
-// test "fuzz concat" {
-//     try testing.fuzz({}, to_fuzz_wrap, .{});
-// }
+test "fuzz concat" {
+    try testing.fuzz({}, to_fuzz_wrap, .{});
+}

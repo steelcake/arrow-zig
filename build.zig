@@ -29,6 +29,7 @@ pub fn build(b: *std.Build) void {
         .link_libc = true,
     });
     fuzz_lib.bundle_compiler_rt = true;
+    // fuzz_lib.sanitize_coverage_trace_pc_guard = true;
     // fuzz_lib.pie = true;
 
     const fuzz_lib_artifact = b.addInstallArtifact(fuzz_lib, .{});
