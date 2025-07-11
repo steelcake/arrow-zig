@@ -392,7 +392,7 @@ fn parse_union_type_id_set(format: []const u8, allocator: Allocator) Error![]con
     const type_id_set = try allocator.alloc(i8, num_type_ids);
 
     for (0..num_type_ids) |i| {
-        type_id_set[i] = std.fmt.parseInt(i8, it.next() orelse unreachable, 10) catch unreachable;
+        type_id_set[i] = std.fmt.parseInt(i8, it.next().?, 10) catch unreachable;
     }
     std.debug.assert(it.next() == null);
 

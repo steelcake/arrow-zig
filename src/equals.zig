@@ -262,16 +262,21 @@ pub fn equals_map(l: *const arr.MapArray, r: *const arr.MapArray) void {
     equals_impl(arr.MapArray, l, r, map_impl);
 }
 
+fn equals_field_names(l_field_names: []const [:0]const u8, r_field_names: []const [:0]const u8) void {
+    assert_equal(l_field_names.len, r_field_names.len);
+    for (0..l_field_names.len) |i| {
+        if (!std.mem.eql(u8, l_field_names[i], r_field_names[i])) {
+            std.debug.panic("left field_name: {any}, right field_name: {any}", .{ l_field_names[i], r_field_names[i] });
+        }
+    }
+}
+
 pub fn equals_sparse_union(l: *const arr.SparseUnionArray, r: *const arr.SparseUnionArray) void {
     assert(l.inner.len == r.inner.len);
 
     assert(std.mem.eql(i8, l.inner.type_id_set, r.inner.type_id_set));
 
-    assert(l.inner.field_names.len == r.inner.field_names.len);
-
-    for (0..l.inner.field_names.len) |i| {
-        assert(std.mem.eql(u8, l.inner.field_names[i], r.inner.field_names[i]));
-    }
+    equals_field_names(l.inner.field_names, r.inner.field_names);
 
     var li: u32 = l.inner.offset;
     var ri: u32 = r.inner.offset;
@@ -285,7 +290,9 @@ pub fn equals_sparse_union(l: *const arr.SparseUnionArray, r: *const arr.SparseU
             if (l.inner.type_id_set.ptr[i] == ltype_id) {
                 break i;
             }
-        } else unreachable;
+        } else {
+            std.debug.panic("left type_ids: {any}, right type_ids: {any}, looking for: {any}", .{ l.inner.type_id_set, r.inner.type_id_set, ltype_id });
+        };
 
         const lval = slice(&l.inner.children.ptr[child_idx], li, 1);
         const rval = slice(&r.inner.children.ptr[child_idx], ri, 1);
@@ -301,11 +308,7 @@ pub fn equals_dense_union(l: *const arr.DenseUnionArray, r: *const arr.DenseUnio
 
     assert(std.mem.eql(i8, l.inner.type_id_set, r.inner.type_id_set));
 
-    assert(l.inner.field_names.len == r.inner.field_names.len);
-
-    for (0..l.inner.field_names.len) |i| {
-        assert(std.mem.eql(u8, l.inner.field_names[i], r.inner.field_names[i]));
-    }
+    equals_field_names(l.inner.field_names, r.inner.field_names);
 
     var li: u32 = l.inner.offset;
     var ri: u32 = r.inner.offset;
@@ -319,7 +322,9 @@ pub fn equals_dense_union(l: *const arr.DenseUnionArray, r: *const arr.DenseUnio
             if (l.inner.type_id_set.ptr[i] == ltype_id) {
                 break i;
             }
-        } else unreachable;
+        } else {
+            std.debug.panic("left type_ids: {any}, right type_ids: {any}, looking for: {any}", .{ l.inner.type_id_set, r.inner.type_id_set, ltype_id });
+        };
 
         const loffset: u32 = @bitCast(l.offsets.ptr[li]);
         const roffset: u32 = @bitCast(r.offsets.ptr[ri]);

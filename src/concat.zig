@@ -1141,10 +1141,12 @@ pub fn concat_binary_view(arrays: []const arr.BinaryViewArray, alloc: Allocator)
     var total_len: u32 = 0;
     var total_null_count: u32 = 0;
     var total_data_len: usize = 0;
+    var total_num_buffers: usize = 0;
 
     for (arrays) |array| {
         total_len += array.len;
         total_null_count += array.null_count;
+        total_num_buffers += array.buffers.len;
 
         for (array.views) |v| {
             if (v.length > 12) {
@@ -1156,7 +1158,16 @@ pub fn concat_binary_view(arrays: []const arr.BinaryViewArray, alloc: Allocator)
     const has_nulls = total_null_count > 0;
     const bitmap_len = (total_len + 7) / 8;
 
-    const buffer = try alloc.alloc(u8, total_data_len);
+    const buffers = try alloc.alloc([*]const u8, total_num_buffers);
+
+    const i32_max: usize = std.math.maxInt(i32);
+
+    // This is the current buffer that will be inserted to the buffers slice
+    var buffer = try alloc.alloc(u8, @min(i32_max, total_data_len));
+
+    // keep the size of remaining data so we don't over allocate next buffers
+    var remaining_data_len = total_data_len - buffer.len;
+
     const views = try alloc.alloc(arr.BinaryView, total_len);
     const validity: []u8 = if (has_nulls) has_n: {
         const v = try alloc.alloc(u8, bitmap_len);
@@ -1164,6 +1175,7 @@ pub fn concat_binary_view(arrays: []const arr.BinaryViewArray, alloc: Allocator)
         break :has_n v;
     } else &.{};
 
+    var buffer_idx: usize = 0;
     var buffer_offset: i32 = 0;
     var write_offset: u32 = 0;
     for (arrays) |array| {
@@ -1172,6 +1184,16 @@ pub fn concat_binary_view(arrays: []const arr.BinaryViewArray, alloc: Allocator)
             if (v.length <= 12) {
                 views.ptr[wi] = v;
             } else {
+                // Handle the case where the current data buffer is at full capacity so we need to create another one
+                if (@as(u32, @bitCast(buffer_offset)) + @as(u32, @bitCast(v.length)) > buffer.len) {
+                    buffers[buffer_idx] = buffer.ptr;
+                    buffer_idx += 1;
+                    buffer_offset = 0;
+                    // Don't allocate over i32_max because the view.buffer_index has to be of i32 type
+                    buffer = try alloc.alloc(u8, @min(i32_max, remaining_data_len));
+                    remaining_data_len -= buffer.len;
+                }
+
                 views.ptr[wi] = arr.BinaryView{
                     .length = v.length,
                     .prefix = v.prefix,
@@ -1202,8 +1224,9 @@ pub fn concat_binary_view(arrays: []const arr.BinaryViewArray, alloc: Allocator)
         write_offset += array.len;
     }
 
-    const buffers = try alloc.alloc([*]const u8, 1);
-    buffers[0] = buffer.ptr;
+    if (buffer_offset > 0) {
+        buffers[buffer_idx] = buffer.ptr;
+    }
 
     return .{
         .len = total_len,
@@ -1952,7 +1975,7 @@ test "concat_struct non-null" {
         },
     };
 
-    const asd = try builder.Int32Builder.from_slice(&.{ 1, 2, 3, 69 }, false, alloc);
+    const asd = slice.slice_primitive(i32, &(try builder.Int32Builder.from_slice(&.{ 1, 2, 3, 69, 11 }, false, alloc)), 1, 4);
     const asd_a = arr.Array{ .i32 = asd };
     const qwe = try builder.Int32Builder.from_slice(&.{ 1131, 0, 0, 0 }, false, alloc);
     const qwe_a = arr.Array{ .i32 = qwe };
@@ -1960,8 +1983,8 @@ test "concat_struct non-null" {
     const arr0 = try builder.StructBuilder.from_slice(field_names, &.{ asd_a, qwe_a }, asd.len, false, alloc);
     const arr1 = try builder.StructBuilder.from_slice(field_names, &.{ qwe_a, asd_a }, asd.len, false, alloc);
 
-    const asd_concat = arr.Array{ .i32 = try builder.Int32Builder.from_slice(&.{ 1, 2, 3, 69, 1131, 0, 0, 0 }, false, alloc) };
-    const qwe_concat = arr.Array{ .i32 = try builder.Int32Builder.from_slice(&.{ 1131, 0, 0, 0, 1, 2, 3, 69 }, false, alloc) };
+    const asd_concat = arr.Array{ .i32 = try builder.Int32Builder.from_slice(&.{ 2, 3, 69, 11, 1131, 0, 0, 0 }, false, alloc) };
+    const qwe_concat = arr.Array{ .i32 = try builder.Int32Builder.from_slice(&.{ 1131, 0, 0, 0, 2, 3, 69, 11 }, false, alloc) };
     const expected = try builder.StructBuilder.from_slice(field_names, &.{ asd_concat, qwe_concat }, asd.len * 2, false, alloc);
 
     const result = try concat_struct(dt, &.{ arr0, arr1 }, alloc, alloc);
@@ -2041,35 +2064,43 @@ fn to_fuzz(_: void, data: []const u8) !void {
     defer arena.deinit();
     const alloc = arena.allocator();
 
+    var concat_arena = ArenaAllocator.init(gpa);
+    defer concat_arena.deinit();
+    const concat_alloc = concat_arena.allocator();
+
     var input = FuzzInput{ .data = data };
 
     const array_len = try input.int(u8);
 
     const array = try input.make_array(array_len, alloc);
 
-    const slice0 = try input.slice_array(&array);
-    const slice1 = try input.slice_array(&array);
-    const slice2 = try input.slice_array(&array);
+    for (0..3) |_| {
+        const slice0 = try input.slice_array(&array);
+        const slice1 = try input.slice_array(&array);
+        const slice2 = try input.slice_array(&array);
 
-    const dt = try data_type.get_data_type(&array, alloc);
+        const dt = try data_type.get_data_type(&array, concat_alloc);
 
-    const concated = conc: {
-        var scratch_arena = ArenaAllocator.init(gpa);
-        defer scratch_arena.deinit();
-        const scratch_alloc = scratch_arena.allocator();
-        break :conc try concat(dt, &.{ slice0, slice1, slice2 }, alloc, scratch_alloc);
-    };
+        const concated = conc: {
+            var scratch_arena = ArenaAllocator.init(gpa);
+            defer scratch_arena.deinit();
+            const scratch_alloc = scratch_arena.allocator();
+            break :conc try concat(dt, &.{ slice0, slice1, slice2 }, concat_alloc, scratch_alloc);
+        };
 
-    const slice0_len = length.length(&slice0);
-    const slice1_len = length.length(&slice1);
-    const slice2_len = length.length(&slice2);
-    const slice0_out = slice.slice(&concated, 0, slice0_len);
-    const slice1_out = slice.slice(&concated, slice0_len, slice1_len);
-    const slice2_out = slice.slice(&concated, slice0_len + slice1_len, slice2_len);
+        const slice0_len = length.length(&slice0);
+        const slice1_len = length.length(&slice1);
+        const slice2_len = length.length(&slice2);
+        const slice0_out = slice.slice(&concated, 0, slice0_len);
+        const slice1_out = slice.slice(&concated, slice0_len, slice1_len);
+        const slice2_out = slice.slice(&concated, slice0_len + slice1_len, slice2_len);
 
-    equals.equals(&slice0_out, &slice0);
-    equals.equals(&slice1_out, &slice1);
-    equals.equals(&slice2_out, &slice2);
+        equals.equals(&slice0_out, &slice0);
+        equals.equals(&slice1_out, &slice1);
+        equals.equals(&slice2_out, &slice2);
+
+        std.debug.assert(concat_arena.reset(.retain_capacity));
+    }
 }
 
 fn to_fuzz_wrap(ctx: void, data: []const u8) anyerror!void {

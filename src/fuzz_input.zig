@@ -482,7 +482,7 @@ pub const FuzzInput = struct {
             offsets.ptr[idx] = @bitCast(@as(U, @bitCast(offsets.ptr[idx])) % @as(U, @bitCast(total_size -% sizes.ptr[idx])));
         }
 
-        const inner_len = offsets[total_len];
+        const inner_len = if (total_len > 0) offsets[total_len - 1] else 0;
 
         const inner = try alloc.create(arr.Array);
         inner.* = try self.make_array(@intCast(inner_len), alloc);
@@ -509,7 +509,7 @@ pub const FuzzInput = struct {
         const offset: u32 = try self.int(u8);
         const total_len: u32 = len + offset;
 
-        const num_fields = (try self.int(u8)) % 20;
+        const num_fields = (try self.int(u8)) % 20 + 1;
 
         const field_values = try alloc.alloc(arr.Array, num_fields);
         const field_names = try alloc.alloc([:0]const u8, num_fields);
@@ -522,7 +522,7 @@ pub const FuzzInput = struct {
 
             const field_name_len = (try self.int(u8)) % 48;
             const field_name = try alloc.allocSentinel(u8, field_name_len, 0);
-            rand.bytes(field_name);
+            rand_bytes_zero_sentinel(rand, field_name);
 
             field_names[field_idx] = field_name;
         }
@@ -548,7 +548,7 @@ pub const FuzzInput = struct {
         const offset: u32 = try self.int(u8);
         const total_len: u32 = len + offset;
 
-        const num_children = (try self.int(u8)) % 20;
+        const num_children = (try self.int(u8)) % 20 + 1;
 
         const children = try alloc.alloc(arr.Array, num_children);
         const type_id_set: []const i8 = @ptrCast(try self.bytes(num_children));
@@ -565,7 +565,7 @@ pub const FuzzInput = struct {
 
         for (try self.bytes(total_len), 0..) |b, idx| {
             const child_idx = b % num_children;
-            type_ids[idx] = @as(i8, @bitCast(child_idx));
+            type_ids[idx] = type_id_set.ptr[child_idx];
             const current_offset = current_offsets[child_idx];
             current_offsets[child_idx] = current_offset + 1;
             offsets[idx] = current_offset;
@@ -576,7 +576,7 @@ pub const FuzzInput = struct {
 
             const field_name_len = (try self.int(u8)) % 48;
             const field_name = try alloc.allocSentinel(u8, field_name_len, 0);
-            rand.bytes(field_name);
+            rand_bytes_zero_sentinel(rand, field_name);
 
             field_names[child_idx] = field_name;
         }
@@ -598,7 +598,7 @@ pub const FuzzInput = struct {
         const offset: u32 = try self.int(u8);
         const total_len: u32 = len + offset;
 
-        const num_children = (try self.int(u8)) % 20;
+        const num_children = (try self.int(u8)) % 20 + 1;
 
         const children = try alloc.alloc(arr.Array, num_children);
         const type_id_set: []const i8 = @ptrCast(try self.bytes(num_children));
@@ -612,7 +612,7 @@ pub const FuzzInput = struct {
 
             const field_name_len = (try self.int(u8)) % 48;
             const field_name = try alloc.allocSentinel(u8, field_name_len, 0);
-            rand.bytes(field_name);
+            rand_bytes_zero_sentinel(rand, field_name);
 
             field_names[child_idx] = field_name;
         }
@@ -621,7 +621,7 @@ pub const FuzzInput = struct {
 
         for (try self.bytes(total_len), 0..) |b, idx| {
             const child_idx = b % num_children;
-            type_ids[idx] = @as(i8, @bitCast(child_idx));
+            type_ids[idx] = type_id_set.ptr[child_idx];
         }
 
         return .{
@@ -797,3 +797,13 @@ pub const FuzzInput = struct {
         return slice0;
     }
 };
+
+fn rand_bytes_zero_sentinel(rand: std.Random, out: []u8) void {
+    rand.bytes(out);
+
+    for (0..out.len) |i| {
+        if (out.ptr[i] == 0) {
+            out.ptr[i] = 1;
+        }
+    }
+}
