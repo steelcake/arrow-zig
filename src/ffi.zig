@@ -507,7 +507,7 @@ fn import_bool(array: *const FFI_Array) arr.BoolArray {
 }
 
 fn import_dict(array: *const FFI_Array, allocator: Allocator) Error!arr.DictArray {
-    const keys_arr = try import_array(array, allocator);
+    const keys_arr = import_dict_keys(array);
     const keys = try allocator.create(arr.Array);
     keys.* = switch (keys_arr) {
         .i8 => |x| .{ .i8 = x },
@@ -549,6 +549,39 @@ fn import_null(array: *const FFI_Array) arr.NullArray {
     return .{
         .len = len,
     };
+}
+
+pub fn import_dict_keys(array: *const FFI_Array) arr.Array {
+    const format: []const u8 = std.mem.span(array.schema.format);
+    std.debug.assert(format.len > 0);
+
+    switch (format[0]) {
+        'c' => {
+            return .{ .i8 = import_primitive(i8, array) };
+        },
+        'C' => {
+            return .{ .u8 = import_primitive(u8, array) };
+        },
+        's' => {
+            return .{ .i16 = import_primitive(i16, array) };
+        },
+        'S' => {
+            return .{ .u16 = import_primitive(u16, array) };
+        },
+        'i' => {
+            return .{ .i32 = import_primitive(i32, array) };
+        },
+        'I' => {
+            return .{ .u32 = import_primitive(u32, array) };
+        },
+        'l' => {
+            return .{ .i64 = import_primitive(i64, array) };
+        },
+        'L' => {
+            return .{ .u64 = import_primitive(u64, array) };
+        },
+        else => unreachable,
+    }
 }
 
 /// Imports array from FFI, only errors if an allocation fails.
