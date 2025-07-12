@@ -501,7 +501,7 @@ pub const FuzzInput = struct {
             }
         }
 
-        const inner_len = if (total_len > 0) offsets[total_len - 1] else 0;
+        const inner_len = total_size;
 
         const inner = try alloc.create(arr.Array);
         inner.* = try self.make_array_impl(@intCast(inner_len), alloc, depth + 1);
@@ -779,7 +779,7 @@ pub const FuzzInput = struct {
         const offset: u32 = try self.int(u8);
         const total_len: u32 = len + offset;
 
-        const num_values = try self.int(u8);
+        const num_values = @as(u32, try self.int(u8)) + 1;
 
         const keys_offset = try self.int(u8);
         const keys_total_len = keys_offset + total_len;
