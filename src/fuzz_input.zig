@@ -317,7 +317,17 @@ pub const FuzzInput = struct {
 
         const max_str_len = 40;
         const num_buffers = (try self.int(u8)) % 5 + 1;
-        const buffer_len = max_str_len * total_len;
+        const buffer_len = @max(max_str_len + 5, (try self.int(u16)) % (1 << 8) + 1);
+
+        var prng = try self.make_prng();
+        const rand = prng.random();
+
+        const buffers = try alloc.alloc([*]const u8, num_buffers);
+        for (0..num_buffers) |buffer_idx| {
+            const buffer = try alloc.alloc(u8, buffer_len);
+            rand.bytes(buffer);
+            buffers[buffer_idx] = buffer.ptr;
+        }
 
         const views = try self.slice(arr.BinaryView, total_len, alloc);
         for (0..views.len) |view_idx| {
@@ -328,20 +338,12 @@ pub const FuzzInput = struct {
                 const buffer_idx = @as(u32, @bitCast(view.buffer_idx)) % num_buffers;
                 view.buffer_idx = @bitCast(buffer_idx);
                 const max_offset = buffer_len - view_len;
-                view.offset = @intCast(@as(u32, @bitCast(view.offset)) % max_offset);
+                const voffset = @as(u32, @bitCast(view.offset)) % max_offset;
+                view.offset = @intCast(voffset);
+                view.prefix = std.mem.readVarInt(i32, buffers[buffer_idx][voffset .. voffset + 4], .little);
             }
 
             views.ptr[view_idx] = view;
-        }
-
-        var prng = try self.make_prng();
-        const rand = prng.random();
-
-        const buffers = try alloc.alloc([*]const u8, num_buffers);
-        for (0..num_buffers) |buffer_idx| {
-            const buffer = try alloc.alloc(u8, buffer_len);
-            rand.bytes(buffer);
-            buffers[buffer_idx] = buffer.ptr;
         }
 
         var array = arr.BinaryViewArray{
@@ -591,7 +593,7 @@ pub const FuzzInput = struct {
         }
 
         for (0..num_children) |child_idx| {
-            children[child_idx] = try self.make_array_impl(@intCast(current_offsets[child_idx]), alloc, depth + 1);
+            children[child_idx] = try self.make_array_impl(@as(u32, @intCast(current_offsets[child_idx])), alloc, depth + 1);
 
             const field_name_len = (try self.int(u8)) % 48;
             const field_name = try alloc.allocSentinel(u8, field_name_len, 0);

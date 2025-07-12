@@ -566,6 +566,8 @@ pub fn concat_dense_union(dt: data_type.UnionType, arrays: []const arr.DenseUnio
     const offsets = try alloc.alloc(i32, total_len);
     const type_ids = try alloc.alloc(i8, total_len);
     var write_offset: i32 = 0;
+    const child_offsets = try alloc.alloc(i32, dt.field_names.len);
+    @memset(child_offsets, 0);
     for (arrays) |array| {
         var w_idx: usize = @intCast(write_offset);
         var idx: u32 = array.inner.offset;
@@ -573,12 +575,24 @@ pub fn concat_dense_union(dt: data_type.UnionType, arrays: []const arr.DenseUnio
             idx += 1;
             w_idx += 1;
         }) {
-            offsets.ptr[w_idx] = array.offsets.ptr[idx] +% write_offset;
-            type_ids.ptr[w_idx] = array.inner.type_ids.ptr[idx];
+            const type_id = array.inner.type_ids.ptr[idx];
+            const child_idx = for (0..dt.type_id_set.len) |i| {
+                if (dt.type_id_set.ptr[i] == type_id) {
+                    break i;
+                }
+            } else unreachable;
+            const child_offset = child_offsets.ptr[child_idx];
+            offsets.ptr[w_idx] = array.offsets.ptr[idx] +% child_offset;
+            type_ids.ptr[w_idx] = type_id;
         }
 
         write_offset = @intCast(w_idx);
+
+        for (0..dt.field_names.len) |child_idx| {
+            child_offsets[child_idx] += @intCast(length.length(&array.inner.children[child_idx]));
+        }
     }
+    std.debug.assert(write_offset == total_len);
 
     const type_id_set = try alloc.alloc(i8, dt.type_id_set.len);
     for (dt.type_id_set, 0..) |tid, idx| {
@@ -1229,13 +1243,14 @@ pub fn concat_binary_view(arrays: []const arr.BinaryViewArray, alloc: Allocator)
 
     if (buffer_offset > 0) {
         buffers[buffer_idx] = buffer.ptr;
+        buffer_idx += 1;
     }
 
     return .{
         .len = total_len,
         .null_count = total_null_count,
         .validity = if (has_nulls) validity else null,
-        .buffers = buffers,
+        .buffers = buffers[0..buffer_idx],
         .views = views,
         .offset = 0,
     };

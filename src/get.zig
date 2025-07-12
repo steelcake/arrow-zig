@@ -55,7 +55,7 @@ pub fn get_binary_view(buffers: [*]const [*]const u8, views: [*]const arr.Binary
     const vo = @as(u32, @bitCast(view.offset));
     const vbi = @as(u32, @bitCast(view.buffer_idx));
     return if (view.length <= 12)
-        @as([*]const u8, @ptrCast(&views[index].prefix))[0..vl]
+        @as([*]const u8, @ptrCast(&views[index]))[4 .. vl +% 4]
     else
         buffers[vbi][vo .. vo + vl];
 }
