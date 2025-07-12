@@ -1250,11 +1250,14 @@ pub fn concat_binary_view(arrays: []const arr.BinaryViewArray, alloc: Allocator)
                     remaining_data_len -= buffer.len;
                 }
 
+                const boffset: u32 = @bitCast(buffer_offset);
+                const vlen: u32 = @bitCast(v.length);
+                @memcpy(buffer[boffset .. boffset + vlen], array.buffers[@as(u32, @bitCast(v.buffer_idx))][@as(u32, @bitCast(v.offset))..@as(u32, @bitCast(v.offset + v.length))]);
                 views.ptr[wi] = arr.BinaryView{
                     .length = v.length,
                     .prefix = v.prefix,
                     .offset = @bitCast(buffer_offset),
-                    .buffer_idx = 0,
+                    .buffer_idx = @intCast(buffer_idx),
                 };
                 buffer_offset += v.length;
             }
