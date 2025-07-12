@@ -324,7 +324,7 @@ pub const BinaryView = extern struct {
 
 pub const BinaryViewArray = struct {
     views: []const BinaryView,
-    buffers: []const [*]const u8,
+    buffers: []const []const u8,
     validity: ?[]const u8,
     len: u32,
     offset: u32,

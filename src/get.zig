@@ -49,7 +49,7 @@ pub fn get_binary_opt(comptime index_type: arr.IndexType, data: [*]const u8, off
         null;
 }
 
-pub fn get_binary_view(buffers: [*]const [*]const u8, views: [*]const arr.BinaryView, index: u32) []const u8 {
+pub fn get_binary_view(buffers: [*]const []const u8, views: [*]const arr.BinaryView, index: u32) []const u8 {
     const view = views[index];
     const vl = @as(u32, @bitCast(view.length));
     const vo = @as(u32, @bitCast(view.offset));
@@ -57,7 +57,7 @@ pub fn get_binary_view(buffers: [*]const [*]const u8, views: [*]const arr.Binary
     return if (view.length <= 12)
         @as([*]const u8, @ptrCast(&views[index]))[4 .. vl +% 4]
     else
-        buffers[vbi][vo .. vo + vl];
+        buffers[vbi].ptr[vo .. vo + vl];
 }
 
 pub fn get_binary_view_opt(buffers: [*]const [*]const u8, views: [*]const arr.BinaryView, validity: [*]const u8, index: u32) ?[]const u8 {

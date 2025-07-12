@@ -98,7 +98,7 @@ fn import_binary(comptime index_type: arr.IndexType, array: *const FFI_Array) ar
     };
 }
 
-fn import_binary_view(array: *const FFI_Array) arr.BinaryViewArray {
+fn import_binary_view(array: *const FFI_Array, alloc: Allocator) Error!arr.BinaryViewArray {
     const buffers = array.array.buffers orelse unreachable;
 
     std.debug.assert(array.array.n_buffers > 2);
@@ -111,10 +111,29 @@ fn import_binary_view(array: *const FFI_Array) arr.BinaryViewArray {
     const validity = import_validity(null_count, buffers[0], size);
 
     const num_data_buffers: u32 = @intCast(array.array.n_buffers - 2);
-    const data_buffers = @as([*]const [*]const u8, @ptrCast(&buffers[2]))[0..num_data_buffers];
+
+    const data_buffers_raw = @as([*]const [*]const u8, @ptrCast(&buffers[2]))[0..num_data_buffers];
+    const data_buffers = try alloc.alloc([]const u8, num_data_buffers);
+    @memset(data_buffers, &.{});
+
+    const views = import_buffer(arr.BinaryView, buffers[1], size);
+
+    var idx: u32 = offset;
+    while (idx < offset + len) : (idx += 1) {
+        const view = views.ptr[idx];
+        if (view.length > 12) {
+            const buffer_idx = @as(u32, @bitCast(view.buffer_idx));
+            const buffer_offset = @as(u32, @bitCast(view.offset));
+            const view_len = @as(u32, @bitCast(view.length));
+
+            if (data_buffers[buffer_idx].len < buffer_offset + view_len) {
+                data_buffers[buffer_idx] = data_buffers_raw[buffer_idx][0 .. buffer_offset + view_len];
+            }
+        }
+    }
 
     return .{
-        .views = import_buffer(arr.BinaryView, buffers[1], size),
+        .views = views,
         .buffers = data_buffers,
         .validity = validity,
         .len = len,
@@ -649,8 +668,8 @@ pub fn import_array(array: *const FFI_Array, allocator: Allocator) Error!arr.Arr
         },
         'v' => {
             return switch (format[1]) {
-                'z' => .{ .binary_view = import_binary_view(array) },
-                'u' => .{ .utf8_view = .{ .inner = import_binary_view(array) } },
+                'z' => .{ .binary_view = try import_binary_view(array, allocator) },
+                'u' => .{ .utf8_view = .{ .inner = try import_binary_view(array, allocator) } },
                 else => unreachable,
             };
         },
@@ -1492,7 +1511,7 @@ fn export_binary_view(array: *const arr.BinaryViewArray, format: [:0]const u8, p
     buffers[1] = array.views.ptr;
 
     for (array.buffers, 0..) |b, i| {
-        buffers[i + 2] = b;
+        buffers[i + 2] = b.ptr;
     }
 
     return .{

@@ -1214,7 +1214,7 @@ pub fn concat_binary_view(arrays: []const arr.BinaryViewArray, alloc: Allocator)
     const has_nulls = total_null_count > 0;
     const bitmap_len = (total_len + 7) / 8;
 
-    const buffers = try alloc.alloc([*]const u8, total_num_buffers);
+    const buffers = try alloc.alloc([]const u8, total_num_buffers);
 
     const i32_max: usize = std.math.maxInt(i32);
 
@@ -1242,7 +1242,7 @@ pub fn concat_binary_view(arrays: []const arr.BinaryViewArray, alloc: Allocator)
             } else {
                 // Handle the case where the current data buffer is at full capacity so we need to create another one
                 if (@as(u32, @bitCast(buffer_offset)) + @as(u32, @bitCast(v.length)) > buffer.len) {
-                    buffers[buffer_idx] = buffer.ptr;
+                    buffers[buffer_idx] = buffer;
                     buffer_idx += 1;
                     buffer_offset = 0;
                     // Don't allocate over i32_max because the view.buffer_index has to be of i32 type
@@ -1281,7 +1281,7 @@ pub fn concat_binary_view(arrays: []const arr.BinaryViewArray, alloc: Allocator)
     }
 
     if (buffer_offset > 0) {
-        buffers[buffer_idx] = buffer.ptr;
+        buffers[buffer_idx] = buffer;
         buffer_idx += 1;
     }
 

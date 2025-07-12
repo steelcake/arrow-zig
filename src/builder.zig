@@ -787,7 +787,7 @@ pub const DurationBuilder = struct {
 pub const BinaryViewBuilder = struct {
     const Self = @This();
 
-    buffers: [][*]const u8,
+    buffers: [][]const u8,
     buffer: []u8,
     buffer_len: i32,
     validity: ?[]u8,
@@ -835,7 +835,7 @@ pub const BinaryViewBuilder = struct {
         const buffer = try allocator.alloc(u8, buffer_capacity);
         @memset(buffer, 0);
 
-        const buffers = try allocator.alloc([*]const u8, 1);
+        const buffers = try allocator.alloc([]const u8, 1);
         buffers[0] = &.{};
 
         const num_bytes = (capacity + 7) / 8;
@@ -872,7 +872,7 @@ pub const BinaryViewBuilder = struct {
             return Error.LenCapacityMismatch;
         }
 
-        self.buffers[0] = self.buffer.ptr;
+        self.buffers[0] = self.buffer;
 
         return arr.BinaryViewArray{
             .views = self.views,

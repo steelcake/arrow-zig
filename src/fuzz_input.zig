@@ -322,11 +322,11 @@ pub const FuzzInput = struct {
         var prng = try self.make_prng();
         const rand = prng.random();
 
-        const buffers = try alloc.alloc([*]const u8, num_buffers);
+        const buffers = try alloc.alloc([]const u8, num_buffers);
         for (0..num_buffers) |buffer_idx| {
             const buffer = try alloc.alloc(u8, buffer_len);
             rand.bytes(buffer);
-            buffers[buffer_idx] = buffer.ptr;
+            buffers[buffer_idx] = buffer;
         }
 
         const views = try self.slice(arr.BinaryView, total_len, alloc);

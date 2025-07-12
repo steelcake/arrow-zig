@@ -106,7 +106,9 @@ fn binary_view_impl(l: *const arr.BinaryViewArray, r: *const arr.BinaryViewArray
     const lvalue = get.get_binary_view(l.buffers.ptr, l.views.ptr, li);
     const rvalue = get.get_binary_view(r.buffers.ptr, r.views.ptr, ri);
 
-    assert(std.mem.eql(u8, lvalue, rvalue));
+    if (!std.mem.eql(u8, lvalue, rvalue)) {
+        std.debug.panic("{any} != {any}", .{ lvalue, rvalue });
+    }
 }
 
 pub fn equals_binary_view(l: *const arr.BinaryViewArray, r: *const arr.BinaryViewArray) void {
