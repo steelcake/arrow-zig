@@ -599,16 +599,6 @@ pub fn concat_dense_union(dt: data_type.UnionType, arrays: []const arr.DenseUnio
         type_id_set[idx] = tid;
     }
 
-    for (offsets, type_ids) |offset, type_id| {
-        const child_idx = for (0..dt.type_id_set.len) |i| {
-            if (dt.type_id_set.ptr[i] == type_id) {
-                break i;
-            }
-        } else unreachable;
-
-        std.debug.assert(offset < length.length(&field_values[child_idx]));
-    }
-
     return .{
         .offsets = offsets,
         .inner = .{

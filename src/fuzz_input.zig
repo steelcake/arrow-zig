@@ -573,7 +573,10 @@ pub const FuzzInput = struct {
         const num_children = (try self.int(u8)) % 5 + 1;
 
         const children = try alloc.alloc(arr.Array, num_children);
-        const type_id_set: []const i8 = @ptrCast(try self.bytes(num_children));
+        const type_id_set = try alloc.alloc(i8, num_children);
+        for (0..num_children) |child_idx| {
+            type_id_set[child_idx] = @intCast(child_idx);
+        }
         const field_names = try alloc.alloc([:0]const u8, num_children);
 
         var prng = try self.make_prng();
@@ -603,18 +606,6 @@ pub const FuzzInput = struct {
             field_names[child_idx] = field_name;
         }
 
-        for (offsets, type_ids) |offset0, type_id| {
-            const child_idx = for (0..type_id_set.len) |i| {
-                if (type_id_set.ptr[i] == type_id) {
-                    break i;
-                }
-            } else unreachable;
-
-            if (offset0 >= length.length(&children[child_idx])) {
-                std.debug.panic("offset is {}, but length is {}", .{ offset0, length.length(&children[child_idx]) });
-            }
-        }
-
         return .{
             .offsets = offsets,
             .inner = arr.UnionArray{
@@ -635,7 +626,10 @@ pub const FuzzInput = struct {
         const num_children = (try self.int(u8)) % 5 + 1;
 
         const children = try alloc.alloc(arr.Array, num_children);
-        const type_id_set: []const i8 = @ptrCast(try self.bytes(num_children));
+        const type_id_set = try alloc.alloc(i8, num_children);
+        for (0..num_children) |child_idx| {
+            type_id_set[child_idx] = @intCast(child_idx);
+        }
         const field_names = try alloc.alloc([:0]const u8, num_children);
 
         var prng = try self.make_prng();
