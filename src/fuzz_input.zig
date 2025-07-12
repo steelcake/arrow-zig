@@ -333,6 +333,7 @@ pub const FuzzInput = struct {
         for (0..views.len) |view_idx| {
             var view = views.ptr[view_idx];
             const view_len = @as(u32, @bitCast(view.length)) % (max_str_len + 1);
+            view.length = @bitCast(view_len);
 
             if (view_len > 12) {
                 const buffer_idx = @as(u32, @bitCast(view.buffer_idx)) % num_buffers;
@@ -600,6 +601,18 @@ pub const FuzzInput = struct {
             rand_bytes_zero_sentinel(rand, field_name);
 
             field_names[child_idx] = field_name;
+        }
+
+        for (offsets, type_ids) |offset0, type_id| {
+            const child_idx = for (0..type_id_set.len) |i| {
+                if (type_id_set.ptr[i] == type_id) {
+                    break i;
+                }
+            } else unreachable;
+
+            if (offset0 >= length.length(&children[child_idx])) {
+                std.debug.panic("offset is {}, but length is {}", .{ offset0, length.length(&children[child_idx]) });
+            }
         }
 
         return .{
