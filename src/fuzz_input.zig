@@ -333,6 +333,7 @@ pub const FuzzInput = struct {
         for (0..views.len) |view_idx| {
             var view = views.ptr[view_idx];
             const view_len = @as(u32, @bitCast(view.length)) % (max_str_len + 1);
+            view.length = @bitCast(view_len);
 
             if (view_len > 12) {
                 const buffer_idx = @as(u32, @bitCast(view.buffer_idx)) % num_buffers;
@@ -572,7 +573,10 @@ pub const FuzzInput = struct {
         const num_children = (try self.int(u8)) % 5 + 1;
 
         const children = try alloc.alloc(arr.Array, num_children);
-        const type_id_set: []const i8 = @ptrCast(try self.bytes(num_children));
+        const type_id_set = try alloc.alloc(i8, num_children);
+        for (0..num_children) |child_idx| {
+            type_id_set[child_idx] = @intCast(child_idx);
+        }
         const field_names = try alloc.alloc([:0]const u8, num_children);
 
         var prng = try self.make_prng();
@@ -622,7 +626,10 @@ pub const FuzzInput = struct {
         const num_children = (try self.int(u8)) % 5 + 1;
 
         const children = try alloc.alloc(arr.Array, num_children);
-        const type_id_set: []const i8 = @ptrCast(try self.bytes(num_children));
+        const type_id_set = try alloc.alloc(i8, num_children);
+        for (0..num_children) |child_idx| {
+            type_id_set[child_idx] = @intCast(child_idx);
+        }
         const field_names = try alloc.alloc([:0]const u8, num_children);
 
         var prng = try self.make_prng();

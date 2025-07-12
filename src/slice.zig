@@ -14,7 +14,7 @@ const OffsetLen = struct {
 
 fn slice_impl(validity: ?[]const u8, base: OffsetLen, offset: u32, len: u32) OffsetLen {
     if (base.len < offset + len) {
-        unreachable;
+        std.debug.panic("len is {} but offset+new_len is {}", .{ base.len, offset + len });
     }
 
     var out = OffsetLen{ .offset = base.offset + offset, .len = len, .null_count = 0 };
