@@ -2119,7 +2119,14 @@ test "concat_struct empty" {
 fn to_fuzz(_: void, data: []const u8) !void {
     var general_purpose_allocator: std.heap.GeneralPurposeAllocator(.{}) = .init;
     const gpa = general_purpose_allocator.allocator();
-    // const gpa = testing.allocator;
+    defer {
+        switch (general_purpose_allocator.deinit()) {
+            .ok => {},
+            .leak => |l| {
+                std.debug.panic("LEAK: {any}", .{l});
+            },
+        }
+    }
 
     var arena = ArenaAllocator.init(gpa);
     defer arena.deinit();

@@ -73,7 +73,14 @@ test "ffi basic" {
 fn to_fuzz(_: void, data: []const u8) !void {
     var general_purpose_allocator: std.heap.GeneralPurposeAllocator(.{}) = .init;
     const gpa = general_purpose_allocator.allocator();
-    // const gpa = testing.allocator;
+    defer {
+        switch (general_purpose_allocator.deinit()) {
+            .ok => {},
+            .leak => |l| {
+                std.debug.panic("LEAK: {any}", .{l});
+            },
+        }
+    }
 
     var export_arena = ArenaAllocator.init(gpa);
     const export_alloc = export_arena.allocator();
@@ -82,7 +89,10 @@ fn to_fuzz(_: void, data: []const u8) !void {
 
     const array_len = try input.int(u8);
 
-    const array = try input.make_array(array_len, export_alloc);
+    const array = input.make_array(array_len, export_alloc) catch |e| {
+        export_arena.deinit();
+        return e;
+    };
 
     var ffi_array = try ffi.export_array(.{ .array = &array, .arena = export_arena });
     defer ffi_array.release();
@@ -105,6 +115,6 @@ pub fn run_fuzz_test(data: []const u8) anyerror!void {
     return to_fuzz_wrap({}, data);
 }
 
-test "fuzz ffi_test" {
-    try testing.fuzz({}, to_fuzz_wrap, .{});
-}
+// test "fuzz ffi_test" {
+//     try testing.fuzz({}, to_fuzz_wrap, .{});
+// }
