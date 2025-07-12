@@ -115,6 +115,6 @@ pub fn run_fuzz_test(data: []const u8) anyerror!void {
     return to_fuzz_wrap({}, data);
 }
 
-// test "fuzz ffi_test" {
-//     try testing.fuzz({}, to_fuzz_wrap, .{});
-// }
+test "fuzz ffi_test" {
+    try testing.fuzz({}, to_fuzz_wrap, .{});
+}
