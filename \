@@ -362,6 +362,7 @@ pub fn concat_dict(dt: data_type.DictType, arrays: []const arr.DictArray, alloc:
         .u16 => .{ .u16 = try concat_dict_keys(u16, arrays, alloc) },
         .u32 => .{ .u32 = try concat_dict_keys(u32, arrays, alloc) },
         .u64 => .{ .u64 = try concat_dict_keys(u64, arrays, alloc) },
+        else => unreachable,
     };
 
     var total_len: u32 = 0;
