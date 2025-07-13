@@ -11,12 +11,164 @@ const Error = error{
     ArrayTypeNotSupported,
 };
 
-const Op = enum {
+pub const Op = enum {
     min,
     max,
 };
 
-fn primitive_impl(comptime T: type, comptime op: Op, array: *const arr.PrimitiveArray(T)) ?T {
+pub fn check_minmax_primitive(comptime op: Op, comptime T: type, minmax_result: ?T, array: *const arr.PrimitiveArray(T)) void {
+    const minmax_val = if (minmax_result) |x| x else {
+        std.debug.assert(array.null_count == array.len);
+        return;
+    };
+
+    var found = false;
+
+    if (array.null_count > 0) {
+        const validity = (array.validity orelse unreachable).ptr;
+
+        var idx: u32 = array.offset;
+        while (idx < array.offset + array.len) : (idx += 1) {
+            if (get.get_primitive_opt(T, array.values.ptr, validity, idx)) |v| {
+                if (v == minmax_val) {
+                    found = true;
+                }
+
+                switch (op) {
+                    .min => std.debug.assert(minmax_val <= v),
+                    .max => std.debug.assert(minmax_val >= v),
+                }
+            }
+        }
+    } else {
+        var idx: u32 = array.offset;
+        while (idx < array.offset + array.len) : (idx += 1) {
+            const v = array.values.ptr[idx];
+            if (v == minmax_val) {
+                found = true;
+            }
+
+            switch (op) {
+                .min => std.debug.assert(minmax_val <= v),
+                .max => std.debug.assert(minmax_val >= v),
+            }
+        }
+    }
+
+    std.debug.assert(found);
+}
+
+fn check_binary_order(comptime op: Op, minmax_val: []const u8, array_val: []const u8) void {
+    const order = std.mem.order(u8, minmax_val, array_val);
+    switch (op) {
+        .min => std.debug.assert(order == .eq or order == .lt),
+        .max => std.debug.assert(order == .eq or order == .gt),
+    }
+}
+
+pub fn check_minmax_binary(comptime op: Op, comptime index_t: arr.IndexType, minmax_result: ?[]const u8, array: *const arr.GenericBinaryArray(index_t)) void {
+    const minmax_val = if (minmax_result) |x| x else {
+        std.debug.assert(array.null_count == array.len);
+        return;
+    };
+
+    var found = false;
+
+    if (array.null_count > 0) {
+        const validity = (array.validity orelse unreachable).ptr;
+
+        var idx: u32 = array.offset;
+        while (idx < array.offset + array.len) : (idx += 1) {
+            if (get.get_binary_opt(index_t, array.data.ptr, array.offsets.ptr, validity, idx)) |v| {
+                if (std.mem.eql(u8, minmax_val, v)) {
+                    found = true;
+                }
+                check_binary_order(op, minmax_val, v);
+            }
+        }
+    } else {
+        var idx: u32 = array.offset;
+        while (idx < array.offset + array.len) : (idx += 1) {
+            const v = get.get_binary(index_t, array.data.ptr, array.offsets.ptr, idx);
+            if (std.mem.eql(u8, minmax_val, v)) {
+                found = true;
+            }
+            check_binary_order(op, minmax_val, v);
+        }
+    }
+
+    std.debug.assert(found);
+}
+
+pub fn check_minmax_binary_view(comptime op: Op, minmax_result: ?[]const u8, array: *const arr.BinaryViewArray) void {
+    const minmax_val = if (minmax_result) |x| x else {
+        std.debug.assert(array.null_count == array.len);
+        return;
+    };
+
+    var found = false;
+
+    if (array.null_count > 0) {
+        const validity = (array.validity orelse unreachable).ptr;
+
+        var idx: u32 = array.offset;
+        while (idx < array.offset + array.len) : (idx += 1) {
+            if (get.get_binary_view_opt(array.buffers.ptr, array.views.ptr, validity, idx)) |v| {
+                if (std.mem.eql(u8, minmax_val, v)) {
+                    found = true;
+                }
+                check_binary_order(op, minmax_val, v);
+            }
+        }
+    } else {
+        var idx: u32 = array.offset;
+        while (idx < array.offset + array.len) : (idx += 1) {
+            const v = get.get_binary_view(array.buffers.ptr, array.views.ptr, idx);
+            if (std.mem.eql(u8, minmax_val, v)) {
+                found = true;
+            }
+            check_binary_order(op, minmax_val, v);
+        }
+    }
+
+    std.debug.assert(found);
+}
+
+pub fn check_minmax_fixed_size_binary(comptime op: Op, minmax_result: ?[]const u8, array: *const arr.FixedSizeBinaryArray) void {
+    const minmax_val = if (minmax_result) |x| x else {
+        std.debug.assert(array.null_count == array.len);
+        return;
+    };
+
+    var found = false;
+
+    if (array.null_count > 0) {
+        const validity = (array.validity orelse unreachable).ptr;
+
+        var idx: u32 = array.offset;
+        while (idx < array.offset + array.len) : (idx += 1) {
+            if (get.get_fixed_size_binary_opt(array.data.ptr, array.byte_width, validity, idx)) |v| {
+                if (std.mem.eql(u8, minmax_val, v)) {
+                    found = true;
+                }
+                check_binary_order(op, minmax_val, v);
+            }
+        }
+    } else {
+        var idx: u32 = array.offset;
+        while (idx < array.offset + array.len) : (idx += 1) {
+            const v = get.get_fixed_size_binary(array.data.ptr, array.byte_width, idx);
+            if (std.mem.eql(u8, minmax_val, v)) {
+                found = true;
+            }
+            check_binary_order(op, minmax_val, v);
+        }
+    }
+
+    std.debug.assert(found);
+}
+
+fn minmax_primitive(comptime op: Op, comptime T: type, array: *const arr.PrimitiveArray(T)) ?T {
     if (array.len == 0) {
         return null;
     }
@@ -63,7 +215,7 @@ fn primitive_impl(comptime T: type, comptime op: Op, array: *const arr.Primitive
     }
 }
 
-fn binary_impl(comptime index_t: arr.IndexType, comptime op: Op, array: *const arr.GenericBinaryArray(index_t)) ?[]const u8 {
+pub fn minmax_binary(comptime op: Op, comptime index_t: arr.IndexType, array: *const arr.GenericBinaryArray(index_t)) ?[]const u8 {
     if (array.len == 0) {
         return null;
     }
@@ -128,7 +280,7 @@ fn binary_impl(comptime index_t: arr.IndexType, comptime op: Op, array: *const a
     }
 }
 
-fn binary_view_impl(comptime op: Op, array: *const arr.BinaryViewArray) ?[]const u8 {
+pub fn minmax_binary_view(comptime op: Op, array: *const arr.BinaryViewArray) ?[]const u8 {
     if (array.len == 0) {
         return null;
     }
@@ -193,7 +345,7 @@ fn binary_view_impl(comptime op: Op, array: *const arr.BinaryViewArray) ?[]const
     }
 }
 
-fn fixed_size_binary_impl(comptime op: Op, array: *const arr.FixedSizeBinaryArray) ?[]const u8 {
+pub fn minmax_fixed_size_binary(comptime op: Op, array: *const arr.FixedSizeBinaryArray) ?[]const u8 {
     if (array.len == 0) {
         return null;
     }
@@ -258,92 +410,89 @@ fn fixed_size_binary_impl(comptime op: Op, array: *const arr.FixedSizeBinaryArra
     }
 }
 
-pub fn min_primitive(comptime T: type, array: *const arr.PrimitiveArray(T)) ?T {
-    return primitive_impl(T, .min, array);
+pub fn minmax(comptime op: Op, array: *const arr.Array) Error!?Scalar {
+    switch (array.*) {
+        .i8 => |*a| return if (minmax_primitive(op, i8, a)) |m| .{ .i8 = m } else null,
+        .i16 => |*a| return if (minmax_primitive(op, i16, a)) |m| .{ .i16 = m } else null,
+        .i32 => |*a| return if (minmax_primitive(op, i32, a)) |m| .{ .i32 = m } else null,
+        .i64 => |*a| return if (minmax_primitive(op, i64, a)) |m| .{ .i64 = m } else null,
+        .u8 => |*a| return if (minmax_primitive(op, u8, a)) |m| .{ .u8 = m } else null,
+        .u16 => |*a| return if (minmax_primitive(op, u16, a)) |m| .{ .u16 = m } else null,
+        .u32 => |*a| return if (minmax_primitive(op, u32, a)) |m| .{ .u32 = m } else null,
+        .u64 => |*a| return if (minmax_primitive(op, u64, a)) |m| .{ .u64 = m } else null,
+        .f16 => |*a| return if (minmax_primitive(op, f16, a)) |m| .{ .f16 = m } else null,
+        .f32 => |*a| return if (minmax_primitive(op, f32, a)) |m| .{ .f32 = m } else null,
+        .f64 => |*a| return if (minmax_primitive(op, f64, a)) |m| .{ .f64 = m } else null,
+        .binary => |*a| return if (minmax_binary(op, .i32, a)) |m| .{ .binary = m } else null,
+        .utf8 => |*a| return if (minmax_binary(op, .i32, &a.inner)) |m| .{ .binary = m } else null,
+        .decimal32 => |*a| return if (minmax_primitive(op, i32, &a.inner)) |m| .{ .i32 = m } else null,
+        .decimal64 => |*a| return if (minmax_primitive(op, i64, &a.inner)) |m| .{ .i64 = m } else null,
+        .decimal128 => |*a| return if (minmax_primitive(op, i128, &a.inner)) |m| .{ .i128 = m } else null,
+        .decimal256 => |*a| return if (minmax_primitive(op, i256, &a.inner)) |m| .{ .i256 = m } else null,
+        .large_binary => |*a| return if (minmax_binary(op, .i64, a)) |m| .{ .binary = m } else null,
+        .large_utf8 => |*a| return if (minmax_binary(op, .i64, &a.inner)) |m| .{ .binary = m } else null,
+        .binary_view => |*a| return if (minmax_binary_view(op, a)) |m| .{ .binary = m } else null,
+        .utf8_view => |*a| return if (minmax_binary_view(op, &a.inner)) |m| .{ .binary = m } else null,
+        .fixed_size_binary => |*a| return if (minmax_fixed_size_binary(op, a)) |m| .{ .binary = m } else null,
+        else => return Error.ArrayTypeNotSupported,
+    }
 }
 
-pub fn min_binary(comptime index_t: arr.IndexType, array: *const arr.GenericBinaryArray(index_t)) ?[]const u8 {
-    return binary_impl(index_t, .min, array);
+fn unwrap_minmax_result(comptime T: type, minmax_result: ?Scalar) ?T {
+    const field_name = switch (T) {
+        []const u8 => "binary",
+        else => @typeName(T),
+    };
+
+    if (minmax_result) |r| {
+        return @field(r, field_name);
+    } else {
+        return null;
+    }
 }
 
-pub fn min_fixed_size_binary(array: *const arr.FixedSizeBinaryArray) ?[]const u8 {
-    return fixed_size_binary_impl(.min, array);
-}
-
-pub fn min_binary_view(array: *const arr.BinaryViewArray) ?[]const u8 {
-    return binary_view_impl(.min, array);
+pub fn check_minmax(comptime op: Op, array: *const arr.Array, minmax_result: ?Scalar) void {
+    switch (array.*) {
+        .i8 => |*a| check_minmax_primitive(op, i8, unwrap_minmax_result(i8, minmax_result), a),
+        .i16 => |*a| check_minmax_primitive(op, i16, unwrap_minmax_result(i16, minmax_result), a),
+        .i32 => |*a| check_minmax_primitive(op, i32, unwrap_minmax_result(i32, minmax_result), a),
+        .i64 => |*a| check_minmax_primitive(op, i64, unwrap_minmax_result(i64, minmax_result), a),
+        .u8 => |*a| check_minmax_primitive(op, u8, unwrap_minmax_result(u8, minmax_result), a),
+        .u16 => |*a| check_minmax_primitive(op, u16, unwrap_minmax_result(u16, minmax_result), a),
+        .u32 => |*a| check_minmax_primitive(op, u32, unwrap_minmax_result(u32, minmax_result), a),
+        .u64 => |*a| check_minmax_primitive(op, u64, unwrap_minmax_result(u64, minmax_result), a),
+        .f16 => |*a| check_minmax_primitive(op, f16, unwrap_minmax_result(f16, minmax_result), a),
+        .f32 => |*a| check_minmax_primitive(op, f32, unwrap_minmax_result(f32, minmax_result), a),
+        .f64 => |*a| check_minmax_primitive(op, f64, unwrap_minmax_result(f64, minmax_result), a),
+        .binary => |*a| check_minmax_binary(op, .i32, unwrap_minmax_result([]const u8, minmax_result), a),
+        .utf8 => |*a| check_minmax_binary(op, .i32, unwrap_minmax_result([]const u8, minmax_result), &a.inner),
+        .decimal32 => |*a| check_minmax_primitive(op, i32, unwrap_minmax_result(i32, minmax_result), &a.inner),
+        .decimal64 => |*a| check_minmax_primitive(op, i64, unwrap_minmax_result(i64, minmax_result), &a.inner),
+        .decimal128 => |*a| check_minmax_primitive(op, i128, unwrap_minmax_result(i128, minmax_result), &a.inner),
+        .decimal256 => |*a| check_minmax_primitive(op, i256, unwrap_minmax_result(i256, minmax_result), &a.inner),
+        .large_binary => |*a| check_minmax_binary(op, .i64, unwrap_minmax_result([]const u8, minmax_result), a),
+        .large_utf8 => |*a| check_minmax_binary(op, .i64, unwrap_minmax_result([]const u8, minmax_result), &a.inner),
+        .binary_view => |*a| check_minmax_binary_view(op, unwrap_minmax_result([]const u8, minmax_result), a),
+        .utf8_view => |*a| check_minmax_binary_view(op, unwrap_minmax_result([]const u8, minmax_result), &a.inner),
+        .fixed_size_binary => |*a| check_minmax_fixed_size_binary(op, unwrap_minmax_result([]const u8, minmax_result), a),
+        else => unreachable,
+    }
 }
 
 pub fn min(array: *const arr.Array) Error!?Scalar {
-    switch (array.*) {
-        .i8 => |*a| return if (min_primitive(i8, a)) |m| .{ .i8 = m } else null,
-        .i16 => |*a| return if (min_primitive(i16, a)) |m| .{ .i16 = m } else null,
-        .i32 => |*a| return if (min_primitive(i32, a)) |m| .{ .i32 = m } else null,
-        .i64 => |*a| return if (min_primitive(i64, a)) |m| .{ .i64 = m } else null,
-        .u8 => |*a| return if (min_primitive(u8, a)) |m| .{ .u8 = m } else null,
-        .u16 => |*a| return if (min_primitive(u16, a)) |m| .{ .u16 = m } else null,
-        .u32 => |*a| return if (min_primitive(u32, a)) |m| .{ .u32 = m } else null,
-        .u64 => |*a| return if (min_primitive(u64, a)) |m| .{ .u64 = m } else null,
-        .f16 => |*a| return if (min_primitive(f16, a)) |m| .{ .f16 = m } else null,
-        .f32 => |*a| return if (min_primitive(f32, a)) |m| .{ .f32 = m } else null,
-        .f64 => |*a| return if (min_primitive(f64, a)) |m| .{ .f64 = m } else null,
-        .binary => |*a| return if (min_binary(.i32, a)) |m| .{ .binary = m } else null,
-        .utf8 => |*a| return if (min_binary(.i32, &a.inner)) |m| .{ .binary = m } else null,
-        .decimal32 => |*a| return if (min_primitive(i32, &a.inner)) |m| .{ .i32 = m } else null,
-        .decimal64 => |*a| return if (min_primitive(i64, &a.inner)) |m| .{ .i64 = m } else null,
-        .decimal128 => |*a| return if (min_primitive(i128, &a.inner)) |m| .{ .i128 = m } else null,
-        .decimal256 => |*a| return if (min_primitive(i256, &a.inner)) |m| .{ .i256 = m } else null,
-        .large_binary => |*a| return if (min_binary(.i64, a)) |m| .{ .binary = m } else null,
-        .large_utf8 => |*a| return if (min_binary(.i64, &a.inner)) |m| .{ .binary = m } else null,
-        .binary_view => |*a| return if (min_binary_view(a)) |m| .{ .binary = m } else null,
-        .utf8_view => |*a| return if (min_binary_view(&a.inner)) |m| .{ .binary = m } else null,
-        .fixed_size_binary => |*a| return if (min_fixed_size_binary(a)) |m| .{ .binary = m } else null,
-        else => return Error.ArrayTypeNotSupported,
-    }
-}
-
-pub fn max_primitive(comptime T: type, array: *const arr.PrimitiveArray(T)) ?T {
-    return primitive_impl(T, .max, array);
-}
-
-pub fn max_binary(comptime index_t: arr.IndexType, array: *const arr.GenericBinaryArray(index_t)) ?[]const u8 {
-    return binary_impl(index_t, .max, array);
-}
-
-pub fn max_fixed_size_binary(array: *const arr.FixedSizeBinaryArray) ?[]const u8 {
-    return fixed_size_binary_impl(.max, array);
-}
-
-pub fn max_binary_view(array: *const arr.BinaryViewArray) ?[]const u8 {
-    return binary_view_impl(.max, array);
+    return minmax(.min, array);
 }
 
 pub fn max(array: *const arr.Array) Error!?Scalar {
-    switch (array.*) {
-        .i8 => |*a| return if (max_primitive(i8, a)) |m| .{ .i8 = m } else null,
-        .i16 => |*a| return if (max_primitive(i16, a)) |m| .{ .i16 = m } else null,
-        .i32 => |*a| return if (max_primitive(i32, a)) |m| .{ .i32 = m } else null,
-        .i64 => |*a| return if (max_primitive(i64, a)) |m| .{ .i64 = m } else null,
-        .u8 => |*a| return if (max_primitive(u8, a)) |m| .{ .u8 = m } else null,
-        .u16 => |*a| return if (max_primitive(u16, a)) |m| .{ .u16 = m } else null,
-        .u32 => |*a| return if (max_primitive(u32, a)) |m| .{ .u32 = m } else null,
-        .u64 => |*a| return if (max_primitive(u64, a)) |m| .{ .u64 = m } else null,
-        .f16 => |*a| return if (max_primitive(f16, a)) |m| .{ .f16 = m } else null,
-        .f32 => |*a| return if (max_primitive(f32, a)) |m| .{ .f32 = m } else null,
-        .f64 => |*a| return if (max_primitive(f64, a)) |m| .{ .f64 = m } else null,
-        .binary => |*a| return if (max_binary(.i32, a)) |m| .{ .binary = m } else null,
-        .utf8 => |*a| return if (max_binary(.i32, &a.inner)) |m| .{ .binary = m } else null,
-        .decimal32 => |*a| return if (max_primitive(i32, &a.inner)) |m| .{ .i32 = m } else null,
-        .decimal64 => |*a| return if (max_primitive(i64, &a.inner)) |m| .{ .i64 = m } else null,
-        .decimal128 => |*a| return if (max_primitive(i128, &a.inner)) |m| .{ .i128 = m } else null,
-        .decimal256 => |*a| return if (max_primitive(i256, &a.inner)) |m| .{ .i256 = m } else null,
-        .large_binary => |*a| return if (max_binary(.i64, a)) |m| .{ .binary = m } else null,
-        .large_utf8 => |*a| return if (max_binary(.i64, &a.inner)) |m| .{ .binary = m } else null,
-        .binary_view => |*a| return if (max_binary_view(a)) |m| .{ .binary = m } else null,
-        .utf8_view => |*a| return if (max_binary_view(&a.inner)) |m| .{ .binary = m } else null,
-        .fixed_size_binary => |*a| return if (max_fixed_size_binary(a)) |m| .{ .binary = m } else null,
-        else => return Error.ArrayTypeNotSupported,
-    }
+    return minmax(.max, array);
+}
+
+pub fn check_min(array: *const arr.Array, minmax_result: ?Scalar) void {
+    check_minmax(.min, array, minmax_result);
+}
+
+pub fn check_max(array: *const arr.Array, minmax_result: ?Scalar) void {
+    check_minmax(.max, array, minmax_result);
 }
 
 test "min i16" {

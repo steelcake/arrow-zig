@@ -60,7 +60,7 @@ pub fn get_binary_view(buffers: [*]const []const u8, views: [*]const arr.BinaryV
         buffers[vbi].ptr[vo .. vo + vl];
 }
 
-pub fn get_binary_view_opt(buffers: [*]const [*]const u8, views: [*]const arr.BinaryView, validity: [*]const u8, index: u32) ?[]const u8 {
+pub fn get_binary_view_opt(buffers: [*]const []const u8, views: [*]const arr.BinaryView, validity: [*]const u8, index: u32) ?[]const u8 {
     return if (bitmap.get(validity, index))
         get_binary_view(buffers, views, index)
     else
