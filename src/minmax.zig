@@ -8,7 +8,7 @@ const testing = std.testing;
 const ArenaAllocator = std.heap.ArenaAllocator;
 
 const Error = error{
-    ArrayTypeNotSupportedForMinMax,
+    ArrayTypeNotSupported,
 };
 
 const Op = enum {
@@ -298,7 +298,7 @@ pub fn min(array: *const arr.Array) Error!?Scalar {
         .binary_view => |*a| return if (min_binary_view(a)) |m| .{ .binary = m } else null,
         .utf8_view => |*a| return if (min_binary_view(&a.inner)) |m| .{ .binary = m } else null,
         .fixed_size_binary => |*a| return if (min_fixed_size_binary(a)) |m| .{ .binary = m } else null,
-        else => return Error.ArrayTypeNotSupportedForMinMax,
+        else => return Error.ArrayTypeNotSupported,
     }
 }
 
@@ -342,7 +342,7 @@ pub fn max(array: *const arr.Array) Error!?Scalar {
         .binary_view => |*a| return if (max_binary_view(a)) |m| .{ .binary = m } else null,
         .utf8_view => |*a| return if (max_binary_view(&a.inner)) |m| .{ .binary = m } else null,
         .fixed_size_binary => |*a| return if (max_fixed_size_binary(a)) |m| .{ .binary = m } else null,
-        else => return Error.ArrayTypeNotSupportedForMinMax,
+        else => return Error.ArrayTypeNotSupported,
     }
 }
 

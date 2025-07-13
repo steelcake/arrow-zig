@@ -9,13 +9,3 @@ zig-out/
 zig-cache/
 
 *.so
-
-fuzz_corpus/
-fuzz_out/
-
-fuzzer
-fuzzer.dSYM
-crash*
-
-# ignore garbage file (that gets created when fat fingering around the enter key?) in vim
-\\ 

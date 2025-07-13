@@ -7,7 +7,6 @@ const arr = @import("./array.zig");
 const ffi = @import("./ffi.zig");
 const equals = @import("./equals.zig").equals;
 const test_array = @import("./test_array.zig");
-const FuzzInput = @import("./fuzz_input.zig").FuzzInput;
 const make_array = test_array.make_array;
 const NUM_TESTS = test_array.NUM_ARRAYS;
 
@@ -68,53 +67,4 @@ test "ffi basic" {
     for (0..NUM_TESTS) |i| {
         try run_test(@intCast(i));
     }
-}
-
-fn to_fuzz(_: void, data: []const u8) !void {
-    var general_purpose_allocator: std.heap.GeneralPurposeAllocator(.{}) = .init;
-    const gpa = general_purpose_allocator.allocator();
-    defer {
-        switch (general_purpose_allocator.deinit()) {
-            .ok => {},
-            .leak => |l| {
-                std.debug.panic("LEAK: {any}", .{l});
-            },
-        }
-    }
-
-    var export_arena = ArenaAllocator.init(gpa);
-    const export_alloc = export_arena.allocator();
-
-    var input = FuzzInput{ .data = data };
-
-    const array_len = try input.int(u8);
-
-    const array = input.make_array(array_len, export_alloc) catch |e| {
-        export_arena.deinit();
-        return e;
-    };
-
-    var ffi_array = try ffi.export_array(.{ .array = &array, .arena = export_arena });
-    defer ffi_array.release();
-
-    var import_arena = ArenaAllocator.init(gpa);
-    const import_alloc = import_arena.allocator();
-    defer import_arena.deinit();
-    const imported = ffi.import_array(&ffi_array, import_alloc) catch unreachable;
-
-    equals(&imported, &array);
-}
-
-fn to_fuzz_wrap(ctx: void, data: []const u8) anyerror!void {
-    return to_fuzz(ctx, data) catch |e| {
-        if (e == error.ShortInput) return {} else return e;
-    };
-}
-
-pub fn run_fuzz_test(data: []const u8) anyerror!void {
-    return to_fuzz_wrap({}, data);
-}
-
-test "fuzz ffi_test" {
-    try testing.fuzz({}, to_fuzz_wrap, .{});
 }

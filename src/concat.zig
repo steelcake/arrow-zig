@@ -1,16 +1,16 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
+const testing = std.testing;
+const ArenaAllocator = std.heap.ArenaAllocator;
+
 const arr = @import("./array.zig");
 const slice = @import("./slice.zig");
 const bitmap = @import("./bitmap.zig");
 const equals = @import("./equals.zig");
-const testing = std.testing;
-const ArenaAllocator = std.heap.ArenaAllocator;
 const builder = @import("./builder.zig");
 const get = @import("./get.zig");
 const data_type = @import("./data_type.zig");
 const length = @import("./length.zig");
-const FuzzInput = @import("./fuzz_input.zig").FuzzInput;
 
 const Error = error{
     OutOfMemory,
@@ -2114,73 +2114,4 @@ test "concat_struct empty" {
     const result = try concat_struct(dt, &.{ arr0, arr1 }, alloc, alloc);
 
     equals.equals_struct(&result, &expected);
-}
-
-fn to_fuzz(_: void, data: []const u8) !void {
-    var general_purpose_allocator: std.heap.GeneralPurposeAllocator(.{}) = .init;
-    const gpa = general_purpose_allocator.allocator();
-    defer {
-        switch (general_purpose_allocator.deinit()) {
-            .ok => {},
-            .leak => |l| {
-                std.debug.panic("LEAK: {any}", .{l});
-            },
-        }
-    }
-
-    var arena = ArenaAllocator.init(gpa);
-    defer arena.deinit();
-    const alloc = arena.allocator();
-
-    var concat_arena = ArenaAllocator.init(gpa);
-    defer concat_arena.deinit();
-    const concat_alloc = concat_arena.allocator();
-
-    var input = FuzzInput{ .data = data };
-
-    const array_len = try input.int(u8);
-
-    const array = try input.make_array(array_len, alloc);
-
-    for (0..3) |_| {
-        const slice0 = try input.slice_array(&array);
-        const slice1 = try input.slice_array(&array);
-        const slice2 = try input.slice_array(&array);
-
-        const dt = try data_type.get_data_type(&array, concat_alloc);
-
-        const concated = conc: {
-            var scratch_arena = ArenaAllocator.init(gpa);
-            defer scratch_arena.deinit();
-            const scratch_alloc = scratch_arena.allocator();
-            break :conc try concat(dt, &.{ slice0, slice1, slice2 }, concat_alloc, scratch_alloc);
-        };
-
-        const slice0_len = length.length(&slice0);
-        const slice1_len = length.length(&slice1);
-        const slice2_len = length.length(&slice2);
-        const slice0_out = slice.slice(&concated, 0, slice0_len);
-        const slice1_out = slice.slice(&concated, slice0_len, slice1_len);
-        const slice2_out = slice.slice(&concated, slice0_len + slice1_len, slice2_len);
-
-        equals.equals(&slice0_out, &slice0);
-        equals.equals(&slice1_out, &slice1);
-        equals.equals(&slice2_out, &slice2);
-
-        std.debug.assert(concat_arena.reset(.retain_capacity));
-    }
-}
-
-fn to_fuzz_wrap(ctx: void, data: []const u8) anyerror!void {
-    return to_fuzz(ctx, data) catch |e| {
-        if (e == error.ShortInput) return {} else return e;
-    };
-}
-
-pub fn run_fuzz_test(data: []const u8) anyerror!void {
-    return to_fuzz_wrap({}, data);
-}
-
-test "fuzz concat" {
-    try testing.fuzz({}, to_fuzz_wrap, .{});
 }

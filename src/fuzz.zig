@@ -1,19 +1,104 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
-const arr = @import("./array.zig");
 const Prng = std.Random.DefaultPrng;
+const ArenaAllocator = std.heap.ArenaAllocator;
+
+const arr = @import("./array.zig");
 const bitmap = @import("./bitmap.zig");
 const length = @import("./length.zig");
 const slice_array_impl = @import("./slice.zig").slice;
+const data_type = @import("./data_type.zig");
+const concat = @import("./concat.zig").concat;
+const equals = @import("./equals.zig");
+const ffi = @import("./ffi.zig");
 
 const Error = error{ OutOfMemory, ShortInput };
 
-const Validity = struct {
+fn ffi_test(array: *const arr.Array, export_arena: ArenaAllocator, alloc: Allocator) !void {
+    var ffi_array = try ffi.export_array(.{ .array = array, .arena = export_arena });
+    defer ffi_array.release();
+
+    var import_arena = ArenaAllocator.init(alloc);
+    const import_alloc = import_arena.allocator();
+    defer import_arena.deinit();
+    const imported = ffi.import_array(&ffi_array, import_alloc) catch unreachable;
+
+    equals.equals(&imported, array);
+}
+
+fn concat_test(array: *const arr.Array, input: *FuzzInput, alloc: Allocator) !void {
+    var concat_arena = ArenaAllocator.init(alloc);
+    defer concat_arena.deinit();
+    const concat_alloc = concat_arena.allocator();
+
+    const slice0 = try input.slice_array(array);
+    const slice1 = try input.slice_array(array);
+    const slice2 = try input.slice_array(array);
+
+    const dt = try data_type.get_data_type(array, concat_alloc);
+
+    const concated = conc: {
+        var scratch_arena = ArenaAllocator.init(alloc);
+        defer scratch_arena.deinit();
+        const scratch_alloc = scratch_arena.allocator();
+        break :conc try concat(dt, &.{ slice0, slice1, slice2 }, concat_alloc, scratch_alloc);
+    };
+
+    const slice0_len = length.length(&slice0);
+    const slice1_len = length.length(&slice1);
+    const slice2_len = length.length(&slice2);
+    const slice0_out = slice_array_impl(&concated, 0, slice0_len);
+    const slice1_out = slice_array_impl(&concated, slice0_len, slice1_len);
+    const slice2_out = slice_array_impl(&concated, slice0_len + slice1_len, slice2_len);
+
+    equals.equals(&slice0_out, &slice0);
+    equals.equals(&slice1_out, &slice1);
+    equals.equals(&slice2_out, &slice2);
+}
+
+fn to_fuzz(data: []const u8) !void {
+    var general_purpose_allocator: std.heap.GeneralPurposeAllocator(.{}) = .init;
+    const gpa = general_purpose_allocator.allocator();
+    defer {
+        switch (general_purpose_allocator.deinit()) {
+            .ok => {},
+            .leak => |l| {
+                std.debug.panic("LEAK: {any}", .{l});
+            },
+        }
+    }
+
+    var arena = ArenaAllocator.init(gpa);
+    // Don't free the arena on success since ffi_test will consume it
+    errdefer arena.deinit();
+    const alloc = arena.allocator();
+
+    var input = FuzzInput{ .data = data };
+    const array_len = try input.int(u8);
+    const array = try input.make_array(array_len, alloc);
+
+    try concat_test(&array, &input, gpa);
+
+    try ffi_test(&array, arena, gpa);
+}
+
+fn to_fuzz_wrap(_: void, data: []const u8) anyerror!void {
+    return to_fuzz(data) catch |e| {
+        if (e == error.ShortInput) return {} else return e;
+    };
+}
+
+// Have to have single fuzz entrypoint until this is solved: https://github.com/ziglang/zig/issues/23738
+test "fuzz" {
+    try std.testing.fuzz({}, to_fuzz_wrap, .{});
+}
+
+pub const Validity = struct {
     validity: []const u8,
     null_count: u32,
 };
 
-const MAX_DEPTH = 5;
+const MAX_DEPTH = 10;
 
 /// This struct implements structured fuzzing.
 ///
