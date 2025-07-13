@@ -13,8 +13,10 @@ pub const scalar = @import("./scalar.zig");
 pub const minmax = @import("./minmax.zig");
 pub const concat = @import("./concat.zig");
 pub const fuzz = @import("./fuzz.zig");
+pub const validate = @import("./validate.zig");
 
 test {
+    _ = validate;
     _ = fuzz;
     _ = concat;
     _ = minmax;

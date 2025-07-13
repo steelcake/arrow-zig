@@ -506,6 +506,7 @@ test "min i16" {
     const result: ?Scalar = try min(&.{ .i16 = array });
 
     try std.testing.expectEqualDeep(expected, result);
+    check_min(&.{ .i16 = array }, result);
 }
 
 test "min binary" {
@@ -519,6 +520,7 @@ test "min binary" {
     const result: ?Scalar = try min(&.{ .binary = array });
 
     try std.testing.expectEqualDeep(expected, result);
+    check_min(&.{ .binary = array }, result);
 }
 
 test "min decimal256" {
@@ -532,6 +534,7 @@ test "min decimal256" {
     const result: ?Scalar = try min(&.{ .decimal256 = array });
 
     try std.testing.expectEqualDeep(expected, result);
+    check_min(&.{ .decimal256 = array }, result);
 }
 
 test "min fixed-size binary" {
@@ -545,6 +548,7 @@ test "min fixed-size binary" {
     const result: ?Scalar = try min(&.{ .fixed_size_binary = array });
 
     try std.testing.expectEqualDeep(expected, result);
+    check_min(&.{ .fixed_size_binary = array }, result);
 }
 
 test "min binary-view" {
@@ -558,6 +562,7 @@ test "min binary-view" {
     const result: ?Scalar = try min(&.{ .binary_view = array });
 
     try std.testing.expectEqualDeep(expected, result);
+    check_min(&.{ .binary_view = array }, result);
 }
 
 test "min i16 empty" {
@@ -571,6 +576,7 @@ test "min i16 empty" {
     const result: ?Scalar = try min(&.{ .i16 = array });
 
     try std.testing.expectEqualDeep(expected, result);
+    check_min(&.{ .i16 = array }, result);
 }
 
 test "min binary empty" {
@@ -584,6 +590,7 @@ test "min binary empty" {
     const result: ?Scalar = try min(&.{ .binary = array });
 
     try std.testing.expectEqualDeep(expected, result);
+    check_min(&.{ .binary = array }, result);
 }
 
 test "min decimal256 empty" {
@@ -597,6 +604,7 @@ test "min decimal256 empty" {
     const result: ?Scalar = try min(&.{ .decimal256 = array });
 
     try std.testing.expectEqualDeep(expected, result);
+    check_min(&.{ .decimal256 = array }, result);
 }
 
 test "min fixed-size-binary empty" {
@@ -610,6 +618,7 @@ test "min fixed-size-binary empty" {
     const result: ?Scalar = try min(&.{ .fixed_size_binary = array });
 
     try std.testing.expectEqualDeep(expected, result);
+    check_min(&.{ .fixed_size_binary = array }, result);
 }
 
 test "min binary-view empty" {
@@ -623,6 +632,7 @@ test "min binary-view empty" {
     const result: ?Scalar = try min(&.{ .binary_view = array });
 
     try std.testing.expectEqualDeep(expected, result);
+    check_min(&.{ .binary_view = array }, result);
 }
 
 test "min i16 null" {
@@ -636,6 +646,7 @@ test "min i16 null" {
     const result: ?Scalar = try min(&.{ .i16 = array });
 
     try std.testing.expectEqualDeep(expected, result);
+    check_min(&.{ .i16 = array }, result);
 }
 
 test "min binary null" {
@@ -649,6 +660,7 @@ test "min binary null" {
     const result: ?Scalar = try min(&.{ .binary = array });
 
     try std.testing.expectEqualDeep(expected, result);
+    check_min(&.{ .binary = array }, result);
 }
 
 test "min decimal256 null" {
@@ -662,6 +674,7 @@ test "min decimal256 null" {
     const result: ?Scalar = try min(&.{ .decimal256 = array });
 
     try std.testing.expectEqualDeep(expected, result);
+    check_min(&.{ .decimal256 = array }, result);
 }
 
 test "min fixed-size-binary null" {
@@ -675,6 +688,7 @@ test "min fixed-size-binary null" {
     const result: ?Scalar = try min(&.{ .fixed_size_binary = array });
 
     try std.testing.expectEqualDeep(expected, result);
+    check_min(&.{ .fixed_size_binary = array }, result);
 }
 
 test "min binary-view null" {
@@ -688,6 +702,7 @@ test "min binary-view null" {
     const result: ?Scalar = try min(&.{ .binary_view = array });
 
     try std.testing.expectEqualDeep(expected, result);
+    check_min(&.{ .binary_view = array }, result);
 }
 
 test "min i16 non-null" {
@@ -701,6 +716,7 @@ test "min i16 non-null" {
     const result: ?Scalar = try min(&.{ .i16 = array });
 
     try std.testing.expectEqualDeep(expected, result);
+    check_min(&.{ .i16 = array }, result);
 }
 
 test "min binary non-null" {
@@ -714,6 +730,7 @@ test "min binary non-null" {
     const result: ?Scalar = try min(&.{ .binary = array });
 
     try std.testing.expectEqualDeep(expected, result);
+    check_min(&.{ .binary = array }, result);
 }
 
 test "min decimal256 non-null" {
@@ -727,6 +744,7 @@ test "min decimal256 non-null" {
     const result: ?Scalar = try min(&.{ .decimal256 = array });
 
     try std.testing.expectEqualDeep(expected, result);
+    check_min(&.{ .decimal256 = array }, result);
 }
 
 test "min fixed-size-binary non-null" {
@@ -740,6 +758,7 @@ test "min fixed-size-binary non-null" {
     const result: ?Scalar = try min(&.{ .fixed_size_binary = array });
 
     try std.testing.expectEqualDeep(expected, result);
+    check_min(&.{ .fixed_size_binary = array }, result);
 }
 
 test "min binary-view non-null" {
@@ -753,6 +772,7 @@ test "min binary-view non-null" {
     const result: ?Scalar = try min(&.{ .binary_view = array });
 
     try std.testing.expectEqualDeep(expected, result);
+    check_min(&.{ .binary_view = array }, result);
 }
 
 test "max i16" {
@@ -766,6 +786,7 @@ test "max i16" {
     const result: ?Scalar = try max(&.{ .i16 = array });
 
     try std.testing.expectEqualDeep(expected, result);
+    check_max(&.{ .i16 = array }, result);
 }
 
 test "max binary" {
@@ -779,6 +800,7 @@ test "max binary" {
     const result: ?Scalar = try max(&.{ .binary = array });
 
     try std.testing.expectEqualDeep(expected, result);
+    check_max(&.{ .binary = array }, result);
 }
 
 test "max decimal256" {
@@ -792,6 +814,7 @@ test "max decimal256" {
     const result: ?Scalar = try max(&.{ .decimal256 = array });
 
     try std.testing.expectEqualDeep(expected, result);
+    check_max(&.{ .decimal256 = array }, result);
 }
 
 test "max fixed-size binary" {
@@ -805,6 +828,7 @@ test "max fixed-size binary" {
     const result: ?Scalar = try max(&.{ .fixed_size_binary = array });
 
     try std.testing.expectEqualDeep(expected, result);
+    check_max(&.{ .fixed_size_binary = array }, result);
 }
 
 test "max binary-view" {
@@ -818,6 +842,7 @@ test "max binary-view" {
     const result: ?Scalar = try max(&.{ .binary_view = array });
 
     try std.testing.expectEqualDeep(expected, result);
+    check_max(&.{ .binary_view = array }, result);
 }
 
 test "max i16 empty" {
@@ -831,6 +856,7 @@ test "max i16 empty" {
     const result: ?Scalar = try max(&.{ .i16 = array });
 
     try std.testing.expectEqualDeep(expected, result);
+    check_max(&.{ .i16 = array }, result);
 }
 
 test "max binary empty" {
@@ -844,6 +870,7 @@ test "max binary empty" {
     const result: ?Scalar = try max(&.{ .binary = array });
 
     try std.testing.expectEqualDeep(expected, result);
+    check_max(&.{ .binary = array }, result);
 }
 
 test "max decimal256 empty" {
@@ -857,6 +884,7 @@ test "max decimal256 empty" {
     const result: ?Scalar = try max(&.{ .decimal256 = array });
 
     try std.testing.expectEqualDeep(expected, result);
+    check_max(&.{ .decimal256 = array }, result);
 }
 
 test "max fixed-size-binary empty" {
@@ -870,6 +898,7 @@ test "max fixed-size-binary empty" {
     const result: ?Scalar = try max(&.{ .fixed_size_binary = array });
 
     try std.testing.expectEqualDeep(expected, result);
+    check_max(&.{ .fixed_size_binary = array }, result);
 }
 
 test "max binary-view empty" {
@@ -883,6 +912,7 @@ test "max binary-view empty" {
     const result: ?Scalar = try max(&.{ .binary_view = array });
 
     try std.testing.expectEqualDeep(expected, result);
+    check_max(&.{ .binary_view = array }, result);
 }
 
 test "max i16 null" {
@@ -896,6 +926,7 @@ test "max i16 null" {
     const result: ?Scalar = try max(&.{ .i16 = array });
 
     try std.testing.expectEqualDeep(expected, result);
+    check_max(&.{ .i16 = array }, result);
 }
 
 test "max binary null" {
@@ -909,6 +940,7 @@ test "max binary null" {
     const result: ?Scalar = try max(&.{ .binary = array });
 
     try std.testing.expectEqualDeep(expected, result);
+    check_max(&.{ .binary = array }, result);
 }
 
 test "max decimal256 null" {
@@ -922,6 +954,7 @@ test "max decimal256 null" {
     const result: ?Scalar = try max(&.{ .decimal256 = array });
 
     try std.testing.expectEqualDeep(expected, result);
+    check_max(&.{ .decimal256 = array }, result);
 }
 
 test "max fixed-size-binary null" {
@@ -935,6 +968,7 @@ test "max fixed-size-binary null" {
     const result: ?Scalar = try max(&.{ .fixed_size_binary = array });
 
     try std.testing.expectEqualDeep(expected, result);
+    check_max(&.{ .fixed_size_binary = array }, result);
 }
 
 test "max binary-view null" {
@@ -948,6 +982,7 @@ test "max binary-view null" {
     const result: ?Scalar = try max(&.{ .binary_view = array });
 
     try std.testing.expectEqualDeep(expected, result);
+    check_max(&.{ .binary_view = array }, result);
 }
 
 test "max i16 non-null" {
@@ -961,6 +996,7 @@ test "max i16 non-null" {
     const result: ?Scalar = try max(&.{ .i16 = array });
 
     try std.testing.expectEqualDeep(expected, result);
+    check_max(&.{ .i16 = array }, result);
 }
 
 test "max binary non-null" {
@@ -974,6 +1010,7 @@ test "max binary non-null" {
     const result: ?Scalar = try max(&.{ .binary = array });
 
     try std.testing.expectEqualDeep(expected, result);
+    check_max(&.{ .binary = array }, result);
 }
 
 test "max decimal256 non-null" {
@@ -987,6 +1024,7 @@ test "max decimal256 non-null" {
     const result: ?Scalar = try max(&.{ .decimal256 = array });
 
     try std.testing.expectEqualDeep(expected, result);
+    check_max(&.{ .decimal256 = array }, result);
 }
 
 test "max fixed-size-binary non-null" {
@@ -1000,6 +1038,7 @@ test "max fixed-size-binary non-null" {
     const result: ?Scalar = try max(&.{ .fixed_size_binary = array });
 
     try std.testing.expectEqualDeep(expected, result);
+    check_max(&.{ .fixed_size_binary = array }, result);
 }
 
 test "max binary-view non-null" {
@@ -1013,4 +1052,5 @@ test "max binary-view non-null" {
     const result: ?Scalar = try max(&.{ .binary_view = array });
 
     try std.testing.expectEqualDeep(expected, result);
+    check_max(&.{ .binary_view = array }, result);
 }
