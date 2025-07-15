@@ -1,6 +1,6 @@
 # arrow-zig
 
-Zig implementation of [Apache Arrow]() in-memory columnar data format.
+Zig implementation of [Apache Arrow](https://arrow.apache.org/docs/format/Intro.html) in-memory columnar data format.
 
 ## License
 
