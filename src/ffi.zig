@@ -118,7 +118,7 @@ fn import_binary_view(array: *const FFI_Array, alloc: Allocator) Error!arr.Binar
 
     const views = import_buffer(arr.BinaryView, buffers[1], size);
 
-    var idx: u32 = offset;
+    var idx: u32 = 0;
     while (idx < offset + len) : (idx += 1) {
         const view = views.ptr[idx];
         if (view.length > 12) {

@@ -12,6 +12,7 @@ const concat = @import("./concat.zig").concat;
 const equals = @import("./equals.zig");
 const ffi = @import("./ffi.zig");
 const minmax = @import("./minmax.zig");
+const validate = @import("./validate.zig");
 
 const Error = error{ OutOfMemory, ShortInput };
 
@@ -41,6 +42,8 @@ fn minmax_test(input: *FuzzInput, alloc: Allocator) !void {
         else => unreachable,
     };
 
+    try validate.validate(&array);
+
     const min_result = try minmax.min(&array);
     minmax.check_min(&array, min_result);
     const max_result = try minmax.max(&array);
@@ -55,6 +58,7 @@ fn ffi_test(array: *const arr.Array, export_arena: ArenaAllocator, alloc: Alloca
     const import_alloc = import_arena.allocator();
     defer import_arena.deinit();
     const imported = ffi.import_array(&ffi_array, import_alloc) catch unreachable;
+    validate.validate(&imported) catch unreachable;
 
     equals.equals(&imported, array);
 }
@@ -65,8 +69,11 @@ fn concat_test(array: *const arr.Array, input: *FuzzInput, alloc: Allocator) !vo
     const concat_alloc = concat_arena.allocator();
 
     const slice0 = try input.slice_array(array);
+    try validate.validate(&slice0);
     const slice1 = try input.slice_array(array);
+    try validate.validate(&slice1);
     const slice2 = try input.slice_array(array);
+    try validate.validate(&slice2);
 
     const dt = try data_type.get_data_type(array, concat_alloc);
 
@@ -76,6 +83,7 @@ fn concat_test(array: *const arr.Array, input: *FuzzInput, alloc: Allocator) !vo
         const scratch_alloc = scratch_arena.allocator();
         break :conc try concat(dt, &.{ slice0, slice1, slice2 }, concat_alloc, scratch_alloc);
     };
+    try validate.validate(&concated);
 
     const slice0_len = length.length(&slice0);
     const slice1_len = length.length(&slice1);
@@ -109,6 +117,7 @@ fn to_fuzz(data: []const u8) !void {
     var input = FuzzInput{ .data = data };
     const array_len = try input.int(u8);
     const array = try input.make_array(array_len, alloc);
+    try validate.validate(&array);
 
     try minmax_test(&input, gpa);
 
@@ -330,8 +339,15 @@ pub const FuzzInput = struct {
     }
 
     pub fn decimal_array(self: *FuzzInput, comptime decimal_t: arr.DecimalInt, len: u32, alloc: Allocator) Error!arr.DecimalArray(decimal_t) {
+        const max_precision = switch (decimal_t) {
+            .i32 => 9,
+            .i64 => 19,
+            .i128 => 38,
+            .i256 => 76,
+        };
+
         const scale = try self.int(i8);
-        const precision = try self.int(u8);
+        const precision = (try self.int(u8)) % (max_precision + 1);
 
         const params = arr.DecimalParams{ .scale = scale, .precision = precision };
 
