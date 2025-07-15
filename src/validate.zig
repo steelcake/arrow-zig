@@ -29,6 +29,7 @@ const Error = error{
     SizeNegative,
     TypeIdsOffsetLenMismatch,
     WidthNegative,
+    InvalidDictKeysType,
 };
 
 fn validate_validity(needed_bitmap_len: u32, null_count: u32, validity: ?[]const u8) Error!void {
@@ -318,6 +319,13 @@ pub fn validate_dict(array: *const arr.DictArray) Error!void {
 
     if (needed_len > keys_len) {
         return Error.ChildArrayTooShort;
+    }
+
+    switch (array.keys.*) {
+        .i8, .i16, .i32, .i64, .u8, .u16, .u32, .u64 => {},
+        else => {
+            return Error.InvalidDictKeysType;
+        },
     }
 
     // for (array.keys) |key| {
