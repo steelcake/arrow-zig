@@ -168,7 +168,7 @@ pub fn check_minmax_fixed_size_binary(comptime op: Op, minmax_result: ?[]const u
     std.debug.assert(found);
 }
 
-fn minmax_primitive(comptime op: Op, comptime T: type, array: *const arr.PrimitiveArray(T)) ?T {
+pub fn minmax_primitive(comptime op: Op, comptime T: type, array: *const arr.PrimitiveArray(T)) ?T {
     if (array.len == 0) {
         return null;
     }
