@@ -12,12 +12,12 @@ pub const test_array = @import("./test_array.zig");
 pub const scalar = @import("./scalar.zig");
 pub const minmax = @import("./minmax.zig");
 pub const concat = @import("./concat.zig");
-pub const fuzz = @import("./fuzz.zig");
+pub const fuzz_input = @import("./fuzz_input.zig");
 pub const validate = @import("./validate.zig");
 
 test {
     _ = validate;
-    _ = fuzz;
+    _ = fuzz_input;
     _ = concat;
     _ = minmax;
     _ = scalar;
