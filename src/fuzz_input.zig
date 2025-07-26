@@ -290,7 +290,7 @@ pub const FuzzInput = struct {
         const offset: u32 = try self.int(u8);
         const total_len: u32 = len + offset;
 
-        const byte_width = try self.int(u8);
+        const byte_width = (try self.int(u8)) + 1;
 
         var prng = try self.make_prng();
         const rand = prng.random();
@@ -676,7 +676,7 @@ pub const FuzzInput = struct {
         const offset: u32 = try self.int(u8);
         const total_len: u32 = len + offset;
 
-        const item_width = (try self.int(u8)) % 10;
+        const item_width = (try self.int(u8)) % 10 + 1;
 
         const inner = try alloc.create(arr.Array);
         inner.* = try self.make_array_impl(item_width * total_len, alloc, depth + 1);
