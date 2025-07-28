@@ -62,13 +62,23 @@ pub const UnionType = struct {
     }
 };
 
-pub const MapKeyType = enum {
+pub const MapKeyType = union(enum) {
     binary,
     large_binary,
     utf8,
     large_utf8,
     binary_view,
     utf8_view,
+    // has byte_width
+    fixed_size_binary: i32,
+    i8,
+    i16,
+    i32,
+    i64,
+    u8,
+    u16,
+    u32,
+    u64,
 
     pub fn to_data_type(self: MapKeyType) DataType {
         return switch (self) {
@@ -78,7 +88,33 @@ pub const MapKeyType = enum {
             .large_utf8 => DataType{ .large_utf8 = {} },
             .binary_view => DataType{ .binary_view = {} },
             .utf8_view => DataType{ .utf8_view = {} },
+            .fixed_size_binary => |byte_width| .{ .fixed_size_binary = byte_width },
+            .i8 => .{ .i8 = {} },
+            .i16 => .{ .i16 = {} },
+            .i32 => .{ .i32 = {} },
+            .i64 => .{ .i64 = {} },
+            .u8 => .{ .u8 = {} },
+            .u16 => .{ .u16 = {} },
+            .u32 => .{ .u32 = {} },
+            .u64 => .{ .u64 = {} },
         };
+    }
+
+    pub fn eql(self: *const MapKeyType, other: *const MapKeyType) bool {
+        if (@intFromEnum(self.*) != @intFromEnum(other.*)) {
+            return false;
+        }
+
+        switch (self.*) {
+            .fixed_size_binary => |sbw| {
+                if (sbw != other.fixed_size_binary) {
+                    return false;
+                }
+            },
+            else => {},
+        }
+
+        return true;
     }
 };
 
@@ -87,7 +123,7 @@ pub const MapType = struct {
     value: DataType,
 
     pub fn eql(self: *const MapType, other: *const MapType) bool {
-        return self.key == other.key and self.value.eql(&other.value);
+        return self.key.eql(&other.key) and self.value.eql(&other.value);
     }
 };
 
@@ -453,6 +489,15 @@ pub fn get_data_type(array: *const arr.Array, alloc: Allocator) Error!DataType {
                 .large_utf8 => .large_utf8,
                 .binary_view => .binary_view,
                 .utf8_view => .utf8_view,
+                .fixed_size_binary => |*k| .{ .fixed_size_binary = k.byte_width },
+                .i8 => .i8,
+                .i16 => .i16,
+                .i32 => .i32,
+                .i64 => .i64,
+                .u8 => .u8,
+                .u16 => .u16,
+                .u32 => .u32,
+                .u64 => .u64,
                 else => return error.BadMapKeyType,
             };
 

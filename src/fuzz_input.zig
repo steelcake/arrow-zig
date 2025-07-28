@@ -550,10 +550,7 @@ pub const FuzzInput = struct {
         for (0..num_fields) |field_idx| {
             field_values[field_idx] = try self.make_array_impl(total_len, alloc, depth + 1);
 
-            const field_name_len = (try self.int(u8)) % 48;
-            const field_name = try alloc.allocSentinel(u8, field_name_len, 0);
-            rand_bytes_zero_sentinel(rand, field_name);
-
+            const field_name = try make_name(field_names[0..field_idx], rand, alloc);
             field_names[field_idx] = field_name;
         }
 
@@ -607,10 +604,7 @@ pub const FuzzInput = struct {
         for (0..num_children) |child_idx| {
             children[child_idx] = try self.make_array_impl(@as(u32, @intCast(current_offsets[child_idx])), alloc, depth + 1);
 
-            const field_name_len = (try self.int(u8)) % 48;
-            const field_name = try alloc.allocSentinel(u8, field_name_len, 0);
-            rand_bytes_zero_sentinel(rand, field_name);
-
+            const field_name = try make_name(field_names[0..child_idx], rand, alloc);
             field_names[child_idx] = field_name;
         }
 
@@ -646,10 +640,7 @@ pub const FuzzInput = struct {
         for (0..num_children) |child_idx| {
             children[child_idx] = try self.make_array_impl(total_len, alloc, depth + 1);
 
-            const field_name_len = (try self.int(u8)) % 48;
-            const field_name = try alloc.allocSentinel(u8, field_name_len, 0);
-            rand_bytes_zero_sentinel(rand, field_name);
-
+            const field_name = try make_name(field_names[0..child_idx], rand, alloc);
             field_names[child_idx] = field_name;
         }
 
@@ -847,4 +838,22 @@ fn rand_bytes_zero_sentinel(rand: std.Random, out: []u8) void {
             out.ptr[i] = 1;
         }
     }
+}
+
+fn make_name(existing_names: []const []const u8, rand: std.Random, alloc: Allocator) ![:0]const u8 {
+    const name_len = rand.int(u8) % 30 + 1;
+    const name = try alloc.allocSentinel(u8, name_len, 0);
+
+    namegen: while (true) {
+        rand_bytes_zero_sentinel(rand, name);
+
+        for (existing_names) |other_name| {
+            if (std.mem.eql(u8, name, other_name)) {
+                continue :namegen;
+            }
+        }
+        break;
+    }
+
+    return name;
 }
