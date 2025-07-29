@@ -171,6 +171,10 @@ pub fn validate_struct(array: *const arr.StructArray) Error!void {
 
     try validate_validity(array.null_count, array.offset, array.len, array.validity);
 
+    if (array.field_names.len == 0) {
+        return Error.Invalid;
+    }
+
     if (array.field_names.len != array.field_values.len) {
         return Error.Invalid;
     }
@@ -188,6 +192,10 @@ pub fn validate_struct(array: *const arr.StructArray) Error!void {
 
 fn validate_union(array: *const arr.UnionArray) Error!void {
     if (@as(u64, array.offset) + @as(u64, array.len) > std.math.maxInt(u32)) {
+        return Error.Invalid;
+    }
+
+    if (array.field_names.len == 0) {
         return Error.Invalid;
     }
 
