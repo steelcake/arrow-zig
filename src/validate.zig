@@ -110,6 +110,10 @@ pub fn validate_decimal(comptime decimal_t: arr.DecimalInt, array: *const arr.De
         .i256 => 76,
     };
 
+    if (array.params.precision == 0) {
+        return Error.Invalid;
+    }
+
     if (array.params.precision > max_precision) {
         return Error.Invalid;
     }

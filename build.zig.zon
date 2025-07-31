@@ -1,6 +1,6 @@
 .{
     .name = .arrow,
-    .version = "0.0.19",
+    .version = "0.0.20",
     .fingerprint = 0xd837ee3ea81a5164, // Changing this has security and trust implications.
     .minimum_zig_version = "0.15.0-dev.208+8acedfd5b",
     .dependencies = .{},

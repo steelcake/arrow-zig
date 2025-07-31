@@ -6,6 +6,7 @@ const arr = @import("./array.zig");
 const bitmap = @import("./bitmap.zig");
 const length = @import("./length.zig");
 const slice_array_impl = @import("./slice.zig").slice;
+const data_type = @import("./data_type.zig");
 
 const Error = error{ OutOfMemory, ShortInput };
 
@@ -211,17 +212,7 @@ pub const FuzzInput = struct {
     }
 
     pub fn decimal_array(self: *FuzzInput, comptime decimal_t: arr.DecimalInt, len: u32, alloc: Allocator) Error!arr.DecimalArray(decimal_t) {
-        const max_precision = switch (decimal_t) {
-            .i32 => 9,
-            .i64 => 19,
-            .i128 => 38,
-            .i256 => 76,
-        };
-
-        const scale = try self.int(i8);
-        const precision = (try self.int(u8)) % (max_precision + 1);
-
-        const params = arr.DecimalParams{ .scale = scale, .precision = precision };
+        const params = try self.decimal_params(decimal_t);
 
         const inner = try self.primitive_array(decimal_t.to_type(), len, alloc);
 
@@ -233,51 +224,11 @@ pub const FuzzInput = struct {
     }
 
     pub fn time_array(self: *FuzzInput, comptime backing_t: arr.IndexType, len: u32, alloc: Allocator) Error!arr.TimeArray(backing_t) {
-        const Unit = arr.TimeArray(backing_t).Unit;
-
-        const unit_bit = (try self.int(u8)) % 2 == 0;
-
-        const unit: Unit = switch (backing_t) {
-            .i32 => if (unit_bit) .second else .millisecond,
-            .i64 => if (unit_bit) .microsecond else .nanosecond,
-        };
-
-        return .{ .unit = unit, .inner = try self.primitive_array(backing_t.to_type(), len, alloc) };
-    }
-
-    fn timestamp_unit(self: *FuzzInput) Error!arr.TimestampUnit {
-        const unit_int: u8 = (try self.int(u8)) % 4;
-        return switch (unit_int) {
-            0 => .second,
-            1 => .millisecond,
-            2 => .microsecond,
-            3 => .nanosecond,
-            else => unreachable,
-        };
+        return .{ .unit = try self.time_unit(backing_t), .inner = try self.primitive_array(backing_t.to_type(), len, alloc) };
     }
 
     pub fn timestamp_array(self: *FuzzInput, len: u32, alloc: Allocator) Error!arr.TimestampArray {
-        const unit = try self.timestamp_unit();
-        var timestamp = arr.Timestamp{
-            .unit = unit,
-            .timezone = null,
-        };
-
-        const timezone_int = try self.int(u8);
-        const has_timezone = timezone_int % 2 == 0;
-        const alloc_timezone = timezone_int % 4 == 0;
-        if (has_timezone) {
-            const tz = "Africa/Abidjan";
-            if (alloc_timezone) {
-                const timezone = try alloc.alloc(u8, tz.len);
-                @memcpy(timezone, tz);
-                timestamp.timezone = timezone;
-            } else {
-                timestamp.timezone = tz;
-            }
-        }
-
-        return .{ .ts = timestamp, .inner = try self.primitive_array(i64, len, alloc) };
+        return .{ .ts = try self.timestamp(alloc), .inner = try self.primitive_array(i64, len, alloc) };
     }
 
     pub fn interval_array(self: *FuzzInput, comptime interval_t: arr.IntervalType, len: u32, alloc: Allocator) Error!arr.IntervalArray(interval_t) {
@@ -828,6 +779,218 @@ pub const FuzzInput = struct {
         const slice0 = slice_array_impl(array, slice0_offset, slice0_len);
         return slice0;
     }
+
+    pub fn make_data_type(self: *FuzzInput, alloc: Allocator) Error!data_type.DataType {
+        return try self.make_data_type_impl(alloc, 0);
+    }
+
+    fn make_data_type_impl(self: *FuzzInput, alloc: Allocator, depth: u8) Error!data_type.DataType {
+        if (depth > MAX_DEPTH) {
+            return .{ .null = {} };
+        }
+
+        const kind = (try self.int(u8)) % 44;
+
+        return switch (kind) {
+            0 => .{ .null = {} },
+            1 => .{ .i8 = {} },
+            2 => .{ .i16 = {} },
+            3 => .{ .i32 = {} },
+            4 => .{ .i64 = {} },
+            5 => .{ .u8 = {} },
+            6 => .{ .u16 = {} },
+            7 => .{ .u32 = {} },
+            8 => .{ .u64 = {} },
+            9 => .{ .f16 = {} },
+            10 => .{ .f32 = {} },
+            11 => .{ .f64 = {} },
+            12 => .{ .binary = {} },
+            13 => .{ .utf8 = {} },
+            14 => .{ .bool = {} },
+            15 => .{ .decimal32 = try self.decimal_params(.i32) },
+            16 => .{ .decimal64 = try self.decimal_params(.i64) },
+            17 => .{ .decimal128 = try self.decimal_params(.i128) },
+            18 => .{ .decimal256 = try self.decimal_params(.i256) },
+            19 => .{ .date32 = {} },
+            20 => .{ .date64 = {} },
+            21 => .{ .time32 = try self.time_unit(.i32) },
+            22 => .{ .time64 = try self.time_unit(.i64) },
+            23 => .{ .timestamp = try self.timestamp(alloc) },
+            24 => .{ .interval_year_month = {} },
+            25 => .{ .interval_day_time = {} },
+            26 => .{ .interval_month_day_nano = {} },
+            27 => .{ .list = try make_ptr(data_type.DataType, try self.make_data_type_impl(alloc, depth + 1), alloc) },
+            28 => .{ .struct_ = try make_ptr(data_type.StructType, try self.struct_type(alloc, depth), alloc) },
+            29 => .{ .dense_union = try make_ptr(data_type.UnionType, try self.union_type(alloc, depth), alloc) },
+            30 => .{ .sparse_union = try make_ptr(data_type.UnionType, try self.union_type(alloc, depth), alloc) },
+            31 => .{ .fixed_size_binary = try self.fixed_size_binary_width() },
+            32 => .{ .fixed_size_list = try make_ptr(data_type.FixedSizeListType, try self.fixed_size_list_type(alloc, depth), alloc) },
+            33 => .{ .map = try make_ptr(data_type.MapType, try self.map_type(alloc, depth), alloc) },
+            34 => .{ .duration = try self.timestamp_unit() },
+            35 => .{ .large_binary = {} },
+            36 => .{ .large_utf8 = {} },
+            37 => .{ .large_list = try make_ptr(data_type.DataType, try self.make_data_type_impl(alloc, depth + 1), alloc) },
+            38 => .{ .run_end_encoded = try make_ptr(data_type.RunEndEncodedType, try self.run_end_encoded_type(alloc, depth), alloc) },
+            39 => .{ .binary_view = {} },
+            40 => .{ .utf8_view = {} },
+            41 => .{ .list_view = try make_ptr(data_type.DataType, try self.make_data_type_impl(alloc, depth + 1), alloc) },
+            42 => .{ .large_list_view = try make_ptr(data_type.DataType, try self.make_data_type_impl(alloc, depth + 1), alloc) },
+            43 => .{ .dict = try make_ptr(data_type.DictType, try self.dict_type(alloc, depth), alloc) },
+            else => unreachable,
+        };
+    }
+
+    pub fn dict_type(self: *FuzzInput, alloc: Allocator, depth: u8) Error!data_type.DictType {
+        const value = try self.make_data_type_impl(alloc, depth + 1);
+
+        return .{
+            .key = .i32,
+            .value = value,
+        };
+    }
+
+    pub fn run_end_encoded_type(self: *FuzzInput, alloc: Allocator, depth: u8) Error!data_type.RunEndEncodedType {
+        const value = try self.make_data_type_impl(alloc, depth + 1);
+
+        return .{
+            .run_end = .i32,
+            .value = value,
+        };
+    }
+
+    pub fn map_type(self: *FuzzInput, alloc: Allocator, depth: u8) Error!data_type.MapType {
+        const value = try self.make_data_type_impl(alloc, depth + 1);
+
+        return .{
+            .key = .binary,
+            .value = value,
+        };
+    }
+
+    pub fn fixed_size_list_type(self: *FuzzInput, alloc: Allocator, depth: u8) Error!data_type.FixedSizeListType {
+        const item_width = (try self.int(u8)) % 10 + 1;
+        return .{
+            .inner = try self.make_data_type_impl(alloc, depth + 1),
+            .item_width = item_width,
+        };
+    }
+
+    pub fn fixed_size_binary_width(self: *FuzzInput) Error!i32 {
+        return (try self.int(u8)) % 69 + 1;
+    }
+
+    pub fn union_type(self: *FuzzInput, alloc: Allocator, depth: u8) Error!data_type.UnionType {
+        const num_children = (try self.int(u8)) % 5 + 1;
+
+        const type_id_set = try alloc.alloc(i8, num_children);
+        for (0..num_children) |child_idx| {
+            type_id_set[child_idx] = @intCast(child_idx);
+        }
+
+        const field_names = try alloc.alloc([:0]const u8, num_children);
+
+        var prng = try self.make_prng();
+        const rand = prng.random();
+
+        for (0..num_children) |child_idx| {
+            const field_name = try make_name(field_names[0..child_idx], rand, alloc);
+            field_names[child_idx] = field_name;
+        }
+
+        const field_types = try alloc.alloc(data_type.DataType, num_children);
+
+        for (0..num_children) |field_idx| {
+            field_types[field_idx] = try self.make_data_type_impl(alloc, depth + 1);
+        }
+
+        return .{
+            .field_names = field_names,
+            .field_types = field_types,
+            .type_id_set = type_id_set,
+        };
+    }
+
+    pub fn struct_type(self: *FuzzInput, alloc: Allocator, depth: u8) Error!data_type.StructType {
+        const num_fields = (try self.int(u8)) % 5 + 1;
+
+        const field_names = try alloc.alloc([:0]const u8, num_fields);
+
+        var prng = try self.make_prng();
+        const rand = prng.random();
+
+        for (0..num_fields) |field_idx| {
+            const field_name = try make_name(field_names[0..field_idx], rand, alloc);
+            field_names[field_idx] = field_name;
+        }
+
+        const field_types = try alloc.alloc(data_type.DataType, num_fields);
+
+        for (0..num_fields) |field_idx| {
+            field_types[field_idx] = try self.make_data_type_impl(alloc, depth + 1);
+        }
+
+        return .{
+            .field_names = field_names,
+            .field_types = field_types,
+        };
+    }
+
+    pub fn decimal_params(self: *FuzzInput, comptime decimal_t: arr.DecimalInt) Error!arr.DecimalParams {
+        const max_precision = switch (decimal_t) {
+            .i32 => 9,
+            .i64 => 19,
+            .i128 => 38,
+            .i256 => 76,
+        };
+
+        return .{
+            .scale = try self.int(i8),
+            .precision = (try self.int(u8)) % max_precision + 1,
+        };
+    }
+
+    pub fn time_unit(self: *FuzzInput, comptime backing_t: arr.IndexType) Error!arr.TimeArray(backing_t).Unit {
+        const unit_bit = (try self.int(u8)) % 2 == 0;
+
+        return switch (backing_t) {
+            .i32 => if (unit_bit) .second else .millisecond,
+            .i64 => if (unit_bit) .microsecond else .nanosecond,
+        };
+    }
+
+    pub fn timestamp_unit(self: *FuzzInput) Error!arr.TimestampUnit {
+        const unit_int: u8 = (try self.int(u8)) % 4;
+        return switch (unit_int) {
+            0 => .second,
+            1 => .millisecond,
+            2 => .microsecond,
+            3 => .nanosecond,
+            else => unreachable,
+        };
+    }
+
+    pub fn timestamp(self: *FuzzInput, alloc: Allocator) Error!arr.Timestamp {
+        const unit = try self.timestamp_unit();
+        var ts = arr.Timestamp{
+            .unit = unit,
+            .timezone = null,
+        };
+
+        const timezone_int = try self.int(u8);
+        const has_timezone = timezone_int % 2 == 0;
+
+        var prng = try self.make_prng();
+        const rand = prng.random();
+
+        if (has_timezone) {
+            const tz_len = try self.int(u8) % 40;
+            const tz = try alloc.alloc(u8, tz_len);
+            rand.bytes(tz);
+            ts.timezone = tz;
+        }
+
+        return ts;
+    }
 };
 
 fn rand_bytes_zero_sentinel(rand: std.Random, out: []u8) void {
@@ -856,4 +1019,10 @@ fn make_name(existing_names: []const []const u8, rand: std.Random, alloc: Alloca
     }
 
     return name;
+}
+
+fn make_ptr(comptime T: type, v: T, alloc: Allocator) Error!*const T {
+    const ptr = try alloc.create(T);
+    ptr.* = v;
+    return ptr;
 }

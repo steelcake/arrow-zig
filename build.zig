@@ -22,6 +22,7 @@ pub fn build(b: *std.Build) void {
     add_fuzz_target(b, "fuzz_minmax", "src/fuzz_minmax.zig", "run fuzz tests for minmax", target, optimize);
     add_fuzz_target(b, "fuzz_ffi", "src/fuzz_ffi.zig", "run fuzz tests for ffi", target, optimize);
     add_fuzz_target(b, "fuzz_concat", "src/fuzz_concat.zig", "run fuzz tests for concat", target, optimize);
+    add_fuzz_target(b, "fuzz_check_dt", "src/fuzz_check_dt.zig", "run fuzz tests for check_data_type", target, optimize);
 }
 
 fn add_fuzz_target(b: *std.Build, command_name: []const u8, root_source_file: []const u8, description: []const u8, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode) void {
