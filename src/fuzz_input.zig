@@ -254,7 +254,7 @@ pub const FuzzInput = struct {
         const offset: u32 = try self.int(u8);
         const total_len: u32 = len + offset;
 
-        const byte_width = @min((try self.int(u8)) % 69 + 1, std.math.maxInt(u32) / total_len);
+        const byte_width = @min((try self.int(u8)) % 69 + 1, std.math.maxInt(u32) / @max(1, total_len));
 
         var prng = try self.make_prng();
         const rand = prng.random();
