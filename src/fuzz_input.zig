@@ -7,6 +7,7 @@ const bitmap = @import("./bitmap.zig");
 const length = @import("./length.zig");
 const slice_array_impl = @import("./slice.zig").slice;
 const data_type = @import("./data_type.zig");
+const scalar = @import("./scalar.zig");
 
 const Error = error{ OutOfMemory, ShortInput };
 
@@ -23,6 +24,18 @@ const MAX_DEPTH = 10;
 /// Normal random number generator seeded by fuzzer input is used in some places where the specific values don't change execution but we want them to be random.
 pub const FuzzInput = struct {
     data: []const u8,
+
+    pub fn init(data: []const u8) FuzzInput {
+        return .{
+            .data = data,
+        };
+    }
+
+    pub fn float(self: *FuzzInput, comptime T: type) Error!T {
+        var prng = try self.make_prng();
+        const rand = prng.random();
+        return @floatCast(rand.float(f64));
+    }
 
     pub fn int(self: *FuzzInput, comptime T: type) Error!T {
         const size = @sizeOf(T);
@@ -991,6 +1004,40 @@ pub const FuzzInput = struct {
 
         return ts;
     }
+
+    pub fn make_scalar(self: *FuzzInput, alloc: Allocator) Error!scalar.Scalar {
+        const kind = (try self.int(u8)) % 17;
+
+        return switch (kind) {
+            0 => .{ .null = {} },
+            1 => .{ .i8 = try self.int(i8) },
+            2 => .{ .i16 = try self.int(i16) },
+            3 => .{ .i32 = try self.int(i32) },
+            4 => .{ .i64 = try self.int(i64) },
+            5 => .{ .u8 = try self.int(u8) },
+            6 => .{ .u16 = try self.int(u16) },
+            7 => .{ .u32 = try self.int(u32) },
+            8 => .{ .u64 = try self.int(u64) },
+            9 => .{ .f16 = try self.float(f16) },
+            10 => .{ .f32 = try self.float(f32) },
+            11 => .{ .f64 = try self.float(f64) },
+            12 => .{ .i128 = try self.int(i128) },
+            13 => .{ .i256 = try self.int(i256) },
+            14 => make_binary: {
+                const len = try self.int(u8);
+                const data = try self.slice(u8, len, alloc);
+                break :make_binary .{ .binary = data };
+            },
+            15 => .{ .bool = try self.boolean() },
+            16 => make_list: {
+                const len = try self.int(u8);
+                const array = try alloc.create(arr.Array);
+                array.* = try self.make_array(len, alloc);
+                break :make_list .{ .list = array };
+            },
+            else => unreachable,
+        };
+    }
 };
 
 fn rand_bytes_zero_sentinel(rand: std.Random, out: []u8) void {
@@ -1025,4 +1072,14 @@ fn make_ptr(comptime T: type, v: T, alloc: Allocator) Error!*const T {
     const ptr = try alloc.create(T);
     ptr.* = v;
     return ptr;
+}
+
+test "smoke" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var input = FuzzInput.init(&.{ 1, 2, 3, 4, 5, 6 });
+
+    _ = input.make_scalar(alloc) catch {};
 }
