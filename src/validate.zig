@@ -547,6 +547,14 @@ pub fn validate_list_view(comptime index_t: arr.IndexType, array: *const arr.Gen
     }
 }
 
+pub fn validate_timestamp(array: *const arr.TimestampArray) Error!void {
+    if (array.ts.timezone) |tz| {
+        if (tz.len == 0) {
+            return Error.Invalid;
+        }
+    }
+}
+
 pub fn validate(array: *const arr.Array) Error!void {
     switch (array.*) {
         .null => {},
@@ -577,7 +585,7 @@ pub fn validate(array: *const arr.Array) Error!void {
         .date64 => |*a| try validate_primitive(i64, &a.inner),
         .time32 => |*a| try validate_primitive(i32, &a.inner),
         .time64 => |*a| try validate_primitive(i64, &a.inner),
-        .timestamp => |*a| try validate_primitive(i64, &a.inner),
+        .timestamp => |*a| try validate_timestamp(a),
         .duration => |*a| try validate_primitive(i64, &a.inner),
         .interval_year_month => |*a| try validate_primitive(i32, &a.inner),
         .interval_day_time => |*a| try validate_primitive([2]i32, &a.inner),

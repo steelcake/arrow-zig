@@ -996,7 +996,7 @@ pub const FuzzInput = struct {
         const rand = prng.random();
 
         if (has_timezone) {
-            const tz_len = try self.int(u8) % 40;
+            const tz_len = try self.int(u8) % 40 + 1;
             const tz = try alloc.alloc(u8, tz_len);
             rand_bytes_zero_sentinel(rand, tz);
             ts.timezone = tz;
