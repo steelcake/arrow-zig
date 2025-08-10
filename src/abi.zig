@@ -13,7 +13,7 @@ pub const ArrowSchema = extern struct {
     n_children: i64,
     children: ?[*]?*ArrowSchema,
     dictionary: ?*ArrowSchema,
-    release: ?*const fn (?*ArrowSchema) callconv(.C) void,
+    release: ?*const fn (?*ArrowSchema) callconv(.c) void,
     private_data: ?*anyopaque,
 };
 
@@ -26,6 +26,6 @@ pub const ArrowArray = extern struct {
     buffers: ?[*]?*const anyopaque,
     children: ?[*]?*ArrowArray,
     dictionary: ?*ArrowArray,
-    release: ?*const fn (?*ArrowArray) callconv(.C) void,
+    release: ?*const fn (?*ArrowArray) callconv(.c) void,
     private_data: ?*anyopaque,
 };

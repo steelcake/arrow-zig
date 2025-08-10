@@ -814,11 +814,11 @@ fn release_impl(comptime T: type, data: ?*T) void {
     ptr.*.release = null;
 }
 
-fn release_array(array: ?*abi.ArrowArray) callconv(.C) void {
+fn release_array(array: ?*abi.ArrowArray) callconv(.c) void {
     release_impl(abi.ArrowArray, array);
 }
 
-fn release_schema(schema: ?*abi.ArrowSchema) callconv(.C) void {
+fn release_schema(schema: ?*abi.ArrowSchema) callconv(.c) void {
     release_impl(abi.ArrowSchema, schema);
 }
 
@@ -1294,7 +1294,7 @@ fn export_fixed_size_list(array: *const arr.FixedSizeListArray, private_data: *P
 
     const allocator = private_data.arena.allocator();
 
-    const format = try std.fmt.allocPrintZ(allocator, "+w:{}", .{array.item_width});
+    const format = try std.fmt.allocPrintSentinel(allocator, "+w:{}", .{array.item_width}, 0);
 
     const buffers = try allocator.alloc(?*const anyopaque, n_buffers);
     buffers[0] = if (array.validity) |v| v.ptr else null;
@@ -1453,7 +1453,7 @@ fn export_timestamp(timestamp_array: *const arr.TimestampArray, private_data: *P
     };
 
     const format = if (timestamp_array.ts.timezone) |tz|
-        try std.fmt.allocPrintZ(allocator, "{s}{s}", .{ format_base, tz })
+        try std.fmt.allocPrintSentinel(allocator, "{s}{s}", .{ format_base, tz }, 0)
     else
         format_base;
 
@@ -1465,7 +1465,7 @@ fn export_fixed_size_binary(array: *const arr.FixedSizeBinaryArray, private_data
 
     const allocator = private_data.arena.allocator();
 
-    const format = try std.fmt.allocPrintZ(allocator, "w:{}", .{array.byte_width});
+    const format = try std.fmt.allocPrintSentinel(allocator, "w:{}", .{array.byte_width}, 0);
 
     const buffers = try allocator.alloc(?*const anyopaque, n_buffers);
     buffers[0] = if (array.validity) |v| v.ptr else null;
@@ -1499,7 +1499,7 @@ fn export_fixed_size_binary(array: *const arr.FixedSizeBinaryArray, private_data
 }
 
 fn decimal_format(params: arr.DecimalParams, width: []const u8, allocator: Allocator) Error![:0]const u8 {
-    return std.fmt.allocPrintZ(allocator, "d:{},{},{s}", .{ params.precision, params.scale, width });
+    return std.fmt.allocPrintSentinel(allocator, "d:{},{},{s}", .{ params.precision, params.scale, width }, 0);
 }
 
 fn export_binary_view(array: *const arr.BinaryViewArray, format: [:0]const u8, private_data: *PrivateData) Error!FFI_Array {
