@@ -52,7 +52,7 @@ fn fuzz_minmax(data: []const u8, gpa: Allocator) !void {
 }
 
 test "fuzz minmax" {
-    try FuzzWrap(fuzz_minmax, 1 << 25).run();
+    try FuzzWrap(fuzz_minmax, 1 << 28).run();
 }
 
 fn fuzz_ffi(data: []const u8, gpa: Allocator) !void {
@@ -89,7 +89,7 @@ fn fuzz_ffi(data: []const u8, gpa: Allocator) !void {
 }
 
 test "fuzz ffi" {
-    try FuzzWrap(fuzz_ffi, 1 << 25).run();
+    try FuzzWrap(fuzz_ffi, 1 << 28).run();
 }
 
 fn fuzz_concat(data: []const u8, gpa: Allocator) !void {
@@ -137,7 +137,7 @@ fn fuzz_concat(data: []const u8, gpa: Allocator) !void {
 }
 
 test "fuzz concat" {
-    try FuzzWrap(fuzz_concat, 1 << 26).run();
+    try FuzzWrap(fuzz_concat, 1 << 28).run();
 }
 
 fn fuzz_check_dt(data: []const u8, gpa: Allocator) !void {
@@ -158,7 +158,7 @@ fn fuzz_check_dt(data: []const u8, gpa: Allocator) !void {
 }
 
 test "fuzz check_dt" {
-    try FuzzWrap(fuzz_check_dt, 1 << 25).run();
+    try FuzzWrap(fuzz_check_dt, 1 << 28).run();
 }
 
 fn FuzzWrap(comptime fuzz_one: fn (data: []const u8, gpa: Allocator) anyerror!void, comptime alloc_size: comptime_int) type {
