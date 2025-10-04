@@ -16,7 +16,7 @@ pub const Validity = struct {
     null_count: u32,
 };
 
-const MAX_DEPTH = 10;
+const MAX_DEPTH = 5;
 
 /// This struct implements structured fuzzing.
 ///
