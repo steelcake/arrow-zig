@@ -279,7 +279,7 @@ pub fn slice(array: *const arr.Array, offset: u32, len: u32) arr.Array {
 ///
 /// This function is needed instead of just slicing inner arrays like other data types because
 /// top level offset/len of run_end_encoded isn't in terms of the length of run_ends array but absolute.
-pub fn normalize_run_end_encoded(array: *const arr.RunEndArray, alloc: Allocator) error{OutOfMemory}!arr.RunEndArray {
+pub fn normalize_run_end_encoded(array: *const arr.RunEndArray, lift: u32, alloc: Allocator) error{OutOfMemory}!arr.RunEndArray {
     if (array.len == 0) {
         const run_ends = try alloc.create(arr.Array);
         const values = try alloc.create(arr.Array);
@@ -294,17 +294,18 @@ pub fn normalize_run_end_encoded(array: *const arr.RunEndArray, alloc: Allocator
     }
 
     return switch (array.run_ends.*) {
-        .i16 => |*a| try slice_run_end_encoded_inner_impl(i16, array, a, alloc),
-        .i32 => |*a| try slice_run_end_encoded_inner_impl(i32, array, a, alloc),
-        .i64 => |*a| try slice_run_end_encoded_inner_impl(i64, array, a, alloc),
+        .i16 => |*a| try normalize_run_end_encoded_inner_impl(i16, array, a, lift, alloc),
+        .i32 => |*a| try normalize_run_end_encoded_inner_impl(i32, array, a, lift, alloc),
+        .i64 => |*a| try normalize_run_end_encoded_inner_impl(i64, array, a, lift, alloc),
         else => unreachable,
     };
 }
 
-fn slice_run_end_encoded_inner_impl(
+fn normalize_run_end_encoded_inner_impl(
     comptime T: type,
     array: *const arr.RunEndArray,
     run_ends: *const arr.PrimitiveArray(T),
+    lift: u32,
     alloc: Allocator,
 ) error{OutOfMemory}!arr.RunEndArray {
     std.debug.assert(run_ends.null_count == 0);
@@ -331,7 +332,7 @@ fn slice_run_end_encoded_inner_impl(
         const run_end = run_ends_v.ptr[idx];
 
         if (run_end - offset_re >= len_re) {
-            break idx;
+            break idx + 1;
         }
     } else {
         @panic("len out of range/n");
@@ -352,12 +353,13 @@ fn slice_run_end_encoded_inner_impl(
     }
 
     const new_run_ends = try alloc.alloc(T, inner_end - inner_start);
-    const src_run_ends = run_ends_v[inner_start .. inner_end + 1];
+    const src_run_ends = run_ends_v[inner_start..inner_end];
     idx = 0;
+    const lift_re: T = @intCast(lift);
     while (idx < new_run_ends.len) : (idx += 1) {
-        new_run_ends.ptr[idx] = src_run_ends.ptr[idx] - offset_re;
+        new_run_ends.ptr[idx] = src_run_ends.ptr[idx] - offset_re + lift_re;
     }
-    new_run_ends[new_run_ends.len - 1] = len_re;
+    new_run_ends[new_run_ends.len - 1] = len_re + lift_re;
 
     const new_run_ends_arr = try alloc.create(arr.Array);
     new_run_ends_arr.* = @unionInit(arr.Array, @typeName(T), .{

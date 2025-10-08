@@ -441,17 +441,16 @@ fn ReeIter(comptime RunEndT: type) type {
         }
 
         fn next(self: *Self) ?Item {
-            const re = self.run_ends.values[self.run_end_idx];
-
-            if (re >= self.array.offset + self.array.len) {
+            if (self.prev >= self.array.offset + self.array.len) {
                 return null;
             }
 
-            const count = re - self.prev;
+            const re: T = @min(self.run_ends.values[self.run_end_idx], @as(T, @intCast(self.array.len + self.array.offset)));
+            const count: T = re - self.prev;
 
             const out = Item{
                 .count = @intCast(count),
-                .val = slice(self.array.values, self.run_end_idx, 1),
+                .val = slice(self.array.values, self.run_end_idx - self.run_ends.offset, 1),
             };
 
             self.prev = re;
@@ -472,7 +471,7 @@ fn equals_run_end_encoded_impl(comptime RunEndT: type, l: *const arr.RunEndArray
     var r_item = r_iter.next() orelse unreachable;
 
     while (true) {
-        equals(&l_item, &r_item);
+        equals(&l_item.val, &r_item.val);
 
         if (l_item.count == r_item.count) {
             l_item = l_iter.next() orelse {
@@ -482,7 +481,11 @@ fn equals_run_end_encoded_impl(comptime RunEndT: type, l: *const arr.RunEndArray
             r_item = r_iter.next() orelse unreachable;
         } else if (l_item.count < r_item.count) {
             r_item.count -= l_item.count;
-            l_item = l_iter.next() orelse unreachable;
+            l_item = l_iter.next() orelse {
+                std.log.warn("{any}\n{any}\n", .{ r_item, l_item });
+                std.log.warn("{any}\n{any}\n{any}\n{any}\n", .{ r.*, l.*, r.run_ends.*, l.run_ends.* });
+                unreachable;
+            };
         } else if (l_item.count > r_item.count) {
             l_item.count -= r_item.count;
             r_item = r_iter.next() orelse unreachable;
@@ -500,14 +503,12 @@ pub fn equals_run_end_encoded(l: *const arr.RunEndArray, r: *const arr.RunEndArr
         return;
     }
 
-    const l_run_ends = slice(l.run_ends, l.offset, l.len);
-    const l_values = slice(l.values, l.offset, l.len);
-
-    const r_run_ends = slice(r.run_ends, r.offset, r.len);
-    const r_values = slice(r.values, r.offset, r.len);
-
-    equals(&l_run_ends, &r_run_ends);
-    equals(&l_values, &r_values);
+    switch (l.run_ends.*) {
+        .i16 => equals_run_end_encoded_impl(i16, l, r),
+        .i32 => equals_run_end_encoded_impl(i32, l, r),
+        .i64 => equals_run_end_encoded_impl(i64, l, r),
+        else => unreachable,
+    }
 }
 
 /// Checks if two arrays are logically equal.

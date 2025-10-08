@@ -402,10 +402,12 @@ pub fn concat_run_end_encoded(reet: data_type.RunEndEncodedType, arrays: []const
     const values_list = try scratch_alloc.alloc(arr.Array, arrays.len);
     const run_ends_list = try scratch_alloc.alloc(arr.Array, arrays.len);
 
+    var lift: u32 = 0;
     for (arrays, 0..) |*array, idx| {
-        const normalized_arr = try slice.normalize_run_end_encoded(array, scratch_alloc);
+        const normalized_arr = try slice.normalize_run_end_encoded(array, lift, scratch_alloc);
         values_list[idx] = normalized_arr.values.*;
         run_ends_list[idx] = normalized_arr.run_ends.*;
+        lift += array.len;
     }
 
     const values = try alloc.create(arr.Array);

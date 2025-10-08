@@ -390,7 +390,7 @@ pub const FuzzInput = struct {
             35 => return .{ .large_binary = try self.binary_array(.i64, len, alloc) },
             36 => return .{ .large_utf8 = try self.utf8_array(.i64, len, alloc) },
             37 => return .{ .large_list = try self.list_array(.i64, len, alloc, depth) },
-            38 => return .{ .run_end_encoded = try self.run_end_encoded_array(len, alloc) },
+            38 => return .{ .run_end_encoded = try self.run_end_encoded_array(len, alloc, depth) },
             39 => return .{ .binary_view = try self.binary_view_array(len, alloc) },
             40 => return .{ .utf8_view = try self.utf8_view_array(len, alloc) },
             41 => return .{ .list_view = try self.list_view_array(.i32, len, alloc, depth) },
@@ -716,28 +716,37 @@ pub const FuzzInput = struct {
         return array;
     }
 
-    pub fn run_end_encoded_array(self: *FuzzInput, len: u32, alloc: Allocator) Error!arr.RunEndArray {
+    pub fn run_end_encoded_array(self: *FuzzInput, len: u32, alloc: Allocator, depth: u8) Error!arr.RunEndArray {
         const offset: u32 = try self.int(u8);
         const total_len: u32 = len + offset;
 
+        const run_ends_len = @as(u32, try self.int(u8)) + 1;
         const run_ends_offset: u32 = try self.int(u8);
-        const run_ends_total_len: u32 = run_ends_offset + total_len;
+        const run_ends_total_len: u32 = run_ends_len + run_ends_offset;
 
-        const sizes = try self.bytes(run_ends_total_len);
-        const run_ends_values = try alloc.alloc(i32, run_ends_total_len);
-        if (run_ends_total_len > 0) {
-            var run_end: i32 = sizes[0];
-            for (1..run_ends_total_len) |idx| {
-                run_ends_values.ptr[idx] = run_end;
-                run_end += sizes.ptr[idx];
-            }
+        const run_ends_values = try self.slice(i32, run_ends_total_len, alloc);
+        var run_end: i32 = 0;
+        const tl: i32 = @intCast(total_len);
+        for (run_ends_values) |*x| {
+            run_end += @as(i32, @bitCast(@as(u32, @bitCast(x.*)) % 512));
+            run_end = @min(tl, run_end);
+            x.* = run_end;
         }
-
-        const run_ends = try alloc.create(arr.Array);
-        run_ends.* = .{ .i32 = arr.Int32Array{ .len = total_len, .offset = run_ends_offset, .values = run_ends_values, .null_count = 0, .validity = null } };
+        const last_re = &run_ends_values[run_ends_values.len - 1];
+        last_re.* = @max(last_re.*, @as(i32, @intCast(total_len)));
 
         const values = try alloc.create(arr.Array);
-        values.* = .{ .binary = try self.binary_array(.i32, run_ends_total_len, alloc) };
+        values.* = try self.make_array_impl(run_ends_len, alloc, depth + 1);
+        const run_ends = try alloc.create(arr.Array);
+        run_ends.* = .{
+            .i32 = .{
+                .values = run_ends_values,
+                .len = run_ends_len,
+                .offset = run_ends_offset,
+                .validity = null,
+                .null_count = 0,
+            },
+        };
 
         return .{
             .len = len,
