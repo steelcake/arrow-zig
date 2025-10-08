@@ -2,8 +2,8 @@ const std = @import("std");
 const arr = @import("./array.zig");
 const length = @import("./length.zig");
 const bitmap = @import("./bitmap.zig");
-// const is_sorted = @import("./is_sorted.zig");
 const slice = @import("./slice.zig");
+const get = @import("./get.zig");
 
 const Error = error{
     Invalid,
@@ -428,13 +428,21 @@ pub fn validate_run_end_encoded(array: *const arr.RunEndArray) Error!void {
 
 fn validate_dict_keys(comptime T: type, keys: *const arr.PrimitiveArray(T), values_len: u32) Error!void {
     if (keys.null_count > 0) {
-        return Error.Invalid;
-    }
-
-    var idx: u32 = keys.offset;
-    while (idx < keys.offset + keys.len) : (idx += 1) {
-        if (keys.values[idx] >= values_len) {
-            return Error.Invalid;
+        const v = (keys.validity orelse unreachable).ptr;
+        var idx: u32 = keys.offset;
+        while (idx < keys.offset + keys.len) : (idx += 1) {
+            if (get.get_primitive_opt(T, keys.values.ptr, v, idx)) |key| {
+                if (key >= values_len) {
+                    return Error.Invalid;
+                }
+            }
+        }
+    } else {
+        var idx: u32 = keys.offset;
+        while (idx < keys.offset + keys.len) : (idx += 1) {
+            if (keys.values[idx] >= values_len) {
+                return Error.Invalid;
+            }
         }
     }
 }
