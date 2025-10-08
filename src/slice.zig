@@ -1,10 +1,12 @@
 const std = @import("std");
+const Allocator = std.mem.Allocator;
 const testing = std.testing;
 const ArenaAllocator = std.heap.ArenaAllocator;
 
 const arr = @import("./array.zig");
 const bitmap = @import("./bitmap.zig");
 const builder = @import("./builder.zig");
+const get = @import("./get.zig");
 
 const OffsetLen = struct {
     null_count: u32,
@@ -270,6 +272,103 @@ pub fn slice(array: *const arr.Array, offset: u32, len: u32) arr.Array {
         .sparse_union => |*a| .{ .sparse_union = slice_sparse_union(a, offset, len) },
         .run_end_encoded => |*a| .{ .run_end_encoded = slice_run_end_encoded(a, offset, len) },
         .dict => |*a| .{ .dict = slice_dict(a, offset, len) },
+    };
+}
+
+/// Remove top level offset/len from run_end_encoded array.
+/// This is necessary to use inner arrays without slicing them according to top level offset/len
+///
+/// This function is needed instead of just slicing inner arrays like other data types because 
+/// top level offset/len of run_end_encoded isn't in terms of the length of run_ends array but absolute.
+pub fn normalize_run_end_encoded(array: *const arr.RunEndArray, alloc: Allocator) error {OutOfMemory}!arr.RunEndArray {
+    if (array.len == 0) {
+        return arr.RunEndArray {
+            .len = 0,
+            .offset = 0,
+            .run_ends = slice(array.run_ends, 0, 0),
+            .values = slice(array.values, 0, 0),
+        };
+    }
+
+    return switch (array.run_ends.*) {
+        .i16 => |*a| try slice_run_end_encoded_inner_impl(i16, array, a, alloc),
+        .i32 => |*a| try slice_run_end_encoded_inner_impl(i32, array, a, alloc),
+        .i64 => |*a| try slice_run_end_encoded_inner_impl(i64, array, a, alloc),
+    };
+}
+
+fn slice_run_end_encoded_inner_impl(
+    comptime T: type, 
+    array: *const arr.RunEndArray,
+    run_ends: *const arr.PrimitiveArray(T),
+    alloc: Allocator,
+) error {OutOfMemory}!arr.RunEndArray {
+    std.debug.assert(params.run_ends.null_count == 0);
+    std.debug.assert(params.len > 0);
+
+    const run_ends = params.run_ends.values[params.run_ends.offset..params.run_ends.offset+params.run_ends.len];
+
+    const offset_re: T = @intCast(params.offset);
+    const len_re: T = @intCast(params.len);
+
+    // find start
+    var idx: u32 = 0;
+    const inner_start: u32 = while (idx < run_ends.len) : (idx += 1) {
+        const run_end = run_ends.ptr[idx];
+
+        if (run_end > offset_re) {
+            break idx;
+        }
+    } else {
+        @panic("offset out of range\n");
+    };
+
+    const inner_end: u32 = while (idx < params.run_ends.len) : (idx += 1) {
+        const run_end = run_ends.ptr[idx];
+
+        if (run_end - offset_re >= len_re) {
+            break idx;
+        }
+    } else {
+        @panic("len out of range/n");
+    };
+
+    const new_values = try params.alloc.create(arr.Array);
+    new_values.* = slice(params.array.values, inner_start, inner_end - inner_start);
+
+    if (run_ends[inner_start] == params.offset and run_ends[inner_end] - run_ends[inner_start] == params.len) {
+        const new_run_ends = try params.alloc.create(arr.Array);
+        new_run_ends.* = slice(params.array.run_ends, inner_start, inner_end - inner_start);
+        return arr.RunEndArray {
+            .run_ends = new_run_ends,
+            .values = new_values,
+            .len = params.len,
+            .offset = 0,
+        };
+    }
+
+    const new_run_ends = try params.alloc.alloc(T, inner_end - inner_start);
+    const src_run_ends = run_ends[inner_start..inner_end+1];
+    idx = 0;
+    while (idx < new_run_ends.len) : (idx += 1) {
+        new_run_ends.ptr[idx] = src_run_ends.ptr[idx] - offset_re;
+    }
+    new_run_ends[new_run_ends.len-1] = len_re;
+
+    const new_run_ends_arr = try params.alloc.create(arr.Array);
+    new_run_ends_arr.* = @unionInit(arr.Array, @typeName(T), .{
+        .values = new_run_ends,
+        .len = inner_end - inner_start,
+        .offset = 0,
+        .null_count = 0,
+        .validity = null,
+    });
+
+    return arr.RunEndArray {
+        .len = params.len,
+        .offset = 0,
+        .run_ends = new_run_ends_arr,
+        .values = new_values,
     };
 }
 
