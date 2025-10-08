@@ -372,36 +372,58 @@ pub fn validate_map(array: *const arr.MapArray) Error!void {
     // }
 }
 
+fn validate_run_ends(comptime T: type, array: *const arr.RunEndArray, run_ends: *const arr.PrimitiveArray(T)) Error!void {
+    try validate_primitive(T, run_ends);
+
+    if (run_ends.null_count > 0) {
+        return Error.Invalid;
+    }
+
+    if (run_ends.len == 0) return;
+
+    const last_end: u64 = @intCast(run_ends.values[run_ends.offset + run_ends.len - 1]);
+    if (@as(u64, array.len + array.offset) > last_end) {
+        return Error.Invalid;
+    }
+
+    var idx: u32 = run_ends.offset + 1;
+    while (idx < run_ends.offset + run_ends.len) : (idx += 1) {
+        const re = run_ends.values.ptr[idx];
+
+        if (@as(i64, re) > @as(i64, @intCast(std.math.maxInt(u32)))) {
+            return Error.Invalid;
+        }
+
+        const prev = run_ends.values.ptr[idx - 1];
+        if (re < prev) {
+            return Error.Invalid;
+        }
+    }
+}
+
 pub fn validate_run_end_encoded(array: *const arr.RunEndArray) Error!void {
     if (@as(u64, array.offset) + @as(u64, array.len) > std.math.maxInt(u32)) {
         return Error.Invalid;
     }
 
-    const needed_len = array.offset + array.len;
-
     const run_ends_len = length.length(array.run_ends);
     const values_len = length.length(array.values);
 
-    if (needed_len > run_ends_len) {
-        return Error.Invalid;
-    }
-    if (needed_len > values_len) {
+    // This is conservative but it is a b*** to implement it properly
+    if (run_ends_len != values_len) {
         return Error.Invalid;
     }
 
+    try validate(array.values);
+
     switch (array.run_ends.*) {
-        .i16, .i32, .i64 => {},
+        .i16 => |*run_ends| try validate_run_ends(i16, array, run_ends),
+        .i32 => |*run_ends| try validate_run_ends(i32, array, run_ends),
+        .i64 => |*run_ends| try validate_run_ends(i64, array, run_ends),
         else => {
             return Error.Invalid;
         },
     }
-
-    try validate(array.run_ends);
-    try validate(array.values);
-
-    // if (!is_sorted.is_sorted(.ascending, &slice.slice(array.run_ends, array.offset, array.len))) {
-    //     return Error.Invalid;
-    // }
 }
 
 fn validate_dict_keys(comptime T: type, keys: *const arr.PrimitiveArray(T), values_len: u32) Error!void {

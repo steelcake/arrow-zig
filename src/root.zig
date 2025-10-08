@@ -14,10 +14,8 @@ pub const minmax = @import("./minmax.zig");
 pub const concat = @import("./concat.zig");
 pub const fuzz_input = @import("./fuzz_input.zig");
 pub const validate = @import("./validate.zig");
-// pub const is_sorted = @import("./is_sorted.zig");
 
 test {
-    // _ = is_sorted;
     _ = validate;
     _ = fuzz_input;
     _ = concat;
