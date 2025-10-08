@@ -403,9 +403,98 @@ pub fn equals_dict(l: *const arr.DictArray, r: *const arr.DictArray) void {
     }
 }
 
+fn ReeIter(comptime RunEndT: type) type {
+    const T = RunEndT;
+
+    return struct {
+        const Self = @This();
+
+        run_end_idx: u32,
+        array: *const arr.RunEndArray,
+        run_ends: *const arr.PrimitiveArray(T),
+        prev: T,
+
+        const Item = struct {
+            val: arr.Array,
+            count: u32,
+        };
+
+        fn init(array: *const arr.RunEndArray) Self {
+            const run_ends = &@field(array.run_ends, @typeName(T));
+
+            var run_end_idx: u32 = run_ends.offset;
+            while (run_end_idx < run_ends.offset + run_ends.len) : (run_end_idx += 1) {
+                if (run_ends.values[run_end_idx] > array.offset) {
+                    break;
+                }
+            } else {
+                std.debug.assert(run_ends.values[run_end_idx] == array.offset);
+                std.debug.assert(array.len == 0);
+            }
+
+            return .{
+                .run_end_idx = run_end_idx,
+                .array = array,
+                .run_ends = run_ends,
+                .prev = @intCast(array.offset),
+            };
+        }
+
+        fn next(self: *Self) ?Item {
+            if (self.prev >= self.array.offset + self.array.len) {
+                return null;
+            }
+
+            const re: T = @min(self.run_ends.values[self.run_end_idx], @as(T, @intCast(self.array.len + self.array.offset)));
+            const count: T = re - self.prev;
+
+            const out = Item{
+                .count = @intCast(count),
+                .val = slice(self.array.values, self.run_end_idx - self.run_ends.offset, 1),
+            };
+
+            self.prev = re;
+            self.run_end_idx += 1;
+
+            return out;
+        }
+    };
+}
+
+fn equals_run_end_encoded_impl(comptime RunEndT: type, l: *const arr.RunEndArray, r: *const arr.RunEndArray) void {
+    const Iter = ReeIter(RunEndT);
+
+    var l_iter = Iter.init(l);
+    var r_iter = Iter.init(r);
+
+    var l_item = l_iter.next() orelse unreachable;
+    var r_item = r_iter.next() orelse unreachable;
+
+    while (true) {
+        equals(&l_item.val, &r_item.val);
+
+        if (l_item.count == r_item.count) {
+            l_item = l_iter.next() orelse {
+                std.debug.assert(r_iter.next() == null);
+                return;
+            };
+            r_item = r_iter.next() orelse unreachable;
+        } else if (l_item.count < r_item.count) {
+            r_item.count -= l_item.count;
+            l_item = l_iter.next() orelse {
+                std.log.warn("{any}\n{any}\n", .{ r_item, l_item });
+                std.log.warn("{any}\n{any}\n{any}\n{any}\n", .{ r.*, l.*, r.run_ends.*, l.run_ends.* });
+                unreachable;
+            };
+        } else if (l_item.count > r_item.count) {
+            l_item.count -= r_item.count;
+            r_item = r_iter.next() orelse unreachable;
+        }
+    }
+}
+
 pub fn equals_run_end_encoded(l: *const arr.RunEndArray, r: *const arr.RunEndArray) void {
     assert(@intFromEnum(l.values.*) == @intFromEnum(r.values.*));
-
     assert(@intFromEnum(l.run_ends.*) == @intFromEnum(r.run_ends.*));
 
     assert(l.len == r.len);
@@ -414,14 +503,12 @@ pub fn equals_run_end_encoded(l: *const arr.RunEndArray, r: *const arr.RunEndArr
         return;
     }
 
-    const l_run_ends = slice(l.run_ends, l.offset, l.len);
-    const l_values = slice(l.values, l.offset, l.len);
-
-    const r_run_ends = slice(r.run_ends, r.offset, r.len);
-    const r_values = slice(r.values, r.offset, r.len);
-
-    equals(&l_run_ends, &r_run_ends);
-    equals(&l_values, &r_values);
+    switch (l.run_ends.*) {
+        .i16 => equals_run_end_encoded_impl(i16, l, r),
+        .i32 => equals_run_end_encoded_impl(i32, l, r),
+        .i64 => equals_run_end_encoded_impl(i64, l, r),
+        else => unreachable,
+    }
 }
 
 /// Checks if two arrays are logically equal.
