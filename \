@@ -32,7 +32,7 @@ pub fn array(
             return .{ .i32 = try primitive_array(i32, input, len, alloc) };
         },
         .i64 => {
-            return .{ .i64 = try primitive_array(i64, input, len, alloc) };
+            return .{ .i64= try primitive_array(i64, input, len, alloc) };
         },
         .u8 => {
             return .{ .u8 = try primitive_array(u8, input, len, alloc) };
@@ -92,33 +92,37 @@ pub fn array(
             return .{ .fixed_size_binary = try fixed_size_binary_array(input, a, len, alloc) };
         },
         .date32 => {
-            return .{ .date32 = try date_array(.i32, input, len, alloc) };
+            return .{ .date32 = {} };
         },
         .date64 => {
-            return .{ .date64 = try date_array(.i64, input, len, alloc) };
+            return .{ .date64 = {} };
         },
-        .time32 => |a| {
-            return .{ .time32 = try time_array(.i32, input, a, len, alloc) };
+        .time32 => |*a| {
+            return .{ .time32 = a.unit };
         },
-        .time64 => |a| {
-            return .{ .time64 = try time_array(.i64, input, a, len, alloc) };
+        .time64 => |*a| {
+            return .{ .time64 = a.unit };
         },
-        .timestamp => |a| {
-            return .{ .timestamp = try timestamp_array(input, a, len, alloc) };
+        .timestamp => |*a| {
+            return .{ .timestamp = a.ts };
         },
-        .duration => |a| {
-            return .{ .duration = try duration_array(input, a, len, alloc) };
+        .duration => |*a| {
+            return .{ .duration = a.unit };
         },
         .interval_year_month => {
-            return .{ .interval_year_month = try interval_array(.yar_month, input, len, alloc) };
+            return .{ .interval_year_month = {} };
         },
         .interval_day_time => {
-            return .{ .interval_day_time = try interval_array(.day_time, input, len, alloc) };
+            return .{ .interval_day_time = {} };
         },
         .interval_month_day_nano => {
-            return .{ .interval_month_day_nano = try interval_array(.month_day_nano, input, len, alloc) };
+            return .{ .interval_month_day_nano = {} };
         },
-        .list => |a| {},
+        .list => |*a| {
+            const inner = try alloc.create(DataType);
+            inner.* = try get_data_type(a.inner, alloc);
+            return .{ .list = inner };
+        },
         .large_list => |*a| {
             const inner = try alloc.create(DataType);
             inner.* = try get_data_type(a.inner, alloc);
@@ -232,437 +236,6 @@ pub fn array(
     }
 }
 
-pub fn dict_array(
-    input: *FuzzInput,
-    dt: *const dt_mod.DictType,
-    len: u32,
-    alloc: Allocator,
-) Error!arr.DictArray {
-    const offset: u32 = try input.int(u8);
-    const total_len: u32 = len + offset;
-
-    const num_values = @as(u32, try input.int(u8)) + 1;
-
-    const keys_offset = try input.int(u8);
-    const keys_total_len = keys_offset + total_len;
-
-    std.debug.assert(dt.key == .u32);
-
-    const keys_data = try input.int_slice(u32, keys_total_len, alloc);
-    for (0..keys_total_len) |idx| {
-        keys_data.ptr[idx] %= num_values;
-    }
-
-    const keys = try fuzzin.allocate(arr.Array, alloc);
-    keys.* = .{ .i32 = .{
-        .values = @ptrCast(keys_data),
-        .len = total_len,
-        .offset = keys_offset,
-        .validity = null,
-        .null_count = 0,
-    } };
-
-    const values = try fuzzin.create(arr.Array, alloc);
-    values.* = try array(input, &dt.value, num_values, alloc);
-
-    return arr.DictArray{
-        .len = len,
-        .offset = offset,
-        .keys = keys,
-        .values = values,
-        .is_ordered = false,
-    };
-}
-
-pub fn run_end_encoded_array(
-    input: *FuzzInput,
-    dt: *const dt_mod.RunEndEncodedType,
-    len: u32,
-    alloc: Allocator,
-) Error!arr.RunEndArray {
-    const offset: u32 = try input.int(u8);
-    const total_len: u32 = len + offset;
-
-    const run_ends_len = @as(u32, try input.int(u8)) + 1;
-    const run_ends_offset: u32 = try input.int(u8);
-    const run_ends_total_len: u32 = run_ends_len + run_ends_offset;
-
-    std.debug.assert(dt.run_end == .i32);
-
-    const run_ends_values = try input.int_slice(i32, run_ends_total_len, alloc);
-    var run_end: i32 = 0;
-    const tl: i32 = @intCast(total_len);
-    for (run_ends_values) |*x| {
-        run_end += @as(i32, @bitCast(@as(u32, @bitCast(x.*)) % 512));
-        run_end = @min(tl, run_end);
-        x.* = run_end;
-    }
-    const last_re = &run_ends_values[run_ends_values.len - 1];
-    last_re.* = @max(last_re.*, @as(i32, @intCast(total_len)));
-
-    const values = try fuzzin.allocate(arr.Array, alloc);
-    values.* = try array(input, &dt.value, run_ends_len, alloc);
-    const run_ends = try fuzzin.create(arr.Array, alloc);
-    run_ends.* = .{
-        .i32 = .{
-            .values = run_ends_values,
-            .len = run_ends_len,
-            .offset = run_ends_offset,
-            .validity = null,
-            .null_count = 0,
-        },
-    };
-
-    return .{
-        .len = len,
-        .offset = offset,
-        .run_ends = run_ends,
-        .values = values,
-    };
-}
-
-pub fn map_array(
-    input: *FuzzInput,
-    dt: *const dt_mod.MapType,
-    len: u32,
-    alloc: Allocator,
-) Error!arr.MapArray {
-    const offset: u32 = try input.int(u8);
-    const total_len: u32 = len + offset;
-
-    const sizes = try input.bytes(total_len);
-
-    var entries_len: u32 = 0;
-    for (sizes) |sz| {
-        entries_len += sz;
-    }
-
-    const entries_offset: u32 = try input.int(u8);
-    const entries_total_len: u32 = entries_len + entries_offset;
-
-    const field_names = try fuzzin.allocate([:0]const u8, 2, alloc);
-    field_names[0] = "keys";
-    field_names[1] = "values";
-
-    const field_values = try fuzzin.allocate(arr.Array, 2, alloc);
-
-    const keys_dt = dt.key.to_data_type();
-    var keys = try array(input, &keys_dt, entries_total_len, alloc);
-    keys.null_count = 0;
-    keys.validity = null;
-    field_values[0] = .{ .binary = keys };
-    field_values[1] = try array(input, &dt.value, entries_total_len, alloc);
-
-    const entries = try fuzzin.create(arr.StructArray, alloc);
-    entries.* = arr.StructArray{
-        .field_names = field_names,
-        .field_values = field_values,
-        .len = entries_len,
-        .offset = entries_offset,
-        .validity = null,
-        .null_count = 0,
-    };
-
-    const offsets = try fuzzin.allocate(i32, total_len + 1, alloc);
-    {
-        var start_offset: i32 = 0;
-        for (0..total_len) |idx| {
-            offsets.ptr[idx] = start_offset;
-            start_offset +%= sizes.ptr[idx];
-        }
-        offsets.ptr[total_len] = start_offset;
-    }
-
-    var a = arr.MapArray{
-        .len = len,
-        .offset = offset,
-        .offsets = offsets,
-        .entries = entries,
-        .keys_are_sorted = false,
-        .validity = null,
-        .null_count = 0,
-    };
-
-    if (try validity(input, offset, len, alloc)) |v| {
-        a.validity = v.validity;
-        a.null_count = v.null_count;
-    }
-
-    return a;
-}
-
-pub fn fixed_size_list_array(
-    input: *FuzzInput,
-    dt: *const dt_mod.FixedSizeListType,
-    len: u32,
-    alloc: Allocator,
-) Error!arr.FixedSizeListArray {
-    const offset: u32 = try input.int(u8);
-    const total_len: u32 = len + offset;
-
-    const item_width: u32 = @intCast(dt.item_width);
-
-    const inner = try alloc.create(arr.Array);
-    inner.* = try array(input, &dt.inner, item_width * total_len, alloc);
-
-    var a = arr.FixedSizeListArray{
-        .len = len,
-        .offset = offset,
-        .validity = null,
-        .null_count = 0,
-        .inner = inner,
-        .item_width = item_width,
-    };
-
-    if (try validity(input, offset, len, alloc)) |v| {
-        a.validity = v.validity;
-        a.null_count = v.null_count;
-    }
-
-    return a;
-}
-
-pub fn sparse_union_array(
-    input: *FuzzInput,
-    dt: dt_mod.UnionType,
-    len: u32,
-    alloc: Allocator,
-) Error!arr.SparseUnionArray {
-    const offset: u32 = try input.int(u8);
-    const total_len: u32 = len + offset;
-
-    const num_children = dt.field_names.len;
-
-    const children = try fuzzin.allocate(arr.Array, num_children, alloc);
-
-    for (0..num_children) |child_idx| {
-        children[child_idx] = try array(
-            input,
-            &dt.field_types[child_idx],
-            total_len,
-            alloc,
-        );
-    }
-
-    const type_ids = try fuzzin.allocate(i8, total_len, alloc);
-
-    for (try input.bytes(total_len), 0..) |b, idx| {
-        const child_idx = b % num_children;
-        type_ids[idx] = dt.type_id_set[child_idx];
-    }
-
-    return .{
-        .inner = arr.UnionArray{
-            .offset = offset,
-            .len = len,
-            .field_names = dt.field_names,
-            .children = children,
-            .type_ids = type_ids,
-            .type_id_set = dt.type_id_set,
-        },
-    };
-}
-
-pub fn dense_union_array(
-    input: *FuzzInput,
-    dt: dt_mod.UnionType,
-    len: u32,
-    alloc: Allocator,
-) Error!arr.DenseUnionArray {
-    const offset: u32 = try input.int(u8);
-    const total_len: u32 = len + offset;
-
-    const num_children = dt.field_names.len;
-
-    const children = try fuzzin.allocate(arr.Array, num_children, alloc);
-
-    const offsets = try fuzzin.allocate(i32, total_len, alloc);
-    const type_ids = try fuzzin.allocate(i8, total_len, alloc);
-
-    const current_offsets = try fuzzin.allocate(i32, num_children, alloc);
-    @memset(current_offsets, 0);
-
-    for (try input.bytes(total_len), 0..) |b, idx| {
-        const child_idx = b % num_children;
-        type_ids[idx] = dt.type_id_set[child_idx];
-        const current_offset = current_offsets[child_idx];
-        current_offsets[child_idx] = current_offset + 1;
-        offsets[idx] = current_offset;
-    }
-
-    for (0..num_children) |child_idx| {
-        children[child_idx] = try array(
-            input,
-            &dt.field_types[child_idx],
-            @as(u32, @intCast(current_offsets[child_idx])),
-            alloc,
-        );
-    }
-
-    return .{
-        .offsets = offsets,
-        .inner = arr.UnionArray{
-            .offset = offset,
-            .len = len,
-            .field_names = dt.field_names,
-            .children = children,
-            .type_ids = type_ids,
-            .type_id_set = dt.type_id_set,
-        },
-    };
-}
-
-pub fn struct_array(
-    input: *FuzzInput,
-    dt: *const dt_mod.StructType,
-    len: u32,
-    alloc: Allocator,
-) Error!arr.StructArray {
-    const offset: u32 = try input.int(u8);
-    const total_len: u32 = len + offset;
-
-    const num_fields = dt.field_names.len;
-
-    const field_values = try alloc.alloc(arr.Array, num_fields);
-
-    for (0..num_fields) |field_idx| {
-        const field_dt = &dt.field_types[field_idx];
-        field_values[field_idx] = try array(input, field_dt, total_len, alloc);
-    }
-
-    var a = arr.StructArray{
-        .len = len,
-        .offset = offset,
-        .field_names = dt.field_names,
-        .field_values = field_values,
-        .validity = null,
-        .null_count = 0,
-    };
-
-    if (try validity(input, offset, len, alloc)) |v| {
-        a.validity = v.validity;
-        a.null_count = v.null_count;
-    }
-
-    return a;
-}
-
-pub fn list_view_array(
-    comptime index_t: arr.IndexType,
-    input: *FuzzInput,
-    inner_dt: *const dt_mod.DataType,
-    len: u32,
-    alloc: Allocator,
-) Error!arr.GenericListViewArray(index_t) {
-    const I = index_t.to_type();
-    const U = switch (index_t) {
-        .i32 => u32,
-        .i64 => u64,
-    };
-
-    const offset: u32 = try input.int(u8);
-    const total_len: u32 = len + offset;
-
-    const sizes_b = try input.bytes(total_len);
-
-    const sizes = try fuzzin.allocate(I, total_len, alloc);
-    for (0..total_len) |idx| {
-        sizes.ptr[idx] = sizes_b.ptr[idx] % 10;
-    }
-
-    var total_size: I = 0;
-    for (0..total_len) |idx| {
-        total_size += sizes.ptr[idx];
-    }
-
-    const offsets = try input.int_slice(I, total_len, alloc);
-    if (total_len == 1) {
-        offsets[0] = 0;
-    } else {
-        for (0..total_len) |idx| {
-            offsets.ptr[idx] = @bitCast(
-                @as(U, @bitCast(offsets.ptr[idx])) % @as(
-                    U,
-                    @bitCast(total_size -% sizes.ptr[idx] +% 1),
-                ),
-            );
-        }
-    }
-
-    const inner_len = total_size;
-
-    const inner = try alloc.create(arr.Array);
-    inner.* = try array(input, inner_dt, @intCast(inner_len), alloc);
-
-    var a = arr.GenericListViewArray(index_t){
-        .len = len,
-        .offset = offset,
-        .inner = inner,
-        .offsets = offsets,
-        .sizes = sizes,
-        .validity = null,
-        .null_count = 0,
-    };
-
-    if (try validity(input, offset, len, alloc)) |v| {
-        a.validity = v.validity;
-        a.null_count = v.null_count;
-    }
-
-    return a;
-}
-
-pub fn list_array(
-    comptime index_t: arr.IndexType,
-    input: *FuzzInput,
-    inner_dt: *const dt_mod.DataType,
-    len: u32,
-    alloc: Allocator,
-) Error!arr.GenericListArray(index_t) {
-    const I = index_t.to_type();
-
-    const offset: u32 = try input.int(u8);
-    const total_len: u32 = len + offset;
-
-    const sizes_b = try input.bytes(total_len);
-
-    const sizes = try fuzzin.allocate(u8, sizes_b.len, alloc);
-    for (0..total_len) |idx| {
-        sizes.ptr[idx] = sizes_b.ptr[idx] % 10;
-    }
-
-    const offsets = try fuzzin.allocate(I, total_len + 1, alloc);
-    {
-        var start_offset: I = 0;
-        for (0..total_len) |idx| {
-            offsets.ptr[idx] = start_offset;
-            start_offset +%= sizes.ptr[idx];
-        }
-        offsets.ptr[total_len] = start_offset;
-    }
-
-    const inner_len = offsets[total_len];
-
-    const inner = try alloc.create(arr.Array);
-    inner.* = try array(input, inner_dt, @intCast(inner_len), alloc);
-
-    var a = arr.GenericListArray(index_t){
-        .len = len,
-        .offset = offset,
-        .inner = inner,
-        .offsets = offsets,
-        .validity = null,
-        .null_count = 0,
-    };
-
-    if (try validity(input, offset, len, alloc)) |v| {
-        a.validity = v.validity;
-        a.null_count = v.null_count;
-    }
-
-    return a;
-}
-
 pub fn utf8_view_array(input: *FuzzInput, len: u32, alloc: Allocator) Error!arr.Utf8ViewArray {
     return .{ .inner = try binary_view_array(input, len, alloc) };
 }
@@ -726,12 +299,11 @@ pub fn binary_view_array(input: *FuzzInput, len: u32, alloc: Allocator) Error!ar
 
 pub fn duration_array(
     input: *FuzzInput,
-    unit: arr.TimestampUnit,
     len: u32,
     alloc: Allocator,
 ) Error!arr.DurationArray {
     return .{
-        .unit = unit,
+        .unit = try timestamp_unit(input),
         .inner = try primitive_array(
             i64,
             input,
@@ -791,12 +363,11 @@ pub fn interval_array(
 
 pub fn timestamp_array(
     input: *FuzzInput,
-    ts: arr.Timestamp,
     len: u32,
     alloc: Allocator,
 ) Error!arr.TimestampArray {
     return .{
-        .ts = ts,
+        .ts = try timestamp(input, alloc),
         .inner = try primitive_array(
             i64,
             input,
@@ -809,12 +380,11 @@ pub fn timestamp_array(
 pub fn time_array(
     comptime backing_t: arr.IndexType,
     input: *FuzzInput,
-    unit: arr.TimeArray(backing_t).Unit,
     len: u32,
     alloc: Allocator,
 ) Error!arr.TimeArray(backing_t) {
     return .{
-        .unit = unit,
+        .unit = try time_unit(backing_t, input),
         .inner = try primitive_array(
             backing_t.to_type(),
             input,
@@ -1214,7 +784,7 @@ fn rand_bytes_zero_sentinel(rand: std.Random, out: [:0]u8) void {
 }
 
 pub fn uniq_name(
-    existing_names: []const [:0]const u8,
+    existing_names: []const []const u8,
     rand: std.Random,
     alloc: Allocator,
 ) Error![:0]const u8 {
@@ -1398,15 +968,4 @@ pub fn run_end_encoded_type(
         .run_end = .i32,
         .value = value,
     };
-}
-
-pub fn slice(input: *FuzzInput, ar: *const arr.Array) Error!arr.Array {
-    const array_len = length.length(ar);
-    if (array_len == 0) {
-        return ar.*;
-    }
-    const slice0_len = (try input.int(u8)) % array_len;
-    const slice0_offset = (try input.int(u8)) % (array_len - slice0_len);
-    const slice0 = slice_array_impl(ar, slice0_offset, slice0_len);
-    return slice0;
 }

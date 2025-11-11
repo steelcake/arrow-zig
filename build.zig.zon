@@ -5,8 +5,8 @@
     .minimum_zig_version = "0.16.0-dev.464+df1909900",
     .dependencies = .{
         .fuzzin = .{
-            .url = "https://github.com/steelcake/fuzzin/archive/refs/tags/v0.0.8.tar.gz",
-            .hash = "fuzzin-0.0.8-CogiHtZeAAABfZ6eB77UwASCc18bFRNZb9QnpNs1INCG",
+            .url = "https://github.com/steelcake/fuzzin/archive/refs/tags/v0.0.9.tar.gz",
+            .hash = "fuzzin-0.0.9-CogiHvZeAACL8Lq8f5aEUACtuuk9FTo1hO_FNDvNC68O",
         },
     },
     .paths = .{
