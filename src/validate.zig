@@ -9,7 +9,7 @@ const Error = error{
     Invalid,
 };
 
-fn validate_validity(null_count: u32, offset: u32, len: u32, validity: ?[]const u8) Error!void {
+fn validity(null_count: u32, offset: u32, len: u32, valid: ?[]const u8) Error!void {
     if (@as(u64, offset) + @as(u64, len) > std.math.maxInt(u32)) {
         return Error.Invalid;
     }
@@ -18,7 +18,7 @@ fn validate_validity(null_count: u32, offset: u32, len: u32, validity: ?[]const 
     const needed_bitmap_len = (total_len + 7) / 8;
 
     if (null_count > 0) {
-        const v = validity orelse return Error.Invalid;
+        const v = valid orelse return Error.Invalid;
 
         if (needed_bitmap_len > v.len) {
             return Error.Invalid;
@@ -35,7 +35,7 @@ fn validate_validity(null_count: u32, offset: u32, len: u32, validity: ?[]const 
         if (null_count != count) {
             return Error.Invalid;
         }
-    } else if (validity) |v| {
+    } else if (valid) |v| {
         var idx: u32 = offset;
         while (idx < offset + len) : (idx += 1) {
             if (!bitmap.get(v.ptr, idx)) {
@@ -45,7 +45,7 @@ fn validate_validity(null_count: u32, offset: u32, len: u32, validity: ?[]const 
     }
 }
 
-pub fn validate_primitive(comptime T: type, array: *const arr.PrimitiveArray(T)) Error!void {
+pub fn primitive_array(comptime T: type, array: *const arr.PrimitiveArray(T)) Error!void {
     if (@as(u64, array.offset) + @as(u64, array.len) > std.math.maxInt(u32)) {
         return Error.Invalid;
     }
@@ -154,8 +154,14 @@ pub fn validate_list(comptime index_t: arr.IndexType, array: *const arr.GenericL
     try validate(array.inner);
 }
 
-fn validate_field_names(field_names: []const []const u8) Error!void {
+fn validate_field_names(field_names: []const [:0]const u8) Error!void {
     for (field_names, 0..) |field_name, field_idx| {
+        for (field_name) |c| {
+            if (c == 0) {
+                return Error.Invalid;
+            }
+        }
+
         if (field_name.len == 0) {
             return Error.Invalid;
         }

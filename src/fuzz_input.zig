@@ -11,6 +11,7 @@ const bitmap = @import("./bitmap.zig");
 const length = @import("./length.zig");
 const slice_array_impl = @import("./slice.zig").slice;
 const dt_mod = @import("./data_type.zig");
+const validate = @import("./validate.zig");
 
 pub fn array(
     input: *FuzzInput,
@@ -18,218 +19,60 @@ pub fn array(
     len: u32,
     alloc: Allocator,
 ) Error!arr.Array {
-    switch (dt.*) {
-        .null => {
-            return .{ .null = null_array(len) };
+    const a: arr.Array = switch (dt.*) {
+        .null => .{ .null = null_array(len) },
+        .i8 => .{ .i8 = try primitive_array(i8, input, len, alloc) },
+        .i16 => .{ .i16 = try primitive_array(i16, input, len, alloc) },
+        .i32 => .{ .i32 = try primitive_array(i32, input, len, alloc) },
+        .i64 => .{ .i64 = try primitive_array(i64, input, len, alloc) },
+        .u8 => .{ .u8 = try primitive_array(u8, input, len, alloc) },
+        .u16 => .{ .u16 = try primitive_array(u16, input, len, alloc) },
+        .u32 => .{ .u32 = try primitive_array(u32, input, len, alloc) },
+        .u64 => .{ .u64 = try primitive_array(u64, input, len, alloc) },
+        .f16 => .{ .f16 = try primitive_array(f16, input, len, alloc) },
+        .f32 => .{ .f32 = try primitive_array(f32, input, len, alloc) },
+        .f64 => .{ .f64 = try primitive_array(f64, input, len, alloc) },
+        .binary => .{ .binary = try binary_array(.i32, input, len, alloc) },
+        .large_binary => .{ .large_binary = try binary_array(.i64, input, len, alloc) },
+        .utf8 => .{ .utf8 = try utf8_array(.i32, input, len, alloc) },
+        .large_utf8 => .{ .large_utf8 = try utf8_array(.i64, input, len, alloc) },
+        .bool => .{ .bool = try bool_array(input, len, alloc) },
+        .binary_view => .{ .binary_view = try binary_view_array(input, len, alloc) },
+        .utf8_view => .{ .utf8_view = try utf8_view_array(input, len, alloc) },
+        .decimal32 => |a| .{ .decimal32 = try decimal_array(.i32, input, a, alloc) },
+        .decimal64 => |a| .{ .decimal64 = try decimal_array(.i64, input, a, alloc) },
+        .decimal128 => |*a| .{ .decimal128 = try decimal_array(.i128, input, a, alloc) },
+        .decimal256 => |*a| .{ .decimal256 = try decimal_array(.i256, input, a, alloc) },
+        .fixed_size_binary => |a| .{ .fixed_size_binary = try fixed_size_binary_array(input, a, len, alloc) },
+        .date32 => .{ .date32 = try date_array(.i32, input, len, alloc) },
+        .date64 => .{ .date64 = try date_array(.i64, input, len, alloc) },
+        .time32 => |a| .{ .time32 = try time_array(.i32, input, a, len, alloc) },
+        .time64 => |a| .{ .time64 = try time_array(.i64, input, a, len, alloc) },
+        .timestamp => |a| .{ .timestamp = try timestamp_array(input, a, len, alloc) },
+        .duration => |a| .{ .duration = try duration_array(input, a, len, alloc) },
+        .interval_year_month => .{ .interval_year_month = try interval_array(.yar_month, input, len, alloc) },
+        .interval_day_time => .{
+            .interval_day_time = try interval_array(.day_time, input, len, alloc),
         },
-        .i8 => {
-            return .{ .i8 = try primitive_array(i8, input, len, alloc) };
+        .interval_month_day_nano => .{
+            .interval_month_day_nano = try interval_array(.month_day_nano, input, len, alloc),
         },
-        .i16 => {
-            return .{ .i16 = try primitive_array(i16, input, len, alloc) };
-        },
-        .i32 => {
-            return .{ .i32 = try primitive_array(i32, input, len, alloc) };
-        },
-        .i64 => {
-            return .{ .i64 = try primitive_array(i64, input, len, alloc) };
-        },
-        .u8 => {
-            return .{ .u8 = try primitive_array(u8, input, len, alloc) };
-        },
-        .u16 => {
-            return .{ .u16 = try primitive_array(u16, input, len, alloc) };
-        },
-        .u32 => {
-            return .{ .u32 = try primitive_array(u32, input, len, alloc) };
-        },
-        .u64 => {
-            return .{ .u64 = try primitive_array(u64, input, len, alloc) };
-        },
-        .f16 => {
-            return .{ .f16 = try primitive_array(f16, input, len, alloc) };
-        },
-        .f32 => {
-            return .{ .f32 = try primitive_array(f32, input, len, alloc) };
-        },
-        .f64 => {
-            return .{ .f64 = try primitive_array(f64, input, len, alloc) };
-        },
-        .binary => {
-            return .{ .binary = try binary_array(.i32, input, len, alloc) };
-        },
-        .large_binary => {
-            return .{ .large_binary = try binary_array(.i64, input, len, alloc) };
-        },
-        .utf8 => {
-            return .{ .utf8 = try utf8_array(.i32, input, len, alloc) };
-        },
-        .large_utf8 => {
-            return .{ .large_utf8 = try utf8_array(.i64, input, len, alloc) };
-        },
-        .bool => {
-            return .{ .bool = try bool_array(input, len, alloc) };
-        },
-        .binary_view => {
-            return .{ .binary_view = try binary_view_array(input, len, alloc) };
-        },
-        .utf8_view => {
-            return .{ .utf8_view = try utf8_view_array(input, len, alloc) };
-        },
-        .decimal32 => |a| {
-            return .{ .decimal32 = try decimal_array(.i32, input, a, alloc) };
-        },
-        .decimal64 => |a| {
-            return .{ .decimal64 = try decimal_array(.i64, input, a, alloc) };
-        },
-        .decimal128 => |*a| {
-            return .{ .decimal128 = try decimal_array(.i128, input, a, alloc) };
-        },
-        .decimal256 => |*a| {
-            return .{ .decimal256 = try decimal_array(.i256, input, a, alloc) };
-        },
-        .fixed_size_binary => |a| {
-            return .{ .fixed_size_binary = try fixed_size_binary_array(input, a, len, alloc) };
-        },
-        .date32 => {
-            return .{ .date32 = try date_array(.i32, input, len, alloc) };
-        },
-        .date64 => {
-            return .{ .date64 = try date_array(.i64, input, len, alloc) };
-        },
-        .time32 => |a| {
-            return .{ .time32 = try time_array(.i32, input, a, len, alloc) };
-        },
-        .time64 => |a| {
-            return .{ .time64 = try time_array(.i64, input, a, len, alloc) };
-        },
-        .timestamp => |a| {
-            return .{ .timestamp = try timestamp_array(input, a, len, alloc) };
-        },
-        .duration => |a| {
-            return .{ .duration = try duration_array(input, a, len, alloc) };
-        },
-        .interval_year_month => {
-            return .{ .interval_year_month = try interval_array(.yar_month, input, len, alloc) };
-        },
-        .interval_day_time => {
-            return .{ .interval_day_time = try interval_array(.day_time, input, len, alloc) };
-        },
-        .interval_month_day_nano => {
-            return .{ .interval_month_day_nano = try interval_array(.month_day_nano, input, len, alloc) };
-        },
-        .list => |a| {},
-        .large_list => |*a| {
-            const inner = try alloc.create(DataType);
-            inner.* = try get_data_type(a.inner, alloc);
-            return .{ .large_list = inner };
-        },
-        .list_view => |*a| {
-            const inner = try alloc.create(DataType);
-            inner.* = try get_data_type(a.inner, alloc);
-            return .{ .list_view = inner };
-        },
-        .large_list_view => |*a| {
-            const inner = try alloc.create(DataType);
-            inner.* = try get_data_type(a.inner, alloc);
-            return .{ .large_list_view = inner };
-        },
-        .fixed_size_list => |*a| {
-            const fsl_type = try alloc.create(FixedSizeListType);
-            fsl_type.* = .{
-                .inner = try get_data_type(a.inner, alloc),
-                .item_width = a.item_width,
-            };
-            return .{ .fixed_size_list = fsl_type };
-        },
-        .struct_ => |*a| {
-            const field_types = try alloc.alloc(DataType, a.field_values.len);
-            for (a.field_values, 0..) |*field, idx| {
-                field_types[idx] = try get_data_type(field, alloc);
-            }
+        .list => |a| .{ .list = try list_array(.i32, input, a, len, alloc) },
+        .large_list => |a| .{ .large_list = try list_array(.i64, input, a, len, alloc) },
+        .list_view => |a| .{ .list_view = try list_view_array(.i32, input, a, len, alloc) },
+        .large_list_view => |*a| .{ .large_list_view = try list_view_array(.i64, input, a, len, alloc) },
+        .fixed_size_list => |a| .{ .fixed_size_list = try fixed_size_list_array(input, a, len, alloc) },
+        .struct_ => |a| .{ .struct_ = try struct_array(input, a, len, alloc) },
+        .map => |a| .{ .map = try map_array(input, a, len, alloc) },
+        .dense_union => |a| .{ .dense_union = try dense_union_array(input, a, len, alloc) },
+        .sparse_union => |a| .{ .sparse_union = try dense_union_array(input, a, len, alloc) },
+        .run_end_encoded => |a| .{ .run_end_encoded = try run_end_encoded_array(input, a, len, alloc) },
+        .dict => |a| .{ .dict = try dict_array(input, a, len, alloc) },
+    };
 
-            const struct_type = try alloc.create(StructType);
-            struct_type.* = StructType{ .field_names = a.field_names, .field_types = field_types };
-            return .{ .struct_ = struct_type };
-        },
-        .map => |*a| {
-            const key: MapKeyType = switch (a.entries.field_values[0]) {
-                .binary => .binary,
-                .large_binary => .large_binary,
-                .utf8 => .utf8,
-                .large_utf8 => .large_utf8,
-                .binary_view => .binary_view,
-                .utf8_view => .utf8_view,
-                .fixed_size_binary => |*k| .{ .fixed_size_binary = k.byte_width },
-                .i8 => .i8,
-                .i16 => .i16,
-                .i32 => .i32,
-                .i64 => .i64,
-                .u8 => .u8,
-                .u16 => .u16,
-                .u32 => .u32,
-                .u64 => .u64,
-                else => unreachable,
-            };
+    validate.validate(&a) catch unreachable;
 
-            const value = try get_data_type(&a.entries.field_values[1], alloc);
-
-            const map_type = try alloc.create(MapType);
-            map_type.* = .{
-                .key = key,
-                .value = value,
-            };
-
-            return .{ .map = map_type };
-        },
-        .dense_union => |*a| {
-            return .{ .dense_union = try get_union_type(&a.inner, alloc) };
-        },
-        .sparse_union => |*a| {
-            return .{ .sparse_union = try get_union_type(&a.inner, alloc) };
-        },
-        .run_end_encoded => |*a| {
-            const run_end: RunEndType = switch (a.run_ends.*) {
-                .i16 => .i16,
-                .i32 => .i32,
-                .i64 => .i64,
-                else => unreachable,
-            };
-
-            const value = try get_data_type(a.values, alloc);
-
-            const ree_type = try alloc.create(RunEndEncodedType);
-            ree_type.* = .{
-                .run_end = run_end,
-                .value = value,
-            };
-
-            return .{ .run_end_encoded = ree_type };
-        },
-        .dict => |*a| {
-            const key: DictKeyType = switch (a.keys.*) {
-                .i8 => .i8,
-                .i16 => .i16,
-                .i32 => .i32,
-                .i64 => .i64,
-                .u8 => .u8,
-                .u16 => .u16,
-                .u32 => .u32,
-                .u64 => .u64,
-                else => unreachable,
-            };
-
-            const value = try get_data_type(a.values, alloc);
-
-            const dict_type = try alloc.create(DictType);
-            dict_type.* = .{
-                .key = key,
-                .value = value,
-            };
-
-            return .{ .dict = dict_type };
-        },
-    }
+    return a;
 }
 
 pub fn dict_array(
