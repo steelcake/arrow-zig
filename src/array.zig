@@ -22,7 +22,7 @@ pub const Time64Unit = enum {
 
 pub const Timestamp = struct {
     unit: TimestampUnit,
-    timezone: ?[]const u8,
+    timezone: ?[:0]const u8,
 };
 
 pub const Array = union(enum) {
@@ -360,4 +360,9 @@ pub const MapArray = struct {
     offset: u32,
     null_count: u32,
     keys_are_sorted: bool,
+};
+
+pub const Datum = union(enum) {
+    scalar: *const Array,
+    array: *const Array,
 };

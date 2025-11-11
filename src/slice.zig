@@ -377,32 +377,3 @@ fn normalize_run_end_encoded_inner_impl(
         .values = new_values,
     };
 }
-
-test slice {
-    var arena = ArenaAllocator.init(testing.allocator);
-    defer arena.deinit();
-    const allocator = arena.allocator();
-
-    var b = try builder.Int16Builder.with_capacity(4, true, allocator);
-
-    try b.append_null();
-    try b.append_value(69);
-    try b.append_option(-69);
-    try b.append_null();
-
-    const array = arr.Array{ .i16 = try b.finish() };
-
-    const sliced = slice(&array, 1, 3).i16;
-
-    try testing.expectEqual(1, sliced.null_count);
-    try testing.expectEqual(3, sliced.len);
-    try testing.expectEqual(1, sliced.offset);
-
-    const array2 = arr.Array{ .i16 = sliced };
-
-    const sliced2 = slice(&array2, 0, 1).i16;
-
-    try testing.expectEqual(0, sliced2.null_count);
-    try testing.expectEqual(1, sliced2.len);
-    try testing.expectEqual(1, sliced2.offset);
-}

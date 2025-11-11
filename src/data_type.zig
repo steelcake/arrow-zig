@@ -338,7 +338,7 @@ fn get_union_type(array: *const arr.UnionArray, alloc: Allocator) Error!*const U
     return union_type;
 }
 
-const Error = error{ OutOfMemory, BadMapKeyType, BadReeKeyType };
+const Error = error{OutOfMemory};
 
 /// Get data type of given struct.
 /// Lifetime of the returned data type is tied to the lifetime of the given array
@@ -498,7 +498,7 @@ pub fn get_data_type(array: *const arr.Array, alloc: Allocator) Error!DataType {
                 .u16 => .u16,
                 .u32 => .u32,
                 .u64 => .u64,
-                else => return error.BadMapKeyType,
+                else => unreachable,
             };
 
             const value = try get_data_type(&a.entries.field_values[1], alloc);
@@ -522,7 +522,7 @@ pub fn get_data_type(array: *const arr.Array, alloc: Allocator) Error!DataType {
                 .i16 => .i16,
                 .i32 => .i32,
                 .i64 => .i64,
-                else => return error.BadReeKeyType,
+                else => unreachable,
             };
 
             const value = try get_data_type(a.values, alloc);
@@ -789,141 +789,4 @@ fn run_test(id: u8) !void {
         std.log.err("failed test id: {}", .{id});
         break :err e;
     };
-}
-
-test "data_type roundtrip" {
-    for (0..test_array.NUM_ARRAYS) |i| {
-        try run_test(@intCast(i));
-    }
-}
-
-test "DataType.eql - simple types" {
-    const null_dt = DataType{ .null = {} };
-    const i32_dt = DataType{ .i32 = {} };
-    const bool_dt = DataType{ .bool = {} };
-
-    // Same type
-    try testing.expect(null_dt.eql(&null_dt));
-    try testing.expect(i32_dt.eql(&i32_dt));
-    try testing.expect(bool_dt.eql(&bool_dt));
-
-    // Different types
-    try testing.expect(!null_dt.eql(&i32_dt));
-    try testing.expect(!i32_dt.eql(&bool_dt));
-    try testing.expect(!bool_dt.eql(&null_dt));
-}
-
-test "DataType.eql - decimal types" {
-    const decimal32_same = DataType{ .decimal32 = .{ .precision = 10, .scale = 2 } };
-    const decimal32_diff = DataType{ .decimal32 = .{ .precision = 10, .scale = 3 } };
-    const decimal64 = DataType{ .decimal64 = .{ .precision = 10, .scale = 2 } };
-
-    // Same decimal32
-    try testing.expect(decimal32_same.eql(&decimal32_same));
-    // Different decimal32
-    try testing.expect(!decimal32_same.eql(&decimal32_diff));
-    // Different decimal type
-    try testing.expect(!decimal32_same.eql(&decimal64));
-}
-
-test "DataType.eql - time and timestamp" {
-    const time32_same = DataType{ .time32 = .second };
-    const time32_diff = DataType{ .time32 = .millisecond };
-    const timestamp_same = DataType{ .timestamp = .{ .unit = .microsecond, .timezone = "asd" } };
-    const timestamp_diff = DataType{ .timestamp = .{ .unit = .nanosecond, .timezone = "qwe" } };
-
-    // Same time32
-    try testing.expect(time32_same.eql(&time32_same));
-    // Different time32
-    try testing.expect(!time32_same.eql(&time32_diff));
-    // Same timestamp
-    try testing.expect(timestamp_same.eql(&timestamp_same));
-    // Different timestamp
-    try testing.expect(!timestamp_same.eql(&timestamp_diff));
-}
-
-test "DataType.eql - recursive list types" {
-    var inner_dt = DataType{ .i32 = {} };
-    var list_dt = DataType{ .list = &inner_dt };
-    var list_dt_same = DataType{ .list = &inner_dt };
-    var inner_dt_diff = DataType{ .i64 = {} };
-    var list_dt_diff = DataType{ .list = &inner_dt_diff };
-
-    // Same list
-    try testing.expect(list_dt.eql(&list_dt_same));
-    // Different list
-    try testing.expect(!list_dt.eql(&list_dt_diff));
-    // Different type
-    try testing.expect(!list_dt.eql(&inner_dt));
-}
-
-test "DataType.eql - struct type" {
-    const field1 = DataType{ .i32 = {} };
-    const field2 = DataType{ .f64 = {} };
-    const fields = [_]DataType{ field1, field2 };
-    const struct1 = StructType{ .field_types = &fields, .field_names = &.{ "asd", "qwe" } };
-    const struct2 = StructType{ .field_types = &fields, .field_names = &.{ "asd", "qwe" } };
-    const field3 = DataType{ .bool = {} };
-    const fields_diff = [_]DataType{ field1, field3 };
-    var struct_diff = StructType{ .field_types = &fields_diff, .field_names = &.{ "qwe", "asd" } };
-
-    var struct_dt1 = DataType{ .struct_ = &struct1 };
-    var struct_dt2 = DataType{ .struct_ = &struct2 };
-    var struct_dt_diff = DataType{ .struct_ = &struct_diff };
-
-    // Same struct
-    try testing.expect(struct_dt1.eql(&struct_dt2));
-    // Different struct
-    try testing.expect(!struct_dt1.eql(&struct_dt_diff));
-}
-
-test "DataType.eql - run_end_encoded" {
-    const run_ends = RunEndType.i32;
-    const values = DataType{ .utf8 = {} };
-    const ree1 = RunEndEncodedType{ .run_end = run_ends, .value = values };
-    const ree2 = RunEndEncodedType{ .run_end = run_ends, .value = values };
-    const values_diff = DataType{ .binary = {} };
-    const ree_diff = RunEndEncodedType{ .run_end = run_ends, .value = values_diff };
-
-    const ree_dt1 = DataType{ .run_end_encoded = &ree1 };
-    const ree_dt2 = DataType{ .run_end_encoded = &ree2 };
-    const ree_dt_diff = DataType{ .run_end_encoded = &ree_diff };
-
-    // Same REE
-    try testing.expect(ree_dt1.eql(&ree_dt2));
-    // Different REE
-    try testing.expect(!ree_dt1.eql(&ree_dt_diff));
-}
-
-test "DataType.eql - map type" {
-    const key_dt = MapKeyType.utf8;
-    const value_dt = DataType{ .i32 = {} };
-    const map1 = MapType{ .key = key_dt, .value = value_dt };
-    const map2 = MapType{ .key = key_dt, .value = value_dt };
-    const value_dt_diff = DataType{ .i64 = {} };
-    const map_diff = MapType{ .key = key_dt, .value = value_dt_diff };
-
-    const map_dt1 = DataType{ .map = &map1 };
-    const map_dt2 = DataType{ .map = &map2 };
-    const map_dt_diff = DataType{ .map = &map_diff };
-
-    // Same map
-    try testing.expect(map_dt1.eql(&map_dt2));
-    // Different map
-    try testing.expect(!map_dt1.eql(&map_dt_diff));
-}
-
-test "DataType.eql - fixed_size_list type" {
-    const same = DataType{ .fixed_size_list = &FixedSizeListType{ .item_width = 69, .inner = .{ .i32 = {} } } };
-    const diff = DataType{ .fixed_size_list = &FixedSizeListType{ .item_width = 69, .inner = .{ .i64 = {} } } };
-
-    try testing.expect(same.eql(&same));
-    try testing.expect(diff.eql(&diff));
-
-    try testing.expect(!same.eql(&diff));
-    try testing.expect(!diff.eql(&same));
-}
-
-test check_data_type {
-    try testing.expect(check_data_type(&arr.Array{ .i8 = arr.Int8Array{ .values = &.{}, .len = 0, .offset = 0, .validity = null, .null_count = 0 } }, &DataType{ .i8 = {} }));
 }

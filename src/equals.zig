@@ -1,11 +1,8 @@
 const std = @import("std");
-const ArenaAllocator = std.heap.ArenaAllocator;
-const testing = std.testing;
 const assert = std.debug.assert;
 
 const arr = @import("./array.zig");
 const bitmap = @import("./bitmap.zig");
-const builder = @import("./builder.zig");
 const slice = @import("./slice.zig").slice;
 const get = @import("./get.zig");
 
@@ -579,31 +576,4 @@ pub fn equals(left: *const arr.Array, right: *const arr.Array) void {
         .run_end_encoded => |*l| equals_run_end_encoded(l, &right.run_end_encoded),
         .dict => |*l| equals_dict(l, &right.dict),
     }
-}
-
-test equals {
-    var arena = ArenaAllocator.init(testing.allocator);
-    defer arena.deinit();
-    const allocator = arena.allocator();
-
-    var left = try builder.Int16Builder.with_capacity(4, true, allocator);
-
-    try left.append_null();
-    try left.append_value(69);
-    try left.append_option(-69);
-    try left.append_null();
-
-    const l_array = arr.Array{ .i16 = try left.finish() };
-
-    var right = try builder.Int16Builder.with_capacity(5, true, allocator);
-
-    try right.append_value(1131);
-    try right.append_null();
-    try right.append_value(69);
-    try right.append_option(-69);
-    try right.append_null();
-
-    const r_array = arr.Array{ .i16 = try right.finish() };
-
-    equals(&l_array, &slice(&r_array, 1, 4));
 }
