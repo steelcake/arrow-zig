@@ -4,6 +4,7 @@ const length = @import("./length.zig");
 const bitmap = @import("./bitmap.zig");
 const slice = @import("./slice.zig");
 const get = @import("./get.zig");
+const dt_mod = @import("./data_type.zig");
 
 const Error = error{
     Invalid,
@@ -105,10 +106,7 @@ pub fn validate_binary_array(
     }
 }
 
-pub fn validate_decimal_array(
-    comptime decimal_t: arr.DecimalInt,
-    array: *const arr.DecimalArray(decimal_t),
-) Error!void {
+pub fn validate_decimal_params(comptime decimal_t: arr.DecimalInt, params: arr.DecimalParams) Error!void {
     const max_precision = switch (decimal_t) {
         .i32 => 9,
         .i64 => 19,
@@ -116,14 +114,20 @@ pub fn validate_decimal_array(
         .i256 => 76,
     };
 
-    if (array.params.precision == 0) {
+    if (params.precision == 0) {
         return Error.Invalid;
     }
 
-    if (array.params.precision > max_precision) {
+    if (params.precision > max_precision) {
         return Error.Invalid;
     }
+}
 
+pub fn validate_decimal_array(
+    comptime decimal_t: arr.DecimalInt,
+    array: *const arr.DecimalArray(decimal_t),
+) Error!void {
+    try validate_decimal_params(decimal_t, array.params);
     try validate_primitive_array(decimal_t.to_type(), &array.inner);
 }
 
@@ -612,13 +616,22 @@ pub fn validate_list_view_array(
     try validate_array(array.inner);
 }
 
-pub fn validate_timestamp_array(array: *const arr.TimestampArray) Error!void {
-    if (array.ts.timezone) |tz| {
+pub fn validate_timestamp(ts: arr.Timestamp) Error!void {
+    if (ts.timezone) |tz| {
         if (tz.len == 0) {
             return Error.Invalid;
         }
-    }
 
+        for (tz) |c| {
+            if (c == 0) {
+                return Error.Invalid;
+            }
+        }
+    }
+}
+
+pub fn validate_timestamp_array(array: *const arr.TimestampArray) Error!void {
+    try validate_timestamp(array.ts);
     try validate_array(&array.inner);
 }
 
@@ -668,5 +681,105 @@ pub fn validate_array(array: *const arr.Array) Error!void {
         .sparse_union => |*a| try validate_sparse_union_array(a),
         .run_end_encoded => |*a| try validate_run_end_encoded_array(a),
         .dict => |*a| try validate_dict_array(a),
+    }
+}
+
+pub fn validate_data_type(dt: *const dt_mod.DataType) Error!void {
+    switch (dt.*) {
+        .null,
+        .i8,
+        .i16,
+        .i32,
+        .i64,
+        .u8,
+        .u16,
+        .u32,
+        .u64,
+        .f16,
+        .f32,
+        .f64,
+        .binary,
+        .large_binary,
+        .utf8,
+        .large_utf8,
+        .bool,
+        .binary_view,
+        .utf8_view,
+        .date32,
+        .date64,
+        .time32,
+        .time64,
+        .duration,
+        .interval_year_month,
+        .interval_day_time,
+        .interval_month_day_nano,
+        => {},
+        .decimal32 => |params| try validate_decimal_params(.i32, params),
+        .decimal64 => |params| try validate_decimal_params(.i64, params),
+        .decimal128 => |params| try validate_decimal_params(.i128, params),
+        .decimal256 => |params| try validate_decimal_params(.i256, params),
+        .fixed_size_binary => |bw| {
+            if (bw <= 0) {
+                return Error.Invalid;
+            }
+        },
+        .timestamp => |ts| try validate_timestamp(ts),
+        .list,
+        .large_list,
+        .list_view,
+        .large_list_view,
+        => |inner| try validate_data_type(inner),
+        .fixed_size_list => |d| {
+            if (d.item_width <= 0) {
+                return Error.Invalid;
+            }
+
+            try validate_data_type(&d.inner);
+        },
+        .struct_ => |struct_t| try validate_struct_type(struct_t),
+        .map => |map_t| try validate_map_type(map_t),
+        .dense_union, .sparse_union => |union_t| try validate_union_type(union_t),
+        .run_end_encoded => |ree_t| try validate_run_end_encoded_type(ree_t),
+        .dict => |dict_t| try validate_dict_type(dict_t),
+    }
+}
+
+pub fn validate_dict_type(dt: *const dt_mod.DictType) Error!void {
+    try validate_data_type(&dt.value);
+}
+
+pub fn validate_run_end_encoded_type(dt: *const dt_mod.RunEndEncodedType) Error!void {
+    try validate_data_type(&dt.value);
+}
+
+pub fn validate_union_type(dt: *const dt_mod.UnionType) Error!void {
+    if (dt.field_names.len != dt.field_types.len) {
+        return Error.Invalid;
+    }
+
+    if (dt.type_id_set.len != dt.field_names.len) {
+        return Error.Invalid;
+    }
+
+    try validate_field_names(dt.field_names);
+
+    for (dt.field_types) |*t| {
+        try validate_data_type(t);
+    }
+}
+
+pub fn validate_map_type(dt: *const dt_mod.MapType) Error!void {
+    try validate_data_type(&dt.value);
+}
+
+pub fn validate_struct_type(dt: *const dt_mod.StructType) Error!void {
+    if (dt.field_names.len != dt.field_types.len) {
+        return Error.Invalid;
+    }
+
+    try validate_field_names(dt.field_names);
+
+    for (dt.field_types) |*t| {
+        try validate_data_type(t);
     }
 }

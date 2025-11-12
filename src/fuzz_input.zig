@@ -879,7 +879,7 @@ fn data_type_impl(
 
     const kind = (try input.int(u8)) % 44;
 
-    return switch (kind) {
+    const dt = switch (kind) {
         0 => .{ .null = {} },
         1 => .{ .i8 = {} },
         2 => .{ .i16 = {} },
@@ -992,6 +992,10 @@ fn data_type_impl(
         },
         else => unreachable,
     };
+
+    validate.validate_data_type(&dt) catch unreachable;
+
+    return dt;
 }
 
 pub fn data_type_flat(input: *FuzzInput) Error!dt_mod.DataType {
