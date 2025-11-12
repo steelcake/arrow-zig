@@ -216,7 +216,7 @@ fn import_fixed_size_binary(format: []const u8, array: *const FFI_Array) arr.Fix
     };
 }
 
-fn import_timestamp(format: []const u8, unit: arr.TimestampUnit, array: *const FFI_Array) arr.TimestampArray {
+fn import_timestamp(format: [:0]const u8, unit: arr.TimestampUnit, array: *const FFI_Array) arr.TimestampArray {
     std.debug.assert(format[3] == ':');
 
     const timezone = if (format.len > 4)
@@ -611,7 +611,7 @@ pub fn import_array(array: *const FFI_Array, allocator: Allocator) Error!arr.Arr
         return .{ .dict = try import_dict(array, allocator) };
     }
 
-    const format: []const u8 = std.mem.span(array.schema.format);
+    const format: [:0]const u8 = std.mem.span(array.schema.format);
     std.debug.assert(format.len > 0);
 
     switch (format[0]) {

@@ -56,7 +56,7 @@ fn fuzz_ffi(ctx: void, input: *FuzzInput, dbg_alloc: Allocator) !void {
     _ = ctx;
 
     var arena = ArenaAllocator.init(dbg_alloc);
-    var limited_alloc = LimitedAllocator.init(arena.allocator(), 1 << 19);
+    var limited_alloc = LimitedAllocator.init(arena.allocator(), 1 << 12);
     const alloc = limited_alloc.allocator();
 
     const array_len = input.int(u8) catch |e| {
@@ -108,16 +108,16 @@ test fuzz_ffi {
         void,
         {},
         fuzz_ffi,
-        0,
+        1 << 15,
     );
 }
 
-fn fuzz_concat(ctx: void, input: *FuzzInput, dbg_alloc: Allocator) !void {
+fn fuzz_concat(ctx: void, input: *FuzzInput, dbg_alloc: Allocator) fuzzin.Error!void {
     _ = ctx;
 
     var arena = ArenaAllocator.init(dbg_alloc);
     defer arena.deinit();
-    const limited_alloc = LimitedAllocator.init(arena.allocator(), 1 << 17);
+    var limited_alloc = LimitedAllocator.init(arena.allocator(), 1 << 12);
     const alloc = limited_alloc.allocator();
 
     const array_len = try input.int(u8);
@@ -128,7 +128,7 @@ fn fuzz_concat(ctx: void, input: *FuzzInput, dbg_alloc: Allocator) !void {
 
     var concat_arena = ArenaAllocator.init(alloc);
     defer concat_arena.deinit();
-    const concat_limited_alloc = LimitedAllocator.init(concat_arena.allocator(), 1 << 19);
+    var concat_limited_alloc = LimitedAllocator.init(concat_arena.allocator(), 1 << 14);
     const concat_alloc = concat_limited_alloc.allocator();
 
     const slice0 = try fuzz_input.slice(input, &array);
@@ -142,7 +142,7 @@ fn fuzz_concat(ctx: void, input: *FuzzInput, dbg_alloc: Allocator) !void {
         var scratch_arena = ArenaAllocator.init(alloc);
         defer scratch_arena.deinit();
         const scratch_alloc = scratch_arena.allocator();
-        break :conc try concat(dt, &.{ slice0, slice1, slice2 }, concat_alloc, scratch_alloc);
+        break :conc concat(dt, &.{ slice0, slice1, slice2 }, concat_alloc, scratch_alloc) catch unreachable;
     };
     validate.validate_array(&concated) catch unreachable;
 
@@ -163,11 +163,11 @@ test fuzz_concat {
         void,
         {},
         fuzz_concat,
-        1 << 20,
+        1 << 15,
     );
 }
 
-fn fuzz_check_dt(arr_buf: []u8, input: *FuzzInput, dbg_alloc: Allocator) !void {
+fn fuzz_check_dt(arr_buf: []u8, input: *FuzzInput, dbg_alloc: Allocator) fuzzin.Error!void {
     _ = dbg_alloc;
 
     var fb_alloc = FixedBufferAllocator.init(arr_buf);

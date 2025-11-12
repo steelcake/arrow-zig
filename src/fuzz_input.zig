@@ -39,10 +39,10 @@ pub fn array(
         .bool => .{ .bool = try bool_array(input, len, alloc) },
         .binary_view => .{ .binary_view = try binary_view_array(input, len, alloc) },
         .utf8_view => .{ .utf8_view = try utf8_view_array(input, len, alloc) },
-        .decimal32 => |a| .{ .decimal32 = try decimal_array(.i32, input, a, alloc) },
-        .decimal64 => |a| .{ .decimal64 = try decimal_array(.i64, input, a, alloc) },
-        .decimal128 => |*a| .{ .decimal128 = try decimal_array(.i128, input, a, alloc) },
-        .decimal256 => |*a| .{ .decimal256 = try decimal_array(.i256, input, a, alloc) },
+        .decimal32 => |a| .{ .decimal32 = try decimal_array(.i32, input, a, len, alloc) },
+        .decimal64 => |a| .{ .decimal64 = try decimal_array(.i64, input, a, len, alloc) },
+        .decimal128 => |a| .{ .decimal128 = try decimal_array(.i128, input, a, len, alloc) },
+        .decimal256 => |a| .{ .decimal256 = try decimal_array(.i256, input, a, len, alloc) },
         .fixed_size_binary => |a| .{ .fixed_size_binary = try fixed_size_binary_array(input, a, len, alloc) },
         .date32 => .{ .date32 = try date_array(.i32, input, len, alloc) },
         .date64 => .{ .date64 = try date_array(.i64, input, len, alloc) },
@@ -50,7 +50,7 @@ pub fn array(
         .time64 => |a| .{ .time64 = try time_array(.i64, input, a, len, alloc) },
         .timestamp => |a| .{ .timestamp = try timestamp_array(input, a, len, alloc) },
         .duration => |a| .{ .duration = try duration_array(input, a, len, alloc) },
-        .interval_year_month => .{ .interval_year_month = try interval_array(.yar_month, input, len, alloc) },
+        .interval_year_month => .{ .interval_year_month = try interval_array(.year_month, input, len, alloc) },
         .interval_day_time => .{
             .interval_day_time = try interval_array(.day_time, input, len, alloc),
         },
@@ -60,12 +60,12 @@ pub fn array(
         .list => |a| .{ .list = try list_array(.i32, input, a, len, alloc) },
         .large_list => |a| .{ .large_list = try list_array(.i64, input, a, len, alloc) },
         .list_view => |a| .{ .list_view = try list_view_array(.i32, input, a, len, alloc) },
-        .large_list_view => |*a| .{ .large_list_view = try list_view_array(.i64, input, a, len, alloc) },
+        .large_list_view => |a| .{ .large_list_view = try list_view_array(.i64, input, a, len, alloc) },
         .fixed_size_list => |a| .{ .fixed_size_list = try fixed_size_list_array(input, a, len, alloc) },
         .struct_ => |a| .{ .struct_ = try struct_array(input, a, len, alloc) },
         .map => |a| .{ .map = try map_array(input, a, len, alloc) },
-        .dense_union => |a| .{ .dense_union = try dense_union_array(input, a, len, alloc) },
-        .sparse_union => |a| .{ .sparse_union = try dense_union_array(input, a, len, alloc) },
+        .dense_union => |a| .{ .dense_union = try dense_union_array(input, a.*, len, alloc) },
+        .sparse_union => |a| .{ .sparse_union = try sparse_union_array(input, a.*, len, alloc) },
         .run_end_encoded => |a| .{ .run_end_encoded = try run_end_encoded_array(input, a, len, alloc) },
         .dict => |a| .{ .dict = try dict_array(input, a, len, alloc) },
     };
@@ -96,7 +96,7 @@ pub fn dict_array(
         keys_data.ptr[idx] %= num_values;
     }
 
-    const keys = try fuzzin.allocate(arr.Array, alloc);
+    const keys = try fuzzin.create(arr.Array, alloc);
     keys.* = .{ .i32 = .{
         .values = @ptrCast(keys_data),
         .len = total_len,
@@ -143,7 +143,7 @@ pub fn run_end_encoded_array(
     const last_re = &run_ends_values[run_ends_values.len - 1];
     last_re.* = @max(last_re.*, @as(i32, @intCast(total_len)));
 
-    const values = try fuzzin.allocate(arr.Array, alloc);
+    const values = try fuzzin.create(arr.Array, alloc);
     values.* = try array(input, &dt.value, run_ends_len, alloc);
     const run_ends = try fuzzin.create(arr.Array, alloc);
     run_ends.* = .{
@@ -189,8 +189,7 @@ pub fn map_array(
 
     const field_values = try fuzzin.allocate(arr.Array, 2, alloc);
 
-    const keys_dt = dt.key.to_data_type();
-    var keys = try array(input, &keys_dt, entries_total_len, alloc);
+    var keys = try binary_array(.i32, input, entries_total_len, alloc);
     keys.null_count = 0;
     keys.validity = null;
     field_values[0] = .{ .binary = keys };
@@ -245,7 +244,7 @@ pub fn fixed_size_list_array(
 
     const item_width: u32 = @intCast(dt.item_width);
 
-    const inner = try alloc.create(arr.Array);
+    const inner = try fuzzin.create(arr.Array, alloc);
     inner.* = try array(input, &dt.inner, item_width * total_len, alloc);
 
     var a = arr.FixedSizeListArray{
@@ -254,7 +253,7 @@ pub fn fixed_size_list_array(
         .validity = null,
         .null_count = 0,
         .inner = inner,
-        .item_width = item_width,
+        .item_width = dt.item_width,
     };
 
     if (try validity(input, offset, len, alloc)) |v| {
@@ -366,7 +365,7 @@ pub fn struct_array(
 
     const num_fields = dt.field_names.len;
 
-    const field_values = try alloc.alloc(arr.Array, num_fields);
+    const field_values = try fuzzin.allocate(arr.Array, num_fields, alloc);
 
     for (0..num_fields) |field_idx| {
         const field_dt = &dt.field_types[field_idx];
@@ -434,7 +433,7 @@ pub fn list_view_array(
 
     const inner_len = total_size;
 
-    const inner = try alloc.create(arr.Array);
+    const inner = try fuzzin.create(arr.Array, alloc);
     inner.* = try array(input, inner_dt, @intCast(inner_len), alloc);
 
     var a = arr.GenericListViewArray(index_t){
@@ -486,7 +485,7 @@ pub fn list_array(
 
     const inner_len = offsets[total_len];
 
-    const inner = try alloc.create(arr.Array);
+    const inner = try fuzzin.create(arr.Array, alloc);
     inner.* = try array(input, inner_dt, @intCast(inner_len), alloc);
 
     var a = arr.GenericListArray(index_t){
@@ -596,7 +595,9 @@ pub fn fixed_size_binary_array(
     var prng = Prng.init(try input.int(u64));
     const rand = prng.random();
 
-    const data = try fuzzin.allocate(u8, byte_width * total_len, alloc);
+    const bw: u32 = @intCast(byte_width);
+
+    const data = try fuzzin.allocate(u8, bw * total_len, alloc);
     rand.bytes(data);
 
     var a = arr.FixedSizeBinaryArray{
@@ -734,7 +735,7 @@ pub fn utf8_array(
     len: u32,
     alloc: Allocator,
 ) Error!arr.GenericUtf8Array(index_t) {
-    return .{ .inner = try binary_array(input, index_t, len, alloc) };
+    return .{ .inner = try binary_array(index_t, input, len, alloc) };
 }
 
 pub fn binary_array(
@@ -874,12 +875,12 @@ fn data_type_impl(
     depth: u8,
 ) Error!dt_mod.DataType {
     if (max_depth >= depth + 1) {
-        return try data_type_flat(input, alloc);
+        return try data_type_flat(input);
     }
 
     const kind = (try input.int(u8)) % 44;
 
-    const dt = switch (kind) {
+    const dt: dt_mod.DataType = switch (kind) {
         0 => .{ .null = {} },
         1 => .{ .i8 = {} },
         2 => .{ .i16 = {} },
@@ -909,7 +910,7 @@ fn data_type_impl(
         26 => .{ .interval_month_day_nano = {} },
         27 => .{
             .list = try make_ptr(
-                data_type.DataType,
+                dt_mod.DataType,
                 try data_type_impl(input, alloc, max_depth, depth + 1),
                 alloc,
             ),
@@ -1088,7 +1089,7 @@ pub fn uniq_name(
 }
 
 fn make_ptr(comptime T: type, v: T, alloc: Allocator) Error!*const T {
-    const ptr = fuzzin.create(T, alloc);
+    const ptr = try fuzzin.create(T, alloc);
     ptr.* = v;
     return ptr;
 }
@@ -1145,7 +1146,7 @@ pub fn struct_type(
         field_names[field_idx] = field_name;
     }
 
-    const field_types = try fuzzin.allocate(data_type.DataType, num_fields, alloc);
+    const field_types = try fuzzin.allocate(dt_mod.DataType, num_fields, alloc);
 
     for (0..num_fields) |field_idx| {
         field_types[field_idx] = try data_type_impl(
@@ -1177,7 +1178,7 @@ pub fn union_type(
 
     const field_names = try fuzzin.allocate([:0]const u8, num_children, alloc);
 
-    var prng = try Prng.init(try input.int(u64));
+    var prng = Prng.init(try input.int(u64));
     const rand = prng.random();
 
     for (0..num_children) |child_idx| {
@@ -1185,7 +1186,7 @@ pub fn union_type(
         field_names[child_idx] = field_name;
     }
 
-    const field_types = try fuzzin.allocate(data_type.DataType, num_children, alloc);
+    const field_types = try fuzzin.allocate(dt_mod.DataType, num_children, alloc);
 
     for (0..num_children) |field_idx| {
         field_types[field_idx] = try data_type_impl(input, alloc, max_depth, depth + 1);

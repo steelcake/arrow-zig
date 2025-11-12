@@ -632,7 +632,7 @@ pub fn validate_timestamp(ts: arr.Timestamp) Error!void {
 
 pub fn validate_timestamp_array(array: *const arr.TimestampArray) Error!void {
     try validate_timestamp(array.ts);
-    try validate_array(&array.inner);
+    try validate_primitive_array(i64, &array.inner);
 }
 
 pub fn validate_array(array: *const arr.Array) Error!void {

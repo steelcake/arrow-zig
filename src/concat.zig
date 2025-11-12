@@ -955,7 +955,7 @@ pub fn concat_timestamp(ts: arr.Timestamp, arrays: []const arr.TimestampArray, a
     const out_ts = arr.Timestamp{
         .unit = ts.unit,
         .timezone = if (ts.timezone) |tz| tz_alloc: {
-            const tz_out = try alloc.alloc(u8, tz.len);
+            const tz_out = try alloc.allocSentinel(u8, tz.len, 0);
             @memcpy(tz_out, tz);
             break :tz_alloc tz_out;
         } else null,
