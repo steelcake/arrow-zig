@@ -70,7 +70,7 @@ pub fn array(
         .dict => |a| .{ .dict = try dict_array(input, a, len, alloc) },
     };
 
-    validate.validate(&a) catch unreachable;
+    validate.validate_array(&a) catch unreachable;
 
     return a;
 }

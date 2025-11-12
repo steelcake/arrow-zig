@@ -361,8 +361,3 @@ pub const MapArray = struct {
     null_count: u32,
     keys_are_sorted: bool,
 };
-
-pub const Datum = union(enum) {
-    scalar: *const Array,
-    array: *const Array,
-};

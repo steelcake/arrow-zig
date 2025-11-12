@@ -5,7 +5,6 @@ const ArenaAllocator = std.heap.ArenaAllocator;
 
 const arr = @import("./array.zig");
 const bitmap = @import("./bitmap.zig");
-const builder = @import("./builder.zig");
 const get = @import("./get.zig");
 
 const OffsetLen = struct {

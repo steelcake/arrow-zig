@@ -3,7 +3,6 @@ const arr = @import("./array.zig");
 const Scalar = @import("./scalar.zig").Scalar;
 const bitmap = @import("./bitmap.zig");
 const get = @import("./get.zig");
-const builder = @import("./builder.zig");
 const testing = std.testing;
 const ArenaAllocator = std.heap.ArenaAllocator;
 
