@@ -79,6 +79,8 @@ fn fuzz_ffi(ctx: void, input: *FuzzInput, dbg_alloc: Allocator) !void {
     defer ffi_array.release();
 
     var import_arena = ArenaAllocator.init(dbg_alloc);
+    // don't free like this since we will ffi a second time
+    // defer import_arena.deinit();
     const import_alloc = import_arena.allocator();
 
     const imported = ffi.import_array(&ffi_array, import_alloc) catch unreachable;
@@ -94,6 +96,7 @@ fn fuzz_ffi(ctx: void, input: *FuzzInput, dbg_alloc: Allocator) !void {
     defer ffi_array2.release();
 
     var import_arena2 = ArenaAllocator.init(dbg_alloc);
+    defer import_arena2.deinit();
     const import_alloc2 = import_arena2.allocator();
 
     const imported2 = ffi.import_array(&ffi_array2, import_alloc2) catch unreachable;
@@ -108,7 +111,7 @@ test fuzz_ffi {
         void,
         {},
         fuzz_ffi,
-        1 << 15,
+        1 << 20,
     );
 }
 
@@ -126,7 +129,7 @@ fn fuzz_concat(ctx: void, input: *FuzzInput, dbg_alloc: Allocator) fuzzin.Error!
 
     validate.validate_array(&array) catch unreachable;
 
-    var concat_arena = ArenaAllocator.init(alloc);
+    var concat_arena = ArenaAllocator.init(dbg_alloc);
     defer concat_arena.deinit();
     var concat_limited_alloc = LimitedAllocator.init(concat_arena.allocator(), 1 << 14);
     const concat_alloc = concat_limited_alloc.allocator();
@@ -139,7 +142,7 @@ fn fuzz_concat(ctx: void, input: *FuzzInput, dbg_alloc: Allocator) fuzzin.Error!
     validate.validate_array(&slice2) catch unreachable;
 
     const concated = conc: {
-        var scratch_arena = ArenaAllocator.init(alloc);
+        var scratch_arena = ArenaAllocator.init(dbg_alloc);
         defer scratch_arena.deinit();
         const scratch_alloc = scratch_arena.allocator();
         break :conc concat(dt, &.{ slice0, slice1, slice2 }, concat_alloc, scratch_alloc) catch unreachable;
@@ -163,7 +166,7 @@ test fuzz_concat {
         void,
         {},
         fuzz_concat,
-        1 << 15,
+        1 << 20,
     );
 }
 
