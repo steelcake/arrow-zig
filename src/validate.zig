@@ -9,7 +9,7 @@ const Error = error{
     Invalid,
 };
 
-fn validity(null_count: u32, offset: u32, len: u32, valid: ?[]const u8) Error!void {
+fn validate_validity(null_count: u32, offset: u32, len: u32, valid: ?[]const u8) Error!void {
     if (@as(u64, offset) + @as(u64, len) > std.math.maxInt(u32)) {
         return Error.Invalid;
     }
@@ -45,7 +45,7 @@ fn validity(null_count: u32, offset: u32, len: u32, valid: ?[]const u8) Error!vo
     }
 }
 
-pub fn primitive_array(comptime T: type, array: *const arr.PrimitiveArray(T)) Error!void {
+pub fn validate_primitive_array(comptime T: type, array: *const arr.PrimitiveArray(T)) Error!void {
     if (@as(u64, array.offset) + @as(u64, array.len) > std.math.maxInt(u32)) {
         return Error.Invalid;
     }
@@ -58,7 +58,7 @@ pub fn primitive_array(comptime T: type, array: *const arr.PrimitiveArray(T)) Er
     try validate_validity(array.null_count, array.offset, array.len, array.validity);
 }
 
-pub fn validate_bool(array: *const arr.BoolArray) Error!void {
+pub fn validate_bool_array(array: *const arr.BoolArray) Error!void {
     if (@as(u64, array.offset) + @as(u64, array.len) > std.math.maxInt(u32)) {
         return Error.Invalid;
     }
@@ -71,7 +71,10 @@ pub fn validate_bool(array: *const arr.BoolArray) Error!void {
     try validate_validity(array.null_count, array.offset, array.len, array.validity);
 }
 
-pub fn validate_binary(comptime index_t: arr.IndexType, array: *const arr.GenericBinaryArray(index_t)) Error!void {
+pub fn validate_binary_array(
+    comptime index_t: arr.IndexType,
+    array: *const arr.GenericBinaryArray(index_t),
+) Error!void {
     if (@as(u64, array.offset) + @as(u64, array.len) > std.math.maxInt(u32)) {
         return Error.Invalid;
     }
@@ -102,7 +105,10 @@ pub fn validate_binary(comptime index_t: arr.IndexType, array: *const arr.Generi
     }
 }
 
-pub fn validate_decimal(comptime decimal_t: arr.DecimalInt, array: *const arr.DecimalArray(decimal_t)) Error!void {
+pub fn validate_decimal_array(
+    comptime decimal_t: arr.DecimalInt,
+    array: *const arr.DecimalArray(decimal_t),
+) Error!void {
     const max_precision = switch (decimal_t) {
         .i32 => 9,
         .i64 => 19,
@@ -118,10 +124,13 @@ pub fn validate_decimal(comptime decimal_t: arr.DecimalInt, array: *const arr.De
         return Error.Invalid;
     }
 
-    try validate_primitive(decimal_t.to_type(), &array.inner);
+    try validate_primitive_array(decimal_t.to_type(), &array.inner);
 }
 
-pub fn validate_list(comptime index_t: arr.IndexType, array: *const arr.GenericListArray(index_t)) Error!void {
+pub fn validate_list_array(
+    comptime index_t: arr.IndexType,
+    array: *const arr.GenericListArray(index_t),
+) Error!void {
     if (@as(u64, array.offset) + @as(u64, array.len) > std.math.maxInt(u32)) {
         return Error.Invalid;
     }
@@ -151,7 +160,7 @@ pub fn validate_list(comptime index_t: arr.IndexType, array: *const arr.GenericL
         return Error.Invalid;
     }
 
-    try validate(array.inner);
+    try validate_array(array.inner);
 }
 
 fn validate_field_names(field_names: []const [:0]const u8) Error!void {
@@ -174,7 +183,7 @@ fn validate_field_names(field_names: []const [:0]const u8) Error!void {
     }
 }
 
-pub fn validate_struct(array: *const arr.StructArray) Error!void {
+pub fn validate_struct_array(array: *const arr.StructArray) Error!void {
     if (@as(u64, array.offset) + @as(u64, array.len) > std.math.maxInt(u32)) {
         return Error.Invalid;
     }
@@ -196,11 +205,11 @@ pub fn validate_struct(array: *const arr.StructArray) Error!void {
             return Error.Invalid;
         }
 
-        try validate(child);
+        try validate_array(child);
     }
 }
 
-fn validate_union(array: *const arr.UnionArray) Error!void {
+fn validate_union_array(array: *const arr.UnionArray) Error!void {
     if (@as(u64, array.offset) + @as(u64, array.len) > std.math.maxInt(u32)) {
         return Error.Invalid;
     }
@@ -233,12 +242,12 @@ fn validate_union(array: *const arr.UnionArray) Error!void {
     }
 
     for (array.children) |*child| {
-        try validate(child);
+        try validate_array(child);
     }
 }
 
-pub fn validate_dense_union(array: *const arr.DenseUnionArray) Error!void {
-    try validate_union(&array.inner);
+pub fn validate_dense_union_array(array: *const arr.DenseUnionArray) Error!void {
+    try validate_union_array(&array.inner);
 
     const needed_len = array.inner.offset + array.inner.len;
     if (needed_len > array.offsets.len) {
@@ -268,8 +277,8 @@ pub fn validate_dense_union(array: *const arr.DenseUnionArray) Error!void {
     }
 }
 
-pub fn validate_sparse_union(array: *const arr.SparseUnionArray) Error!void {
-    try validate_union(&array.inner);
+pub fn validate_sparse_union_array(array: *const arr.SparseUnionArray) Error!void {
+    try validate_union_array(&array.inner);
 
     const needed_len = array.inner.len + array.inner.offset;
     for (array.inner.children) |*child| {
@@ -279,7 +288,7 @@ pub fn validate_sparse_union(array: *const arr.SparseUnionArray) Error!void {
     }
 }
 
-pub fn validate_fixed_size_binary(array: *const arr.FixedSizeBinaryArray) Error!void {
+pub fn validate_fixed_size_binary_array(array: *const arr.FixedSizeBinaryArray) Error!void {
     if (@as(u64, array.offset) + @as(u64, array.len) > std.math.maxInt(u32)) {
         return Error.Invalid;
     }
@@ -303,7 +312,7 @@ pub fn validate_fixed_size_binary(array: *const arr.FixedSizeBinaryArray) Error!
     try validate_validity(array.null_count, array.offset, array.len, array.validity);
 }
 
-pub fn validate_fixed_size_list(array: *const arr.FixedSizeListArray) Error!void {
+pub fn validate_fixed_size_list_array(array: *const arr.FixedSizeListArray) Error!void {
     if (@as(u64, array.offset) + @as(u64, array.len) > std.math.maxInt(u32)) {
         return Error.Invalid;
     }
@@ -326,10 +335,10 @@ pub fn validate_fixed_size_list(array: *const arr.FixedSizeListArray) Error!void
 
     try validate_validity(array.null_count, array.offset, array.len, array.validity);
 
-    try validate(array.inner);
+    try validate_array(array.inner);
 }
 
-pub fn validate_map(array: *const arr.MapArray) Error!void {
+pub fn validate_map_array(array: *const arr.MapArray) Error!void {
     if (@as(u64, array.offset) + @as(u64, array.len) > std.math.maxInt(u32)) {
         return Error.Invalid;
     }
@@ -367,19 +376,34 @@ pub fn validate_map(array: *const arr.MapArray) Error!void {
     }
 
     switch (array.entries.field_values[0]) {
-        .i8, .i16, .i32, .i64, .u8, .u16, .u32, .u64, .binary, .large_binary, .utf8, .large_utf8, .binary_view, .utf8_view, .fixed_size_binary => {},
+        .i8,
+        .i16,
+        .i32,
+        .i64,
+        .u8,
+        .u16,
+        .u32,
+        .u64,
+        .binary,
+        .large_binary,
+        .utf8,
+        .large_utf8,
+        .binary_view,
+        .utf8_view,
+        .fixed_size_binary,
+        => {},
         else => return Error.Invalid,
     }
 
-    try validate_struct(array.entries);
+    try validate_struct_array(array.entries);
 
     // if (array.keys_are_sorted and !is_sorted.is_sorted(.ascending, &slice.slice(&array.entries.field_values[0], array.offset, array.len))) {
     //     return Error.Invalid;
     // }
 }
 
-fn validate_run_ends(comptime T: type, array: *const arr.RunEndArray, run_ends: *const arr.PrimitiveArray(T)) Error!void {
-    try validate_primitive(T, run_ends);
+fn validate_run_ends_array(comptime T: type, array: *const arr.RunEndArray, run_ends: *const arr.PrimitiveArray(T)) Error!void {
+    try validate_primitive_array(T, run_ends);
 
     if (run_ends.null_count > 0) {
         return Error.Invalid;
@@ -407,7 +431,7 @@ fn validate_run_ends(comptime T: type, array: *const arr.RunEndArray, run_ends: 
     }
 }
 
-pub fn validate_run_end_encoded(array: *const arr.RunEndArray) Error!void {
+pub fn validate_run_end_encoded_array(array: *const arr.RunEndArray) Error!void {
     if (@as(u64, array.offset) + @as(u64, array.len) > std.math.maxInt(u32)) {
         return Error.Invalid;
     }
@@ -420,19 +444,19 @@ pub fn validate_run_end_encoded(array: *const arr.RunEndArray) Error!void {
         return Error.Invalid;
     }
 
-    try validate(array.values);
+    try validate_array(array.values);
 
     switch (array.run_ends.*) {
-        .i16 => |*run_ends| try validate_run_ends(i16, array, run_ends),
-        .i32 => |*run_ends| try validate_run_ends(i32, array, run_ends),
-        .i64 => |*run_ends| try validate_run_ends(i64, array, run_ends),
+        .i16 => |*run_ends| try validate_run_ends_array(i16, array, run_ends),
+        .i32 => |*run_ends| try validate_run_ends_array(i32, array, run_ends),
+        .i64 => |*run_ends| try validate_run_ends_array(i64, array, run_ends),
         else => {
             return Error.Invalid;
         },
     }
 }
 
-fn validate_dict_keys(comptime T: type, keys: *const arr.PrimitiveArray(T), values_len: u32) Error!void {
+fn validate_dict_keys_array(comptime T: type, keys: *const arr.PrimitiveArray(T), values_len: u32) Error!void {
     if (keys.null_count > 0) {
         const v = (keys.validity orelse unreachable).ptr;
         var idx: u32 = keys.offset;
@@ -453,7 +477,7 @@ fn validate_dict_keys(comptime T: type, keys: *const arr.PrimitiveArray(T), valu
     }
 }
 
-pub fn validate_dict(array: *const arr.DictArray) Error!void {
+pub fn validate_dict_array(array: *const arr.DictArray) Error!void {
     if (@as(u64, array.offset) + @as(u64, array.len) > std.math.maxInt(u32)) {
         return Error.Invalid;
     }
@@ -465,20 +489,20 @@ pub fn validate_dict(array: *const arr.DictArray) Error!void {
         return Error.Invalid;
     }
 
-    try validate(array.keys);
-    try validate(array.values);
+    try validate_array(array.keys);
+    try validate_array(array.values);
 
     const values_len = length.length(array.values);
 
     switch (slice.slice(&array.keys.*, array.offset, array.len)) {
-        .i8 => |*a| try validate_dict_keys(i8, a, values_len),
-        .i16 => |*a| try validate_dict_keys(i16, a, values_len),
-        .i32 => |*a| try validate_dict_keys(i32, a, values_len),
-        .i64 => |*a| try validate_dict_keys(i64, a, values_len),
-        .u8 => |*a| try validate_dict_keys(u8, a, values_len),
-        .u16 => |*a| try validate_dict_keys(u16, a, values_len),
-        .u32 => |*a| try validate_dict_keys(u32, a, values_len),
-        .u64 => |*a| try validate_dict_keys(u64, a, values_len),
+        .i8 => |*a| try validate_dict_keys_array(i8, a, values_len),
+        .i16 => |*a| try validate_dict_keys_array(i16, a, values_len),
+        .i32 => |*a| try validate_dict_keys_array(i32, a, values_len),
+        .i64 => |*a| try validate_dict_keys_array(i64, a, values_len),
+        .u8 => |*a| try validate_dict_keys_array(u8, a, values_len),
+        .u16 => |*a| try validate_dict_keys_array(u16, a, values_len),
+        .u32 => |*a| try validate_dict_keys_array(u32, a, values_len),
+        .u64 => |*a| try validate_dict_keys_array(u64, a, values_len),
         else => {
             return Error.Invalid;
         },
@@ -489,7 +513,7 @@ pub fn validate_dict(array: *const arr.DictArray) Error!void {
     // }
 }
 
-pub fn validate_binary_view(array: *const arr.BinaryViewArray) Error!void {
+pub fn validate_binary_view_array(array: *const arr.BinaryViewArray) Error!void {
     if (@as(u64, array.offset) + @as(u64, array.len) > std.math.maxInt(u32)) {
         return Error.Invalid;
     }
@@ -539,7 +563,10 @@ pub fn validate_binary_view(array: *const arr.BinaryViewArray) Error!void {
     }
 }
 
-pub fn validate_list_view(comptime index_t: arr.IndexType, array: *const arr.GenericListViewArray(index_t)) Error!void {
+pub fn validate_list_view_array(
+    comptime index_t: arr.IndexType,
+    array: *const arr.GenericListViewArray(index_t),
+) Error!void {
     if (@as(u64, array.offset) + @as(u64, array.len) > std.math.maxInt(u32)) {
         return Error.Invalid;
     }
@@ -581,61 +608,65 @@ pub fn validate_list_view(comptime index_t: arr.IndexType, array: *const arr.Gen
             return Error.Invalid;
         }
     }
+
+    try validate_array(array.inner);
 }
 
-pub fn validate_timestamp(array: *const arr.TimestampArray) Error!void {
+pub fn validate_timestamp_array(array: *const arr.TimestampArray) Error!void {
     if (array.ts.timezone) |tz| {
         if (tz.len == 0) {
             return Error.Invalid;
         }
     }
+
+    try validate_array(&array.inner);
 }
 
-pub fn validate(array: *const arr.Array) Error!void {
+pub fn validate_array(array: *const arr.Array) Error!void {
     switch (array.*) {
         .null => {},
-        .i8 => |*a| try validate_primitive(i8, a),
-        .i16 => |*a| try validate_primitive(i16, a),
-        .i32 => |*a| try validate_primitive(i32, a),
-        .i64 => |*a| try validate_primitive(i64, a),
-        .u8 => |*a| try validate_primitive(u8, a),
-        .u16 => |*a| try validate_primitive(u16, a),
-        .u32 => |*a| try validate_primitive(u32, a),
-        .u64 => |*a| try validate_primitive(u64, a),
-        .f16 => |*a| try validate_primitive(f16, a),
-        .f32 => |*a| try validate_primitive(f32, a),
-        .f64 => |*a| try validate_primitive(f64, a),
-        .binary => |*a| try validate_binary(.i32, a),
-        .large_binary => |*a| try validate_binary(.i64, a),
-        .utf8 => |*a| try validate_binary(.i32, &a.inner),
-        .large_utf8 => |*a| try validate_binary(.i64, &a.inner),
-        .bool => |*a| try validate_bool(a),
-        .binary_view => |*a| try validate_binary_view(a),
-        .utf8_view => |*a| try validate_binary_view(&a.inner),
-        .decimal32 => |*a| try validate_decimal(.i32, a),
-        .decimal64 => |*a| try validate_decimal(.i64, a),
-        .decimal128 => |*a| try validate_decimal(.i128, a),
-        .decimal256 => |*a| try validate_decimal(.i256, a),
-        .fixed_size_binary => |*a| try validate_fixed_size_binary(a),
-        .date32 => |*a| try validate_primitive(i32, &a.inner),
-        .date64 => |*a| try validate_primitive(i64, &a.inner),
-        .time32 => |*a| try validate_primitive(i32, &a.inner),
-        .time64 => |*a| try validate_primitive(i64, &a.inner),
-        .timestamp => |*a| try validate_timestamp(a),
-        .duration => |*a| try validate_primitive(i64, &a.inner),
-        .interval_year_month => |*a| try validate_primitive(i32, &a.inner),
-        .interval_day_time => |*a| try validate_primitive([2]i32, &a.inner),
-        .interval_month_day_nano => |*a| try validate_primitive(arr.MonthDayNano, &a.inner),
-        .list => |*a| try validate_list(.i32, a),
-        .large_list => |*a| try validate_list(.i64, a),
-        .list_view => |*a| try validate_list_view(.i32, a),
-        .large_list_view => |*a| try validate_list_view(.i64, a),
-        .fixed_size_list => |*a| try validate_fixed_size_list(a),
-        .struct_ => |*a| try validate_struct(a),
-        .map => |*a| try validate_map(a),
-        .dense_union => |*a| try validate_dense_union(a),
-        .sparse_union => |*a| try validate_sparse_union(a),
-        .run_end_encoded => |*a| try validate_run_end_encoded(a),
-        .dict => |*a| try validate_dict(a),
+        .i8 => |*a| try validate_primitive_array(i8, a),
+        .i16 => |*a| try validate_primitive_array(i16, a),
+        .i32 => |*a| try validate_primitive_array(i32, a),
+        .i64 => |*a| try validate_primitive_array(i64, a),
+        .u8 => |*a| try validate_primitive_array(u8, a),
+        .u16 => |*a| try validate_primitive_array(u16, a),
+        .u32 => |*a| try validate_primitive_array(u32, a),
+        .u64 => |*a| try validate_primitive_array(u64, a),
+        .f16 => |*a| try validate_primitive_array(f16, a),
+        .f32 => |*a| try validate_primitive_array(f32, a),
+        .f64 => |*a| try validate_primitive_array(f64, a),
+        .binary => |*a| try validate_binary_array(.i32, a),
+        .large_binary => |*a| try validate_binary_array(.i64, a),
+        .utf8 => |*a| try validate_binary_array(.i32, &a.inner),
+        .large_utf8 => |*a| try validate_binary_array(.i64, &a.inner),
+        .bool => |*a| try validate_bool_array(a),
+        .binary_view => |*a| try validate_binary_view_array(a),
+        .utf8_view => |*a| try validate_binary_view_array(&a.inner),
+        .decimal32 => |*a| try validate_decimal_array(.i32, a),
+        .decimal64 => |*a| try validate_decimal_array(.i64, a),
+        .decimal128 => |*a| try validate_decimal_array(.i128, a),
+        .decimal256 => |*a| try validate_decimal_array(.i256, a),
+        .fixed_size_binary => |*a| try validate_fixed_size_binary_array(a),
+        .date32 => |*a| try validate_primitive_array(i32, &a.inner),
+        .date64 => |*a| try validate_primitive_array(i64, &a.inner),
+        .time32 => |*a| try validate_primitive_array(i32, &a.inner),
+        .time64 => |*a| try validate_primitive_array(i64, &a.inner),
+        .timestamp => |*a| try validate_timestamp_array(a),
+        .duration => |*a| try validate_primitive_array(i64, &a.inner),
+        .interval_year_month => |*a| try validate_primitive_array(i32, &a.inner),
+        .interval_day_time => |*a| try validate_primitive_array([2]i32, &a.inner),
+        .interval_month_day_nano => |*a| try validate_primitive_array(arr.MonthDayNano, &a.inner),
+        .list => |*a| try validate_list_array(.i32, a),
+        .large_list => |*a| try validate_list_array(.i64, a),
+        .list_view => |*a| try validate_list_view_array(.i32, a),
+        .large_list_view => |*a| try validate_list_view_array(.i64, a),
+        .fixed_size_list => |*a| try validate_fixed_size_list_array(a),
+        .struct_ => |*a| try validate_struct_array(a),
+        .map => |*a| try validate_map_array(a),
+        .dense_union => |*a| try validate_dense_union_array(a),
+        .sparse_union => |*a| try validate_sparse_union_array(a),
+        .run_end_encoded => |*a| try validate_run_end_encoded_array(a),
+        .dict => |*a| try validate_dict_array(a),
     }
 }

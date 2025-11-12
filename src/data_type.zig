@@ -2,7 +2,6 @@ const arr = @import("./array.zig");
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const testing = std.testing;
-const test_array = @import("./test_array.zig");
 
 pub const StructType = struct {
     field_names: []const [:0]const u8,
@@ -768,25 +767,4 @@ pub fn check_data_type(array: *const arr.Array, expected: *const DataType) bool 
             }
         },
     }
-}
-
-fn run_test_impl(id: u8) !void {
-    var array_arena = std.heap.ArenaAllocator.init(testing.allocator);
-    defer array_arena.deinit();
-
-    const array = try test_array.make_array(id, array_arena.allocator());
-
-    var dt_arena = std.heap.ArenaAllocator.init(testing.allocator);
-    defer dt_arena.deinit();
-
-    const dt = try get_data_type(&array, dt_arena.allocator());
-
-    try testing.expect(check_data_type(&array, &dt));
-}
-
-fn run_test(id: u8) !void {
-    return run_test_impl(id) catch |e| err: {
-        std.log.err("failed test id: {}", .{id});
-        break :err e;
-    };
 }
