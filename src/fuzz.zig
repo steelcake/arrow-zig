@@ -199,3 +199,47 @@ test fuzz_check_dt {
         0,
     );
 }
+
+fn fuzz_validate_array_auto(arr_buf: []u8, input: *FuzzInput, dbg_alloc: Allocator) fuzzin.Error!void {
+    _ = dbg_alloc;
+
+    var fb_alloc = FixedBufferAllocator.init(arr_buf);
+    var arena = ArenaAllocator.init(fb_alloc.allocator());
+    const alloc = arena.allocator();
+
+    const array = try input.auto(arr.Array, alloc, 20);
+
+    validate.validate_array(&array) catch {};
+}
+
+test fuzz_validate_array_auto {
+    const arr_buf = try std.heap.page_allocator.alloc(u8, 1 << 12);
+    fuzzin.fuzz_test(
+        []u8,
+        arr_buf,
+        fuzz_validate_array_auto,
+        0,
+    );
+}
+
+fn fuzz_validate_data_type_auto(dt_buf: []u8, input: *FuzzInput, dbg_alloc: Allocator) fuzzin.Error!void {
+    _ = dbg_alloc;
+
+    var fb_alloc = FixedBufferAllocator.init(dt_buf);
+    var arena = ArenaAllocator.init(fb_alloc.allocator());
+    const alloc = arena.allocator();
+
+    const dt = try input.auto(data_type.DataType, alloc, 20);
+
+    validate.validate_data_type(&dt) catch {};
+}
+
+test fuzz_validate_data_type_auto {
+    const arr_buf = try std.heap.page_allocator.alloc(u8, 1 << 12);
+    fuzzin.fuzz_test(
+        []u8,
+        arr_buf,
+        fuzz_validate_data_type_auto,
+        0,
+    );
+}

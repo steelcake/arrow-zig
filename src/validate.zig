@@ -11,7 +11,7 @@ const Error = error{
 };
 
 fn validate_validity(null_count: u32, offset: u32, len: u32, valid: ?[]const u8) Error!void {
-    if (@as(u64, offset) + @as(u64, len) > std.math.maxInt(u32)) {
+    if (@as(u64, offset) + @as(u64, len) > std.math.maxInt(u32) / 2) {
         return Error.Invalid;
     }
 
@@ -37,6 +37,10 @@ fn validate_validity(null_count: u32, offset: u32, len: u32, valid: ?[]const u8)
             return Error.Invalid;
         }
     } else if (valid) |v| {
+        if (needed_bitmap_len > v.len) {
+            return Error.Invalid;
+        }
+
         var idx: u32 = offset;
         while (idx < offset + len) : (idx += 1) {
             if (!bitmap.get(v.ptr, idx)) {
@@ -47,7 +51,7 @@ fn validate_validity(null_count: u32, offset: u32, len: u32, valid: ?[]const u8)
 }
 
 pub fn validate_primitive_array(comptime T: type, array: *const arr.PrimitiveArray(T)) Error!void {
-    if (@as(u64, array.offset) + @as(u64, array.len) > std.math.maxInt(u32)) {
+    if (@as(u64, array.offset) + @as(u64, array.len) > std.math.maxInt(u32) / 2) {
         return Error.Invalid;
     }
 
@@ -60,7 +64,7 @@ pub fn validate_primitive_array(comptime T: type, array: *const arr.PrimitiveArr
 }
 
 pub fn validate_bool_array(array: *const arr.BoolArray) Error!void {
-    if (@as(u64, array.offset) + @as(u64, array.len) > std.math.maxInt(u32)) {
+    if (@as(u64, array.offset) + @as(u64, array.len) > std.math.maxInt(u32) / 2) {
         return Error.Invalid;
     }
 
@@ -76,7 +80,7 @@ pub fn validate_binary_array(
     comptime index_t: arr.IndexType,
     array: *const arr.GenericBinaryArray(index_t),
 ) Error!void {
-    if (@as(u64, array.offset) + @as(u64, array.len) > std.math.maxInt(u32)) {
+    if (@as(u64, array.offset) + @as(u64, array.len) > std.math.maxInt(u32) / 2) {
         return Error.Invalid;
     }
 
@@ -135,7 +139,7 @@ pub fn validate_list_array(
     comptime index_t: arr.IndexType,
     array: *const arr.GenericListArray(index_t),
 ) Error!void {
-    if (@as(u64, array.offset) + @as(u64, array.len) > std.math.maxInt(u32)) {
+    if (@as(u64, array.offset) + @as(u64, array.len) > std.math.maxInt(u32) / 2) {
         return Error.Invalid;
     }
 
@@ -188,7 +192,7 @@ fn validate_field_names(field_names: []const [:0]const u8) Error!void {
 }
 
 pub fn validate_struct_array(array: *const arr.StructArray) Error!void {
-    if (@as(u64, array.offset) + @as(u64, array.len) > std.math.maxInt(u32)) {
+    if (@as(u64, array.offset) + @as(u64, array.len) > std.math.maxInt(u32) / 2) {
         return Error.Invalid;
     }
 
@@ -214,7 +218,7 @@ pub fn validate_struct_array(array: *const arr.StructArray) Error!void {
 }
 
 fn validate_union_array(array: *const arr.UnionArray) Error!void {
-    if (@as(u64, array.offset) + @as(u64, array.len) > std.math.maxInt(u32)) {
+    if (@as(u64, array.offset) + @as(u64, array.len) > std.math.maxInt(u32) / 2) {
         return Error.Invalid;
     }
 
@@ -293,7 +297,7 @@ pub fn validate_sparse_union_array(array: *const arr.SparseUnionArray) Error!voi
 }
 
 pub fn validate_fixed_size_binary_array(array: *const arr.FixedSizeBinaryArray) Error!void {
-    if (@as(u64, array.offset) + @as(u64, array.len) > std.math.maxInt(u32)) {
+    if (@as(u64, array.offset) + @as(u64, array.len) > std.math.maxInt(u32) / 2) {
         return Error.Invalid;
     }
 
@@ -305,7 +309,7 @@ pub fn validate_fixed_size_binary_array(array: *const arr.FixedSizeBinaryArray) 
 
     const byte_width: u32 = @intCast(array.byte_width);
 
-    if (@as(u64, needed_len) * @as(u64, byte_width) > std.math.maxInt(u32)) {
+    if (@as(u64, needed_len) * @as(u64, byte_width) > std.math.maxInt(u32) / 2) {
         return Error.Invalid;
     }
 
@@ -317,7 +321,7 @@ pub fn validate_fixed_size_binary_array(array: *const arr.FixedSizeBinaryArray) 
 }
 
 pub fn validate_fixed_size_list_array(array: *const arr.FixedSizeListArray) Error!void {
-    if (@as(u64, array.offset) + @as(u64, array.len) > std.math.maxInt(u32)) {
+    if (@as(u64, array.offset) + @as(u64, array.len) > std.math.maxInt(u32) / 2) {
         return Error.Invalid;
     }
 
@@ -329,7 +333,7 @@ pub fn validate_fixed_size_list_array(array: *const arr.FixedSizeListArray) Erro
 
     const item_width: u32 = @intCast(array.item_width);
 
-    if (@as(u64, needed_len) * @as(u64, item_width) > std.math.maxInt(u32)) {
+    if (@as(u64, needed_len) * @as(u64, item_width) > std.math.maxInt(u32) / 2) {
         return Error.Invalid;
     }
 
@@ -343,7 +347,7 @@ pub fn validate_fixed_size_list_array(array: *const arr.FixedSizeListArray) Erro
 }
 
 pub fn validate_map_array(array: *const arr.MapArray) Error!void {
-    if (@as(u64, array.offset) + @as(u64, array.len) > std.math.maxInt(u32)) {
+    if (@as(u64, array.offset) + @as(u64, array.len) > std.math.maxInt(u32) / 2) {
         return Error.Invalid;
     }
 
@@ -424,7 +428,7 @@ fn validate_run_ends_array(comptime T: type, array: *const arr.RunEndArray, run_
     while (idx < run_ends.offset + run_ends.len) : (idx += 1) {
         const re = run_ends.values.ptr[idx];
 
-        if (@as(i64, re) > @as(i64, @intCast(std.math.maxInt(u32)))) {
+        if (@as(i64, re) > @as(i64, @intCast(std.math.maxInt(u32) / 2))) {
             return Error.Invalid;
         }
 
@@ -436,7 +440,7 @@ fn validate_run_ends_array(comptime T: type, array: *const arr.RunEndArray, run_
 }
 
 pub fn validate_run_end_encoded_array(array: *const arr.RunEndArray) Error!void {
-    if (@as(u64, array.offset) + @as(u64, array.len) > std.math.maxInt(u32)) {
+    if (@as(u64, array.offset) + @as(u64, array.len) > std.math.maxInt(u32) / 2) {
         return Error.Invalid;
     }
 
@@ -482,7 +486,7 @@ fn validate_dict_keys_array(comptime T: type, keys: *const arr.PrimitiveArray(T)
 }
 
 pub fn validate_dict_array(array: *const arr.DictArray) Error!void {
-    if (@as(u64, array.offset) + @as(u64, array.len) > std.math.maxInt(u32)) {
+    if (@as(u64, array.offset) + @as(u64, array.len) > std.math.maxInt(u32) / 2) {
         return Error.Invalid;
     }
 
@@ -518,7 +522,7 @@ pub fn validate_dict_array(array: *const arr.DictArray) Error!void {
 }
 
 pub fn validate_binary_view_array(array: *const arr.BinaryViewArray) Error!void {
-    if (@as(u64, array.offset) + @as(u64, array.len) > std.math.maxInt(u32)) {
+    if (@as(u64, array.offset) + @as(u64, array.len) > std.math.maxInt(u32) / 2) {
         return Error.Invalid;
     }
 
@@ -555,7 +559,7 @@ pub fn validate_binary_view_array(array: *const arr.BinaryViewArray) Error!void 
             return Error.Invalid;
         }
 
-        if (@as(u64, offset) + @as(u64, len) + 4 > std.math.maxInt(i32)) {
+        if (@as(u64, offset) + @as(u64, len) + 4 > std.math.maxInt(i32) / 2) {
             return Error.Invalid;
         }
 
@@ -571,7 +575,7 @@ pub fn validate_list_view_array(
     comptime index_t: arr.IndexType,
     array: *const arr.GenericListViewArray(index_t),
 ) Error!void {
-    if (@as(u64, array.offset) + @as(u64, array.len) > std.math.maxInt(u32)) {
+    if (@as(u64, array.offset) + @as(u64, array.len) > std.math.maxInt(u32) / 2) {
         return Error.Invalid;
     }
 
@@ -604,7 +608,7 @@ pub fn validate_list_view_array(
             return Error.Invalid;
         }
 
-        if (@as(i128, offset) + @as(i128, size) > std.math.maxInt(I)) {
+        if (@as(i128, offset) + @as(i128, size) > std.math.maxInt(I) / 2) {
             return Error.Invalid;
         }
 
