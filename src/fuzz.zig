@@ -107,34 +107,36 @@ test fuzz_ffi {
     fuzzin.fuzz_test(
         void,
         {},
-        fuzz_minmax,
+        fuzz_ffi,
         0,
     );
 }
 
-fn fuzz_concat(data: []const u8, gpa: Allocator) !void {
-    var input = FuzzInput{ .data = data };
+fn fuzz_concat(ctx: void, input: *FuzzInput, dbg_alloc: Allocator) !void {
+    _ = ctx;
 
-    var arena = ArenaAllocator.init(gpa);
+    var arena = ArenaAllocator.init(dbg_alloc);
     defer arena.deinit();
-    const alloc = arena.allocator();
-    const array_len = try input.int(u8);
-    const array = try input.make_array(array_len, alloc);
+    const limited_alloc = LimitedAllocator.init(arena.allocator(), 1 << 17);
+    const alloc = limited_alloc.allocator();
 
-    try validate.validate(&array);
+    const array_len = try input.int(u8);
+    const dt = try fuzz_input.data_type(input, alloc, 16);
+    const array = try fuzz_input.array(input, &dt, array_len, alloc);
+
+    validate.validate_array(&array) catch unreachable;
 
     var concat_arena = ArenaAllocator.init(alloc);
     defer concat_arena.deinit();
-    const concat_alloc = concat_arena.allocator();
+    const concat_limited_alloc = LimitedAllocator.init(concat_arena.allocator(), 1 << 19);
+    const concat_alloc = concat_limited_alloc.allocator();
 
-    const slice0 = try input.slice_array(&array);
-    try validate.validate(&slice0);
-    const slice1 = try input.slice_array(&array);
-    try validate.validate(&slice1);
-    const slice2 = try input.slice_array(&array);
-    try validate.validate(&slice2);
-
-    const dt = try data_type.get_data_type(&array, concat_alloc);
+    const slice0 = try fuzz_input.slice(input, &array);
+    validate.validate_array(&slice0) catch unreachable;
+    const slice1 = try fuzz_input.slice(input, &array);
+    validate.validate_array(&slice1) catch unreachable;
+    const slice2 = try fuzz_input.slice(input, &array);
+    validate.validate_array(&slice2) catch unreachable;
 
     const concated = conc: {
         var scratch_arena = ArenaAllocator.init(alloc);
@@ -142,7 +144,7 @@ fn fuzz_concat(data: []const u8, gpa: Allocator) !void {
         const scratch_alloc = scratch_arena.allocator();
         break :conc try concat(dt, &.{ slice0, slice1, slice2 }, concat_alloc, scratch_alloc);
     };
-    try validate.validate(&concated);
+    validate.validate_array(&concated) catch unreachable;
 
     const slice0_len = length.length(&slice0);
     const slice1_len = length.length(&slice1);
@@ -156,65 +158,41 @@ fn fuzz_concat(data: []const u8, gpa: Allocator) !void {
     equals.equals(&slice2_out, &slice2);
 }
 
-test "fuzz concat" {
-    try FuzzWrap(fuzz_concat, 1 << 30).run();
+test fuzz_concat {
+    fuzzin.fuzz_test(
+        void,
+        {},
+        fuzz_concat,
+        1 << 20,
+    );
 }
 
-fn fuzz_check_dt(data: []const u8, gpa: Allocator) !void {
-    var input = FuzzInput{ .data = data };
+fn fuzz_check_dt(arr_buf: []u8, input: *FuzzInput, dbg_alloc: Allocator) !void {
+    _ = dbg_alloc;
 
-    var arena = ArenaAllocator.init(gpa);
-    defer arena.deinit();
+    var fb_alloc = FixedBufferAllocator.init(arr_buf);
+    var arena = ArenaAllocator.init(fb_alloc.allocator());
     const alloc = arena.allocator();
+
     const array_len = try input.int(u8);
-    const array = try input.make_array(array_len, alloc);
+    const dt = try fuzz_input.data_type(input, alloc, 16);
+    const array = try fuzz_input.array(input, &dt, array_len, alloc);
 
-    const dt = try input.make_data_type(alloc);
+    std.debug.assert(data_type.check_data_type(&array, &dt));
 
-    try validate.validate(&array);
+    const other_dt = try fuzz_input.data_type(input, alloc, 16);
 
-    // ignore errors, only check for crash
-    _ = data_type.check_data_type(&array, &dt);
+    if (data_type.check_data_type(&array, &other_dt)) {
+        std.debug.assert(dt.eql(&other_dt));
+    }
 }
 
-test "fuzz check_dt" {
-    try FuzzWrap(fuzz_check_dt, 1 << 30).run();
-}
-
-fn FuzzWrap(comptime fuzz_one: fn (data: []const u8, gpa: Allocator) anyerror!void, comptime alloc_size: comptime_int) type {
-    const FuzzContext = struct {
-        fb_alloc: *FixedBufferAllocator,
-    };
-
-    return struct {
-        fn run_one(ctx: FuzzContext, data: []const u8) anyerror!void {
-            ctx.fb_alloc.reset();
-
-            var general_purpose_allocator = std.heap.GeneralPurposeAllocator(.{
-                .backing_allocator_zeroes = false,
-            }){
-                .backing_allocator = ctx.fb_alloc.allocator(),
-            };
-            const gpa = general_purpose_allocator.allocator();
-            defer {
-                switch (general_purpose_allocator.deinit()) {
-                    .ok => {},
-                    .leak => |l| {
-                        std.debug.panic("LEAK: {any}", .{l});
-                    },
-                }
-            }
-
-            fuzz_one(data, gpa) catch |e| {
-                if (e == error.ShortInput) return {} else return e;
-            };
-        }
-
-        fn run() !void {
-            var fb_alloc = FixedBufferAllocator.init(std.heap.page_allocator.alloc(u8, alloc_size) catch unreachable);
-            try std.testing.fuzz(FuzzContext{
-                .fb_alloc = &fb_alloc,
-            }, run_one, .{});
-        }
-    };
+test fuzz_check_dt {
+    const arr_buf = try std.heap.page_allocator.alloc(u8, 1 << 12);
+    fuzzin.fuzz_test(
+        []u8,
+        arr_buf,
+        fuzz_check_dt,
+        0,
+    );
 }
