@@ -4,11 +4,17 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
+    const fuzzin = b.dependency("fuzzin", .{
+        .target = target,
+        .optimize = optimize,
+    });
+
     const lib_mod = b.addModule("arrow", .{
         .root_source_file = b.path("src/root.zig"),
         .target = target,
         .optimize = optimize,
     });
+    lib_mod.addImport("fuzzin", fuzzin.module("fuzzin"));
 
     const lib_unit_tests = b.addTest(.{
         .root_module = lib_mod,
@@ -27,6 +33,8 @@ pub fn build(b: *std.Build) void {
         // https://github.com/ziglang/zig/issues/23423
         .use_llvm = true,
     });
+    fuzz.root_module.addImport("fuzzin", fuzzin.module("fuzzin"));
+    fuzz.root_module.addImport("arrow", lib_mod);
 
     const run_fuzz = b.addRunArtifact(fuzz);
 

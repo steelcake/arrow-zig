@@ -22,7 +22,7 @@ pub const Time64Unit = enum {
 
 pub const Timestamp = struct {
     unit: TimestampUnit,
-    timezone: ?[]const u8,
+    timezone: ?[:0]const u8,
 };
 
 pub const Array = union(enum) {
