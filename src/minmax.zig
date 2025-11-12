@@ -6,7 +6,7 @@ const get = @import("./get.zig");
 const testing = std.testing;
 const ArenaAllocator = std.heap.ArenaAllocator;
 
-const Error = error{
+pub const Error = error{
     ArrayTypeNotSupported,
 };
 
