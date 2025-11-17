@@ -16,8 +16,48 @@ const equals = @import("./equals.zig");
 const validate = @import("./validate.zig");
 const ffi = @import("./ffi.zig");
 const minmax = @import("./minmax.zig");
+const bitmap = @import("./bitmap.zig");
 
 const fuzz_input = @import("./fuzz_input.zig");
+
+fn assert_slice_eq(left: []const u8, right: []const u8) void {
+    for (left, right) |l, r| {
+        if (l != r) {
+            std.debug.panic("{any} != {any}", .{ left, right });
+        }
+    }
+}
+
+fn fuzz_bitmap_for_each(out: []u8, input: []const u8) anyerror!void {
+    if (input.len < 2) {
+        return;
+    }
+
+    const len: u32 = input[0];
+    const offset: u32 = input[0];
+
+    const num_bytes: u32 = (len + offset + 7) / 8;
+
+    if (input.len < 2 + num_bytes) return;
+
+    const o = out[0..num_bytes];
+    const i = input[2..2+num_bytes];
+
+    // o_O
+    @memset(o, 0);
+
+    bitmap.for_each([]u8, bitmap.set, o, i, offset, len);
+
+    var idx: u32 = offset;
+    while (idx < offset + len) : (idx += 1) {
+        std.debug.assert(bitmap.get(i, idx) == bitmap.get(o, idx));
+    }
+}
+
+test fuzz_bitmap_for_each {
+    const out = try std.heap.page_allocator.alloc(u8, 1 << 10);
+    try std.testing.fuzz(out, fuzz_bitmap_for_each, .{});
+}
 
 fn fuzz_minmax(arr_buf: []u8, input: *FuzzInput, dbg_alloc: Allocator) !void {
     _ = dbg_alloc;
