@@ -31,8 +31,8 @@ fn equals_impl(comptime array_t: type, l: *const array_t, r: *const array_t, com
         var li: u32 = l.offset;
         var ri: u32 = r.offset;
         for (0..l.len) |_| {
-            const lvalid = bitmap.get(lv.ptr, li);
-            const rvalid = bitmap.get(rv.ptr, ri);
+            const lvalid = bitmap.get(lv, li);
+            const rvalid = bitmap.get(rv, ri);
 
             assert(lvalid == rvalid);
 
@@ -56,7 +56,7 @@ fn equals_impl(comptime array_t: type, l: *const array_t, r: *const array_t, com
 }
 
 fn bool_impl(l: *const arr.BoolArray, r: *const arr.BoolArray, li: u32, ri: u32) void {
-    assert(get.get_bool(l.values.ptr, li) == get.get_bool(r.values.ptr, ri));
+    assert(get.get_bool(l.values, li) == get.get_bool(r.values, ri));
 }
 
 pub fn equals_bool(l: *const arr.BoolArray, r: *const arr.BoolArray) void {
@@ -66,7 +66,7 @@ pub fn equals_bool(l: *const arr.BoolArray, r: *const arr.BoolArray) void {
 fn PrimitiveImpl(comptime T: type) type {
     return struct {
         fn eq(l: *const arr.PrimitiveArray(T), r: *const arr.PrimitiveArray(T), li: u32, ri: u32) void {
-            assert_equal(get.get_primitive(T, l.values.ptr, li), get.get_primitive(T, r.values.ptr, ri));
+            assert_equal(get.get_primitive(T, l.values, li), get.get_primitive(T, r.values, ri));
         }
     };
 }
@@ -78,8 +78,8 @@ pub fn equals_primitive(comptime T: type, l: *const arr.PrimitiveArray(T), r: *c
 fn BinaryImpl(comptime index_type: arr.IndexType) type {
     return struct {
         fn eq(l: *const arr.GenericBinaryArray(index_type), r: *const arr.GenericBinaryArray(index_type), li: u32, ri: u32) void {
-            const lvalue = get.get_binary(index_type, l.data.ptr, l.offsets.ptr, li);
-            const rvalue = get.get_binary(index_type, r.data.ptr, r.offsets.ptr, ri);
+            const lvalue = get.get_binary(index_type, l.data, l.offsets, li);
+            const rvalue = get.get_binary(index_type, r.data, r.offsets, ri);
 
             assert(std.mem.eql(u8, lvalue, rvalue));
         }
@@ -100,8 +100,8 @@ pub fn equals_decimal(comptime int: arr.DecimalInt, left: *const arr.DecimalArra
 }
 
 fn binary_view_impl(l: *const arr.BinaryViewArray, r: *const arr.BinaryViewArray, li: u32, ri: u32) void {
-    const lvalue = get.get_binary_view(l.buffers.ptr, l.views.ptr, li);
-    const rvalue = get.get_binary_view(r.buffers.ptr, r.views.ptr, ri);
+    const lvalue = get.get_binary_view(l.buffers, l.views, li);
+    const rvalue = get.get_binary_view(r.buffers, r.views, ri);
 
     if (!std.mem.eql(u8, lvalue, rvalue)) {
         std.debug.panic("{any} != {any}", .{ lvalue, rvalue });
@@ -117,8 +117,8 @@ pub fn equals_utf8_view(l: *const arr.Utf8ViewArray, r: *const arr.Utf8ViewArray
 }
 
 fn fixed_size_binary_impl(l: *const arr.FixedSizeBinaryArray, r: *const arr.FixedSizeBinaryArray, li: u32, ri: u32) void {
-    const lvalue = get.get_fixed_size_binary(l.data.ptr, l.byte_width, li);
-    const rvalue = get.get_fixed_size_binary(r.data.ptr, r.byte_width, ri);
+    const lvalue = get.get_fixed_size_binary(l.data, l.byte_width, li);
+    const rvalue = get.get_fixed_size_binary(r.data, r.byte_width, ri);
 
     assert(std.mem.eql(u8, lvalue, rvalue));
 }
@@ -159,15 +159,15 @@ pub fn equals_duration(l: *const arr.DurationArray, r: *const arr.DurationArray)
 }
 
 fn interval_day_time_impl(l: *const arr.PrimitiveArray([2]i32), r: *const arr.PrimitiveArray([2]i32), li: u32, ri: u32) void {
-    const lvalue = get.get_primitive([2]i32, l.values.ptr, li);
-    const rvalue = get.get_primitive([2]i32, r.values.ptr, ri);
+    const lvalue = get.get_primitive([2]i32, l.values, li);
+    const rvalue = get.get_primitive([2]i32, r.values, ri);
 
     assert(lvalue[0] == rvalue[0] and lvalue[1] == rvalue[1]);
 }
 
 fn interval_month_day_nano_impl(l: *const arr.PrimitiveArray(arr.MonthDayNano), r: *const arr.PrimitiveArray(arr.MonthDayNano), li: u32, ri: u32) void {
-    const lvalue = get.get_primitive(arr.MonthDayNano, l.values.ptr, li);
-    const rvalue = get.get_primitive(arr.MonthDayNano, r.values.ptr, ri);
+    const lvalue = get.get_primitive(arr.MonthDayNano, l.values, li);
+    const rvalue = get.get_primitive(arr.MonthDayNano, r.values, ri);
 
     assert(lvalue.months == rvalue.months and lvalue.days == rvalue.days and lvalue.nanoseconds == rvalue.nanoseconds);
 }
@@ -187,8 +187,8 @@ pub fn equals_interval_year_month(l: *const arr.IntervalYearMonthArray, r: *cons
 fn ListImpl(comptime index_type: arr.IndexType) type {
     return struct {
         fn eq(l: *const arr.GenericListArray(index_type), r: *const arr.GenericListArray(index_type), li: u32, ri: u32) void {
-            const lvalue = get.get_list(index_type, l.inner, l.offsets.ptr, li);
-            const rvalue = get.get_list(index_type, r.inner, r.offsets.ptr, ri);
+            const lvalue = get.get_list(index_type, l.inner, l.offsets, li);
+            const rvalue = get.get_list(index_type, r.inner, r.offsets, ri);
 
             equals(&lvalue, &rvalue);
         }
@@ -204,8 +204,8 @@ pub fn equals_list(comptime index_type: arr.IndexType, l: *const arr.GenericList
 fn ListViewImpl(comptime index_type: arr.IndexType) type {
     return struct {
         fn eq(l: *const arr.GenericListViewArray(index_type), r: *const arr.GenericListViewArray(index_type), li: u32, ri: u32) void {
-            const lvalue = get.get_list_view(index_type, l.inner, l.offsets.ptr, l.sizes.ptr, li);
-            const rvalue = get.get_list_view(index_type, r.inner, r.offsets.ptr, r.sizes.ptr, ri);
+            const lvalue = get.get_list_view(index_type, l.inner, l.offsets, l.sizes, li);
+            const rvalue = get.get_list_view(index_type, r.inner, r.offsets, r.sizes, ri);
             equals(&lvalue, &rvalue);
         }
     };
@@ -251,8 +251,8 @@ pub fn equals_struct(l: *const arr.StructArray, r: *const arr.StructArray) void 
 }
 
 fn map_impl(l: *const arr.MapArray, r: *const arr.MapArray, li: u32, ri: u32) void {
-    const larr = get.get_map(l.entries, l.offsets.ptr, li);
-    const rarr = get.get_map(r.entries, r.offsets.ptr, ri);
+    const larr = get.get_map(l.entries, l.offsets, li);
+    const rarr = get.get_map(r.entries, r.offsets, ri);
 
     equals_struct(&larr, &rarr);
 }
@@ -280,21 +280,21 @@ pub fn equals_sparse_union(l: *const arr.SparseUnionArray, r: *const arr.SparseU
     var li: u32 = l.inner.offset;
     var ri: u32 = r.inner.offset;
     for (0..l.inner.len) |_| {
-        const ltype_id = l.inner.type_ids.ptr[li];
-        const rtype_id = r.inner.type_ids.ptr[ri];
+        const ltype_id = l.inner.type_ids[li];
+        const rtype_id = r.inner.type_ids[ri];
 
         assert(ltype_id == rtype_id);
 
         const child_idx = for (0..l.inner.children.len) |i| {
-            if (l.inner.type_id_set.ptr[i] == ltype_id) {
+            if (l.inner.type_id_set[i] == ltype_id) {
                 break i;
             }
         } else {
             std.debug.panic("left type_ids: {any}, right type_ids: {any}, looking for: {any}", .{ l.inner.type_id_set, r.inner.type_id_set, ltype_id });
         };
 
-        const lval = slice(&l.inner.children.ptr[child_idx], li, 1);
-        const rval = slice(&r.inner.children.ptr[child_idx], ri, 1);
+        const lval = slice(&l.inner.children[child_idx], li, 1);
+        const rval = slice(&r.inner.children[child_idx], ri, 1);
         equals(&lval, &rval);
 
         li += 1;
@@ -312,24 +312,24 @@ pub fn equals_dense_union(l: *const arr.DenseUnionArray, r: *const arr.DenseUnio
     var li: u32 = l.inner.offset;
     var ri: u32 = r.inner.offset;
     for (0..l.inner.len) |_| {
-        const ltype_id = l.inner.type_ids.ptr[li];
-        const rtype_id = r.inner.type_ids.ptr[ri];
+        const ltype_id = l.inner.type_ids[li];
+        const rtype_id = r.inner.type_ids[ri];
 
         assert(ltype_id == rtype_id);
 
         const child_idx = for (0..l.inner.children.len) |i| {
-            if (l.inner.type_id_set.ptr[i] == ltype_id) {
+            if (l.inner.type_id_set[i] == ltype_id) {
                 break i;
             }
         } else {
             std.debug.panic("left type_ids: {any}, right type_ids: {any}, looking for: {any}", .{ l.inner.type_id_set, r.inner.type_id_set, ltype_id });
         };
 
-        const loffset: u32 = @bitCast(l.offsets.ptr[li]);
-        const roffset: u32 = @bitCast(r.offsets.ptr[ri]);
+        const loffset: u32 = @intCast(l.offsets[li]);
+        const roffset: u32 = @intCast(r.offsets[ri]);
 
-        const lval = slice(&l.inner.children.ptr[child_idx], loffset, 1);
-        const rval = slice(&r.inner.children.ptr[child_idx], roffset, 1);
+        const lval = slice(&l.inner.children[child_idx], loffset, 1);
+        const rval = slice(&r.inner.children[child_idx], roffset, 1);
         equals(&lval, &rval);
 
         li += 1;
@@ -351,14 +351,14 @@ fn dict_impl(comptime keys_t: type, l: *const keys_t, r: *const keys_t, l_values
         var li: u32 = l.offset;
         var ri: u32 = r.offset;
         for (0..l.len) |_| {
-            const lvalid = bitmap.get(lv.ptr, li);
-            const rvalid = bitmap.get(rv.ptr, ri);
+            const lvalid = bitmap.get(lv, li);
+            const rvalid = bitmap.get(rv, ri);
 
             assert(lvalid == rvalid);
 
             if (lvalid) {
-                const larr = &slice(l_values, @intCast(l.values.ptr[li]), 1);
-                const rarr = &slice(r_values, @intCast(r.values.ptr[ri]), 1);
+                const larr = &slice(l_values, @intCast(l.values[li]), 1);
+                const rarr = &slice(r_values, @intCast(r.values[ri]), 1);
                 equals(larr, rarr);
             }
 
@@ -369,8 +369,8 @@ fn dict_impl(comptime keys_t: type, l: *const keys_t, r: *const keys_t, l_values
         var li: u32 = l.offset;
         var ri: u32 = r.offset;
         for (0..l.len) |_| {
-            const larr = &slice(l_values, @intCast(l.values.ptr[li]), 1);
-            const rarr = &slice(r_values, @intCast(r.values.ptr[ri]), 1);
+            const larr = &slice(l_values, @intCast(l.values[li]), 1);
+            const rarr = &slice(r_values, @intCast(r.values[ri]), 1);
             equals(larr, rarr);
 
             li += 1;

@@ -122,9 +122,9 @@ fn import_binary_view(array: *const FFI_Array, alloc: Allocator) Error!arr.Binar
     while (idx < offset + len) : (idx += 1) {
         const view = views.ptr[idx];
         if (view.length > 12) {
-            const buffer_idx = @as(u32, @bitCast(view.buffer_idx));
-            const buffer_offset = @as(u32, @bitCast(view.offset));
-            const view_len = @as(u32, @bitCast(view.length));
+            const buffer_idx = @as(u32, @intCast(view.buffer_idx));
+            const buffer_offset = @as(u32, @intCast(view.offset));
+            const view_len = @as(u32, @intCast(view.length));
 
             if (data_buffers[buffer_idx].len < buffer_offset + view_len) {
                 data_buffers[buffer_idx] = data_buffers_raw[buffer_idx][0 .. buffer_offset + view_len];

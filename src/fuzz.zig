@@ -155,6 +155,9 @@ fn fuzz_concat(ctx: void, input: *FuzzInput, dbg_alloc: Allocator) fuzzin.Error!
     const slice0_out = slice_array_impl(&concated, 0, slice0_len);
     const slice1_out = slice_array_impl(&concated, slice0_len, slice1_len);
     const slice2_out = slice_array_impl(&concated, slice0_len + slice1_len, slice2_len);
+    validate.validate_array(&slice0_out) catch unreachable;
+    validate.validate_array(&slice1_out) catch unreachable;
+    validate.validate_array(&slice2_out) catch unreachable;
 
     equals.equals(&slice0_out, &slice0);
     equals.equals(&slice1_out, &slice1);

@@ -28,7 +28,7 @@ fn validate_validity(null_count: u32, offset: u32, len: u32, valid: ?[]const u8)
         var count: u32 = 0;
         var idx: u32 = offset;
         while (idx < offset + len) : (idx += 1) {
-            if (!bitmap.get(v.ptr, idx)) {
+            if (!bitmap.get(v, idx)) {
                 count += 1;
             }
         }
@@ -43,7 +43,7 @@ fn validate_validity(null_count: u32, offset: u32, len: u32, valid: ?[]const u8)
 
         var idx: u32 = offset;
         while (idx < offset + len) : (idx += 1) {
-            if (!bitmap.get(v.ptr, idx)) {
+            if (!bitmap.get(v, idx)) {
                 return Error.Invalid;
             }
         }
@@ -426,13 +426,13 @@ fn validate_run_ends_array(comptime T: type, array: *const arr.RunEndArray, run_
 
     var idx: u32 = run_ends.offset + 1;
     while (idx < run_ends.offset + run_ends.len) : (idx += 1) {
-        const re = run_ends.values.ptr[idx];
+        const re = run_ends.values[idx];
 
         if (@as(i64, re) > @as(i64, @intCast(std.math.maxInt(u32) / 2))) {
             return Error.Invalid;
         }
 
-        const prev = run_ends.values.ptr[idx - 1];
+        const prev = run_ends.values[idx - 1];
         if (re < prev) {
             return Error.Invalid;
         }
@@ -466,10 +466,10 @@ pub fn validate_run_end_encoded_array(array: *const arr.RunEndArray) Error!void 
 
 fn validate_dict_keys_array(comptime T: type, keys: *const arr.PrimitiveArray(T), values_len: u32) Error!void {
     if (keys.null_count > 0) {
-        const v = (keys.validity orelse unreachable).ptr;
+        const v = (keys.validity orelse unreachable);
         var idx: u32 = keys.offset;
         while (idx < keys.offset + keys.len) : (idx += 1) {
-            if (get.get_primitive_opt(T, keys.values.ptr, v, idx)) |key| {
+            if (get.get_primitive_opt(T, keys.values, v, idx)) |key| {
                 if (key >= values_len) {
                     return Error.Invalid;
                 }

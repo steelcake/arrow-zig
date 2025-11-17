@@ -318,7 +318,7 @@ fn normalize_run_end_encoded_inner_impl(
     // find start
     var idx: u32 = 0;
     const inner_start: u32 = while (idx < run_ends_v.len) : (idx += 1) {
-        const run_end = run_ends_v.ptr[idx];
+        const run_end = run_ends_v[idx];
 
         if (run_end > offset_re) {
             break idx;
@@ -328,7 +328,7 @@ fn normalize_run_end_encoded_inner_impl(
     };
 
     const inner_end: u32 = while (idx < run_ends_v.len) : (idx += 1) {
-        const run_end = run_ends_v.ptr[idx];
+        const run_end = run_ends_v[idx];
 
         if (run_end - offset_re >= len_re) {
             break idx + 1;
@@ -356,7 +356,7 @@ fn normalize_run_end_encoded_inner_impl(
     idx = 0;
     const lift_re: T = @intCast(lift);
     while (idx < new_run_ends.len) : (idx += 1) {
-        new_run_ends.ptr[idx] = src_run_ends.ptr[idx] - offset_re + lift_re;
+        new_run_ends[idx] = src_run_ends[idx] - offset_re + lift_re;
     }
     new_run_ends[new_run_ends.len - 1] = len_re + lift_re;
 

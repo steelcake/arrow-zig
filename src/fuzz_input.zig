@@ -93,7 +93,7 @@ pub fn dict_array(
 
     const keys_data = try input.int_slice(u32, keys_total_len, alloc);
     for (0..keys_total_len) |idx| {
-        keys_data.ptr[idx] %= num_values;
+        keys_data[idx] %= num_values;
     }
 
     const keys = try fuzzin.create(arr.Array, alloc);
@@ -209,10 +209,10 @@ pub fn map_array(
     {
         var start_offset: i32 = 0;
         for (0..total_len) |idx| {
-            offsets.ptr[idx] = start_offset;
-            start_offset +%= sizes.ptr[idx];
+            offsets[idx] = start_offset;
+            start_offset +%= sizes[idx];
         }
-        offsets.ptr[total_len] = start_offset;
+        offsets[total_len] = start_offset;
     }
 
     var a = arr.MapArray{
@@ -409,12 +409,12 @@ pub fn list_view_array(
 
     const sizes = try fuzzin.allocate(I, total_len, alloc);
     for (0..total_len) |idx| {
-        sizes.ptr[idx] = sizes_b.ptr[idx] % 10;
+        sizes[idx] = sizes_b[idx] % 10;
     }
 
     var total_size: I = 0;
     for (0..total_len) |idx| {
-        total_size += sizes.ptr[idx];
+        total_size += sizes[idx];
     }
 
     const offsets = try input.int_slice(I, total_len, alloc);
@@ -422,10 +422,10 @@ pub fn list_view_array(
         offsets[0] = 0;
     } else {
         for (0..total_len) |idx| {
-            offsets.ptr[idx] = @bitCast(
-                @as(U, @bitCast(offsets.ptr[idx])) % @as(
+            offsets[idx] = @bitCast(
+                @as(U, @bitCast(offsets[idx])) % @as(
                     U,
-                    @bitCast(total_size -% sizes.ptr[idx] +% 1),
+                    @bitCast(total_size -% sizes[idx] +% 1),
                 ),
             );
         }
@@ -470,17 +470,17 @@ pub fn list_array(
 
     const sizes = try fuzzin.allocate(u8, sizes_b.len, alloc);
     for (0..total_len) |idx| {
-        sizes.ptr[idx] = sizes_b.ptr[idx] % 10;
+        sizes[idx] = sizes_b[idx] % 10;
     }
 
     const offsets = try fuzzin.allocate(I, total_len + 1, alloc);
     {
         var start_offset: I = 0;
         for (0..total_len) |idx| {
-            offsets.ptr[idx] = start_offset;
-            start_offset +%= sizes.ptr[idx];
+            offsets[idx] = start_offset;
+            start_offset +%= sizes[idx];
         }
-        offsets.ptr[total_len] = start_offset;
+        offsets[total_len] = start_offset;
     }
 
     const inner_len = offsets[total_len];
@@ -529,7 +529,7 @@ pub fn binary_view_array(input: *FuzzInput, len: u32, alloc: Allocator) Error!ar
 
     const views = try input.auto_slice(arr.BinaryView, total_len, alloc, 64, 0);
     for (0..views.len) |view_idx| {
-        var view = views.ptr[view_idx];
+        var view = views[view_idx];
         const view_len = @as(u32, @bitCast(view.length)) % (max_str_len + 1);
         view.length = @bitCast(view_len);
 
@@ -546,7 +546,7 @@ pub fn binary_view_array(input: *FuzzInput, len: u32, alloc: Allocator) Error!ar
             );
         }
 
-        views.ptr[view_idx] = view;
+        views[view_idx] = view;
     }
 
     var a = arr.BinaryViewArray{
@@ -708,7 +708,7 @@ pub fn bool_array(input: *FuzzInput, len: u32, alloc: Allocator) Error!arr.BoolA
         var idx: u32 = 0;
         while (idx < total_len) : (idx += 1) {
             if (rand.boolean()) {
-                bitmap.set(values.ptr, idx);
+                bitmap.set(values, idx);
             }
         }
     }
@@ -755,10 +755,10 @@ pub fn binary_array(
     {
         var start_offset: I = 0;
         for (0..total_len) |idx| {
-            offsets.ptr[idx] = start_offset;
-            start_offset +%= sizes.ptr[idx];
+            offsets[idx] = start_offset;
+            start_offset +%= sizes[idx];
         }
-        offsets.ptr[total_len] = start_offset;
+        offsets[total_len] = start_offset;
     }
 
     var prng = Prng.init(try input.int(u64));
@@ -802,7 +802,7 @@ pub fn primitive_array(
     switch (T) {
         f16, f32, f64 => {
             for (0..total_len) |idx| {
-                values.ptr[idx] = @floatCast(rand.float(f64));
+                values[idx] = @floatCast(rand.float(f64));
             }
         },
         else => {
@@ -853,7 +853,7 @@ pub fn validity(input: *FuzzInput, offset: u32, len: u32, alloc: Allocator) Erro
     var idx: u32 = 0;
     while (idx < total_len) : (idx += 1) {
         if (rand.boolean()) {
-            bitmap.set(v.ptr, idx);
+            bitmap.set(v, idx);
         }
     }
 
@@ -1055,8 +1055,8 @@ fn rand_bytes_zero_sentinel(rand: std.Random, out: [:0]u8) void {
     rand.bytes(out);
 
     for (0..out.len) |i| {
-        if (out.ptr[i] == 0) {
-            out.ptr[i] = 1;
+        if (out[i] == 0) {
+            out[i] = 1;
         }
     }
 }

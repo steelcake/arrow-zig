@@ -234,8 +234,8 @@ pub fn concat_map(map_t: data_type.MapType, arrays: []const arr.MapArray, alloc:
     var inner_offset: u32 = 0;
     var write_offset: u32 = 0;
     for (arrays, 0..) |array, arr_idx| {
-        const input_start: usize = @intCast(array.offsets.ptr[array.offset]);
-        const input_end: usize = @intCast(array.offsets.ptr[array.offset + array.len]);
+        const input_start: usize = @intCast(array.offsets[array.offset]);
+        const input_end: usize = @intCast(array.offsets[array.offset + array.len]);
         const input_len = input_end - input_start;
 
         entries_list[arr_idx] = slice.slice_struct(array.entries, @intCast(input_start), @intCast(input_len));
@@ -243,17 +243,17 @@ pub fn concat_map(map_t: data_type.MapType, arrays: []const arr.MapArray, alloc:
         {
             var idx: u32 = array.offset;
             var w_idx: u32 = write_offset;
-            const offset_diff: i32 = @as(i32, @intCast(inner_offset)) - array.offsets.ptr[array.offset];
+            const offset_diff: i32 = @as(i32, @intCast(inner_offset)) - array.offsets[array.offset];
             while (idx < array.offset + array.len) : ({
                 idx += 1;
                 w_idx += 1;
             }) {
-                offsets.ptr[w_idx] = array.offsets.ptr[idx] +% offset_diff;
+                offsets[w_idx] = array.offsets[idx] + offset_diff;
             }
         }
 
         if (array.null_count > 0) {
-            const v = (array.validity orelse unreachable).ptr;
+            const v = (array.validity orelse unreachable);
 
             var idx: u32 = array.offset;
             var w_idx: u32 = write_offset;
@@ -262,7 +262,7 @@ pub fn concat_map(map_t: data_type.MapType, arrays: []const arr.MapArray, alloc:
                 w_idx += 1;
             }) {
                 if (!bitmap.get(v, idx)) {
-                    bitmap.unset(validity.ptr, w_idx);
+                    bitmap.unset(validity, w_idx);
                 }
             }
         }
@@ -271,7 +271,7 @@ pub fn concat_map(map_t: data_type.MapType, arrays: []const arr.MapArray, alloc:
         inner_offset += @as(u32, @intCast(input_len));
     }
 
-    offsets.ptr[total_len] = @intCast(inner_offset);
+    offsets[total_len] = @intCast(inner_offset);
 
     const entries_dt = data_type.StructType{
         .field_names = &.{ "keys", "values" },
@@ -310,7 +310,7 @@ fn concat_dict_keys(comptime T: type, arrays: []const arr.DictArray, alloc: Allo
             idx += 1;
             write_offset += 1;
         }) {
-            keys_values[write_offset] = keys.values.ptr[idx] + key_offset;
+            keys_values[write_offset] = keys.values[idx] + key_offset;
         }
 
         key_offset += @as(T, @intCast(length.length(array.values)));
@@ -459,8 +459,8 @@ pub fn concat_list_view(comptime index_t: arr.IndexType, dt: data_type.DataType,
                 w_idx += 1;
                 idx += 1;
             }) {
-                sizes.ptr[w_idx] = array.sizes.ptr[idx];
-                offsets.ptr[w_idx] = array.offsets.ptr[idx] +% offset_offset;
+                sizes[w_idx] = array.sizes[idx];
+                offsets[w_idx] = array.offsets[idx] + offset_offset;
             }
 
             write_offset += array.len;
@@ -481,7 +481,7 @@ pub fn concat_list_view(comptime index_t: arr.IndexType, dt: data_type.DataType,
         var write_offset: u32 = 0;
         for (arrays) |array| {
             if (array.null_count > 0) {
-                const v = (array.validity orelse unreachable).ptr;
+                const v = (array.validity orelse unreachable);
 
                 var idx: u32 = array.offset;
                 var w_idx: u32 = write_offset;
@@ -490,7 +490,7 @@ pub fn concat_list_view(comptime index_t: arr.IndexType, dt: data_type.DataType,
                     w_idx += 1;
                 }) {
                     if (!bitmap.get(v, idx)) {
-                        bitmap.unset(validity.ptr, w_idx);
+                        bitmap.unset(validity, w_idx);
                     }
                 }
             }
@@ -550,7 +550,7 @@ pub fn concat_sparse_union(dt: data_type.UnionType, arrays: []const arr.SparseUn
             idx += 1;
             w_idx += 1;
         }) {
-            type_ids.ptr[w_idx] = array.inner.type_ids.ptr[idx];
+            type_ids[w_idx] = array.inner.type_ids[idx];
         }
 
         write_offset = @intCast(w_idx);
@@ -616,15 +616,15 @@ pub fn concat_dense_union(dt: data_type.UnionType, arrays: []const arr.DenseUnio
             idx += 1;
             w_idx += 1;
         }) {
-            const type_id = array.inner.type_ids.ptr[idx];
+            const type_id = array.inner.type_ids[idx];
             const child_idx = for (0..dt.type_id_set.len) |i| {
-                if (dt.type_id_set.ptr[i] == type_id) {
+                if (dt.type_id_set[i] == type_id) {
                     break i;
                 }
             } else unreachable;
-            const child_offset = child_offsets.ptr[child_idx];
-            offsets.ptr[w_idx] = array.offsets.ptr[idx] +% child_offset;
-            type_ids.ptr[w_idx] = type_id;
+            const child_offset = child_offsets[child_idx];
+            offsets[w_idx] = array.offsets[idx] + child_offset;
+            type_ids[w_idx] = type_id;
         }
 
         write_offset = @intCast(w_idx);
@@ -708,7 +708,7 @@ pub fn concat_struct(dt: data_type.StructType, arrays: []const arr.StructArray, 
         var write_offset: u32 = 0;
         for (arrays) |array| {
             if (array.null_count > 0) {
-                const v = (array.validity orelse unreachable).ptr;
+                const v = (array.validity orelse unreachable);
 
                 var idx: u32 = array.offset;
                 var w_idx: u32 = write_offset;
@@ -717,7 +717,7 @@ pub fn concat_struct(dt: data_type.StructType, arrays: []const arr.StructArray, 
                     w_idx += 1;
                 }) {
                     if (!bitmap.get(v, idx)) {
-                        bitmap.unset(validity.ptr, w_idx);
+                        bitmap.unset(validity, w_idx);
                     }
                 }
             }
@@ -761,7 +761,7 @@ pub fn concat_fixed_size_list(fsl_t: data_type.FixedSizeListType, arrays: []cons
     var write_offset: u32 = 0;
     for (arrays) |array| {
         if (array.null_count > 0) {
-            const v = (array.validity orelse unreachable).ptr;
+            const v = (array.validity orelse unreachable);
 
             var idx: u32 = array.offset;
             var w_idx: u32 = write_offset;
@@ -770,7 +770,7 @@ pub fn concat_fixed_size_list(fsl_t: data_type.FixedSizeListType, arrays: []cons
                 w_idx += 1;
             }) {
                 if (!bitmap.get(v, idx)) {
-                    bitmap.unset(validity.ptr, w_idx);
+                    bitmap.unset(validity, w_idx);
                 }
             }
         }
@@ -781,7 +781,7 @@ pub fn concat_fixed_size_list(fsl_t: data_type.FixedSizeListType, arrays: []cons
     const inners = try scratch_alloc.alloc(arr.Array, arrays.len);
     for (0..arrays.len) |idx| {
         const array = arrays[idx];
-        const iw: u32 = @bitCast(array.item_width);
+        const iw: u32 = @intCast(array.item_width);
         const in = slice.slice(array.inner, array.offset * iw, array.len * iw);
         inners[idx] = in;
     }
@@ -827,8 +827,8 @@ pub fn concat_list(comptime index_t: arr.IndexType, inner_dt: data_type.DataType
     var inner_offset: u32 = 0;
     var write_offset: u32 = 0;
     for (arrays, 0..) |array, arr_idx| {
-        const input_start: usize = @intCast(array.offsets.ptr[array.offset]);
-        const input_end: usize = @intCast(array.offsets.ptr[array.offset + array.len]);
+        const input_start: usize = @intCast(array.offsets[array.offset]);
+        const input_end: usize = @intCast(array.offsets[array.offset + array.len]);
         const input_len = input_end - input_start;
 
         inners[arr_idx] = slice.slice(array.inner, @intCast(input_start), @intCast(input_len));
@@ -836,17 +836,17 @@ pub fn concat_list(comptime index_t: arr.IndexType, inner_dt: data_type.DataType
         {
             var idx: u32 = array.offset;
             var w_idx: u32 = write_offset;
-            const offset_diff: I = @as(I, @intCast(inner_offset)) - array.offsets.ptr[array.offset];
+            const offset_diff: I = @as(I, @intCast(inner_offset)) - array.offsets[array.offset];
             while (idx < array.offset + array.len) : ({
                 idx += 1;
                 w_idx += 1;
             }) {
-                offsets.ptr[w_idx] = array.offsets.ptr[idx] +% offset_diff;
+                offsets[w_idx] = array.offsets[idx] + offset_diff;
             }
         }
 
         if (array.null_count > 0) {
-            const v = (array.validity orelse unreachable).ptr;
+            const v = (array.validity orelse unreachable);
 
             var idx: u32 = array.offset;
             var w_idx: u32 = write_offset;
@@ -855,7 +855,7 @@ pub fn concat_list(comptime index_t: arr.IndexType, inner_dt: data_type.DataType
                 w_idx += 1;
             }) {
                 if (!bitmap.get(v, idx)) {
-                    bitmap.unset(validity.ptr, w_idx);
+                    bitmap.unset(validity, w_idx);
                 }
             }
         }
@@ -864,7 +864,7 @@ pub fn concat_list(comptime index_t: arr.IndexType, inner_dt: data_type.DataType
         inner_offset += @as(u32, @intCast(input_len));
     }
 
-    offsets.ptr[total_len] = @intCast(inner_offset);
+    offsets[total_len] = @intCast(inner_offset);
 
     const inner = try alloc.create(arr.Array);
     inner.* = try concat(inner_dt, inners, alloc, scratch_alloc);
@@ -1085,10 +1085,10 @@ pub fn concat_primitive(comptime T: type, arrays: []const arr.PrimitiveArray(T),
 
     var write_offset: u32 = 0;
     for (arrays) |array| {
-        @memcpy(values.ptr[write_offset .. write_offset + array.len], array.values.ptr[array.offset .. array.offset + array.len]);
+        @memcpy(values[write_offset .. write_offset + array.len], array.values[array.offset .. array.offset + array.len]);
 
         if (array.null_count > 0) {
-            const v = (array.validity orelse unreachable).ptr;
+            const v = (array.validity orelse unreachable);
 
             var idx: u32 = array.offset;
             var w_idx: u32 = write_offset;
@@ -1097,7 +1097,7 @@ pub fn concat_primitive(comptime T: type, arrays: []const arr.PrimitiveArray(T),
                 w_idx += 1;
             }) {
                 if (!bitmap.get(v, idx)) {
-                    bitmap.unset(validity.ptr, w_idx);
+                    bitmap.unset(validity, w_idx);
                 }
             }
         }
@@ -1126,8 +1126,8 @@ pub fn concat_binary(comptime index_t: arr.IndexType, arrays: []const arr.Generi
         total_len += array.len;
         total_null_count += array.null_count;
 
-        const start = array.offsets.ptr[array.offset];
-        const end = array.offsets.ptr[array.offset + array.len];
+        const start = array.offsets[array.offset];
+        const end = array.offsets[array.offset + array.len];
         const data_len: u32 = @intCast(end - start);
         total_data_len += data_len;
     }
@@ -1146,25 +1146,25 @@ pub fn concat_binary(comptime index_t: arr.IndexType, arrays: []const arr.Generi
     var data_offset: u32 = 0;
     var write_offset: u32 = 0;
     for (arrays) |array| {
-        const input_start: usize = @intCast(array.offsets.ptr[array.offset]);
-        const input_end: usize = @intCast(array.offsets.ptr[array.offset + array.len]);
+        const input_start: usize = @intCast(array.offsets[array.offset]);
+        const input_end: usize = @intCast(array.offsets[array.offset + array.len]);
         const input_len = input_end - input_start;
-        @memcpy(data.ptr[data_offset .. data_offset + input_len], array.data.ptr[input_start..input_end]);
+        @memcpy(data[data_offset .. data_offset + input_len], array.data[input_start..input_end]);
 
         {
             var idx: u32 = array.offset;
             var w_idx: u32 = write_offset;
-            const offset_diff: I = @as(I, @intCast(data_offset)) - array.offsets.ptr[array.offset];
+            const offset_diff: I = @as(I, @intCast(data_offset)) - array.offsets[array.offset];
             while (idx < array.offset + array.len) : ({
                 idx += 1;
                 w_idx += 1;
             }) {
-                offsets.ptr[w_idx] = array.offsets.ptr[idx] +% offset_diff;
+                offsets[w_idx] = array.offsets[idx] + offset_diff;
             }
         }
 
         if (array.null_count > 0) {
-            const v = (array.validity orelse unreachable).ptr;
+            const v = (array.validity orelse unreachable);
 
             var idx: u32 = array.offset;
             var w_idx: u32 = write_offset;
@@ -1173,7 +1173,7 @@ pub fn concat_binary(comptime index_t: arr.IndexType, arrays: []const arr.Generi
                 w_idx += 1;
             }) {
                 if (!bitmap.get(v, idx)) {
-                    bitmap.unset(validity.ptr, w_idx);
+                    bitmap.unset(validity, w_idx);
                 }
             }
         }
@@ -1182,7 +1182,7 @@ pub fn concat_binary(comptime index_t: arr.IndexType, arrays: []const arr.Generi
         data_offset += @as(u32, @intCast(input_len));
     }
 
-    offsets.ptr[total_len] = @intCast(data_offset);
+    offsets[total_len] = @intCast(data_offset);
 
     return .{
         .len = total_len,
@@ -1208,7 +1208,7 @@ pub fn concat_binary_view(arrays: []const arr.BinaryViewArray, alloc: Allocator)
 
         for (array.views) |v| {
             if (v.length > 12) {
-                total_data_len +%= @as(u32, @bitCast(v.length));
+                total_data_len += @as(u32, @intCast(v.length));
             }
         }
     }
@@ -1240,10 +1240,10 @@ pub fn concat_binary_view(arrays: []const arr.BinaryViewArray, alloc: Allocator)
         var wi: u32 = write_offset;
         for (array.views[array.offset .. array.offset + array.len]) |v| {
             if (v.length <= 12) {
-                views.ptr[wi] = v;
+                views[wi] = v;
             } else {
                 // Handle the case where the current data buffer is at full capacity so we need to create another one
-                if (@as(u32, @bitCast(buffer_offset)) + @as(u32, @bitCast(v.length)) > buffer.len) {
+                if (@as(u32, @intCast(buffer_offset)) + @as(u32, @intCast(v.length)) > buffer.len) {
                     buffers[buffer_idx] = buffer;
                     buffer_idx += 1;
                     buffer_offset = 0;
@@ -1252,23 +1252,23 @@ pub fn concat_binary_view(arrays: []const arr.BinaryViewArray, alloc: Allocator)
                     remaining_data_len -= buffer.len;
                 }
 
-                const boffset: u32 = @bitCast(buffer_offset);
-                const vlen: u32 = @bitCast(v.length);
-                @memcpy(buffer[boffset .. boffset + vlen], array.buffers[@as(u32, @bitCast(v.buffer_idx))][@as(u32, @bitCast(v.offset))..@as(u32, @bitCast(v.offset + v.length))]);
-                views.ptr[wi] = arr.BinaryView{
+                const boffset: u32 = @intCast(buffer_offset);
+                const vlen: u32 = @intCast(v.length);
+                @memcpy(buffer[boffset .. boffset + vlen], array.buffers[@as(u32, @intCast(v.buffer_idx))][@as(u32, @intCast(v.offset))..@as(u32, @intCast(v.offset + v.length))]);
+                views[wi] = arr.BinaryView{
                     .length = v.length,
                     .prefix = v.prefix,
-                    .offset = @bitCast(buffer_offset),
+                    .offset = @intCast(buffer_offset),
                     .buffer_idx = @intCast(buffer_idx),
                 };
                 buffer_offset += v.length;
             }
 
-            wi +%= 1;
+            wi += 1;
         }
 
         if (array.null_count > 0) {
-            const v = (array.validity orelse unreachable).ptr;
+            const v = (array.validity orelse unreachable);
 
             var idx: u32 = array.offset;
             var w_idx: u32 = write_offset;
@@ -1277,7 +1277,7 @@ pub fn concat_binary_view(arrays: []const arr.BinaryViewArray, alloc: Allocator)
                 w_idx += 1;
             }) {
                 if (!bitmap.get(v, idx)) {
-                    bitmap.unset(validity.ptr, w_idx);
+                    bitmap.unset(validity, w_idx);
                 }
             }
         }
@@ -1330,14 +1330,14 @@ pub fn concat_bool(arrays: []const arr.BoolArray, alloc: Allocator) Error!arr.Bo
                 idx += 1;
                 w_idx += 1;
             }) {
-                if (bitmap.get(array.values.ptr, idx)) {
-                    bitmap.set(values.ptr, w_idx);
+                if (bitmap.get(array.values, idx)) {
+                    bitmap.set(values, w_idx);
                 }
             }
         }
 
         if (array.null_count > 0) {
-            const v = (array.validity orelse unreachable).ptr;
+            const v = (array.validity orelse unreachable);
 
             var idx: u32 = array.offset;
             var w_idx: u32 = write_offset;
@@ -1346,7 +1346,7 @@ pub fn concat_bool(arrays: []const arr.BoolArray, alloc: Allocator) Error!arr.Bo
                 w_idx += 1;
             }) {
                 if (!bitmap.get(v, idx)) {
-                    bitmap.unset(validity.ptr, w_idx);
+                    bitmap.unset(validity, w_idx);
                 }
             }
         }
@@ -1392,10 +1392,10 @@ pub fn concat_fixed_size_binary(byte_width: i32, arrays: []const arr.FixedSizeBi
         const data_offset = write_offset * b_width;
         const input_offset = array.offset * b_width;
         const input_len = array.len * b_width;
-        @memcpy(data.ptr[data_offset .. data_offset + input_len], array.data.ptr[input_offset .. input_offset + input_len]);
+        @memcpy(data[data_offset .. data_offset + input_len], array.data[input_offset .. input_offset + input_len]);
 
         if (array.null_count > 0) {
-            const v = (array.validity orelse unreachable).ptr;
+            const v = (array.validity orelse unreachable);
 
             var idx: u32 = array.offset;
             var w_idx: u32 = write_offset;
@@ -1404,7 +1404,7 @@ pub fn concat_fixed_size_binary(byte_width: i32, arrays: []const arr.FixedSizeBi
                 w_idx += 1;
             }) {
                 if (!bitmap.get(v, idx)) {
-                    bitmap.unset(validity.ptr, w_idx);
+                    bitmap.unset(validity, w_idx);
                 }
             }
         }
