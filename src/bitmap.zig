@@ -85,6 +85,29 @@ pub fn copy(
 ) void {
     if (len == 0) return;
 
+    if (dst_offset % 8 == 0 and src_offset % 8 == 0) {
+        const src_byte_start = src_offset / 8;
+        const dst_byte_start = dst_offset / 8;
+        const n_bytes = len / 8;
+
+        @memcpy(
+            dst[dst_byte_start .. dst_byte_start + n_bytes],
+            src[src_byte_start .. src_byte_start + n_bytes],
+        );
+
+        const postfix_bits = len % 8;
+        var bit_idx: u32 = n_bytes * 8;
+        while (bit_idx < n_bytes * 8 + postfix_bits) : (bit_idx += 1) {
+            if (get(src, src_offset + bit_idx)) {
+                set(dst, dst_offset + bit_idx);
+            } else {
+                unset(dst, dst_offset + bit_idx);
+            }
+        }
+
+        return;
+    }
+
     var bits_copied: u32 = 0;
 
     while (bits_copied < len) {
