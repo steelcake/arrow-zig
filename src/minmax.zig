@@ -267,7 +267,7 @@ pub fn minmax_primitive(comptime op: Op, comptime T: type, array: *const arr.Pri
                 .min => std.math.maxInt(T),
             },
             .float => switch (op) {
-                .max => std.math.floatMin(T),
+                .max => std.math.floatTrueMin(T),
                 .min => std.math.floatMax(T),
             },
             else => @compileError("unsupported type"),
