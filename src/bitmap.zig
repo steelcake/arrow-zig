@@ -23,7 +23,7 @@ pub fn unset(buf: []u8, bit_index: u32) void {
 }
 
 pub fn num_bytes(num_bits: u32) u32 {
-    return (num_bits +% 7) / 8;
+    return (num_bits + 7) / 8;
 }
 
 pub fn count_unset_bits(validity: []const u8, offset: u32, len: u32) u32 {
