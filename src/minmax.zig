@@ -26,19 +26,33 @@ pub fn check_minmax_primitive(comptime op: Op, comptime T: type, minmax_result: 
     if (array.null_count > 0) {
         const validity = (array.validity orelse unreachable);
 
-        var idx: u32 = array.offset;
-        while (idx < array.offset + array.len) : (idx += 1) {
-            if (get.get_primitive_opt(T, array.values, validity, idx)) |v| {
-                if (v == minmax_val) {
-                    found = true;
+        const Closure = struct {
+            mm_val: T,
+            found_mm: *bool,
+            array: *const arr.PrimitiveArray(T),
+
+            fn process(self: @This(), idx: u32) void {
+                const v = self.array.values[idx];
+
+                if (v == self.mm_val) {
+                    self.found_mm.* = true;
                 }
 
                 switch (op) {
-                    .min => std.debug.assert(minmax_val <= v),
-                    .max => std.debug.assert(minmax_val >= v),
+                    .min => std.debug.assert(self.mm_val <= v),
+                    .max => std.debug.assert(self.mm_val >= v),
                 }
             }
-        }
+        };
+
+        bitmap.for_each(
+            Closure,
+            Closure.process,
+            Closure{ .mm_val = minmax_val, .found_mm = &found, .array = array },
+            validity,
+            array.offset,
+            array.len,
+        );
     } else {
         var idx: u32 = array.offset;
         while (idx < array.offset + array.len) : (idx += 1) {
@@ -55,6 +69,29 @@ pub fn check_minmax_primitive(comptime op: Op, comptime T: type, minmax_result: 
     }
 
     std.debug.assert(found);
+}
+
+fn binary_minmax_impl(comptime op: Op, left: []const u8, right: []const u8) []const u8 {
+    switch (op) {
+        .min => return binary_min_impl(left, right),
+        .max => return binary_max_impl(left, right),
+    }
+}
+
+fn binary_max_impl(left: []const u8, right: []const u8) []const u8 {
+    if (std.mem.order(u8, left, right) == .gt) {
+        return left;
+    } else {
+        return right;
+    }
+}
+
+fn binary_min_impl(left: []const u8, right: []const u8) []const u8 {
+    if (std.mem.order(u8, left, right) == .gt) {
+        return right;
+    } else {
+        return left;
+    }
 }
 
 fn check_binary_order(comptime op: Op, minmax_val: []const u8, array_val: []const u8) void {
@@ -76,15 +113,29 @@ pub fn check_minmax_binary(comptime op: Op, comptime index_t: arr.IndexType, min
     if (array.null_count > 0) {
         const validity = (array.validity orelse unreachable);
 
-        var idx: u32 = array.offset;
-        while (idx < array.offset + array.len) : (idx += 1) {
-            if (get.get_binary_opt(index_t, array.data, array.offsets, validity, idx)) |v| {
-                if (std.mem.eql(u8, minmax_val, v)) {
-                    found = true;
+        const Closure = struct {
+            mm_val: []const u8,
+            found_mm: *bool,
+            array: *const arr.GenericBinaryArray(index_t),
+
+            fn process(self: @This(), idx: u32) void {
+                const v = get.get_binary(index_t, self.array.data, self.array.offsets, idx);
+
+                if (std.mem.eql(u8, self.mm_val, v)) {
+                    self.found_mm.* = true;
                 }
-                check_binary_order(op, minmax_val, v);
+                check_binary_order(op, self.mm_val, v);
             }
-        }
+        };
+
+        bitmap.for_each(
+            Closure,
+            Closure.process,
+            Closure{ .mm_val = minmax_val, .found_mm = &found, .array = array },
+            validity,
+            array.offset,
+            array.len,
+        );
     } else {
         var idx: u32 = array.offset;
         while (idx < array.offset + array.len) : (idx += 1) {
@@ -110,15 +161,28 @@ pub fn check_minmax_binary_view(comptime op: Op, minmax_result: ?[]const u8, arr
     if (array.null_count > 0) {
         const validity = (array.validity orelse unreachable);
 
-        var idx: u32 = array.offset;
-        while (idx < array.offset + array.len) : (idx += 1) {
-            if (get.get_binary_view_opt(array.buffers, array.views, validity, idx)) |v| {
-                if (std.mem.eql(u8, minmax_val, v)) {
-                    found = true;
+        const Closure = struct {
+            mm_val: []const u8,
+            found_mm: *bool,
+            array: *const arr.BinaryViewArray,
+
+            fn process(self: @This(), idx: u32) void {
+                const v = get.get_binary_view(self.array.buffers, self.array.views, idx);
+                if (std.mem.eql(u8, self.mm_val, v)) {
+                    self.found_mm.* = true;
                 }
-                check_binary_order(op, minmax_val, v);
+                check_binary_order(op, self.mm_val, v);
             }
-        }
+        };
+
+        bitmap.for_each(
+            Closure,
+            Closure.process,
+            Closure{ .mm_val = minmax_val, .found_mm = &found, .array = array },
+            validity,
+            array.offset,
+            array.len,
+        );
     } else {
         var idx: u32 = array.offset;
         while (idx < array.offset + array.len) : (idx += 1) {
@@ -144,15 +208,29 @@ pub fn check_minmax_fixed_size_binary(comptime op: Op, minmax_result: ?[]const u
     if (array.null_count > 0) {
         const validity = (array.validity orelse unreachable);
 
-        var idx: u32 = array.offset;
-        while (idx < array.offset + array.len) : (idx += 1) {
-            if (get.get_fixed_size_binary_opt(array.data, array.byte_width, validity, idx)) |v| {
-                if (std.mem.eql(u8, minmax_val, v)) {
-                    found = true;
+        const Closure = struct {
+            mm_val: []const u8,
+            found_mm: *bool,
+            array: *const arr.FixedSizeBinaryArray,
+
+            fn process(self: @This(), idx: u32) void {
+                const v = get.get_fixed_size_binary(self.array.data, self.array.byte_width, idx);
+
+                if (std.mem.eql(u8, self.mm_val, v)) {
+                    self.found_mm.* = true;
                 }
-                check_binary_order(op, minmax_val, v);
+                check_binary_order(op, self.mm_val, v);
             }
-        }
+        };
+
+        bitmap.for_each(
+            Closure,
+            Closure.process,
+            Closure{ .mm_val = minmax_val, .found_mm = &found, .array = array },
+            validity,
+            array.offset,
+            array.len,
+        );
     } else {
         var idx: u32 = array.offset;
         while (idx < array.offset + array.len) : (idx += 1) {
@@ -173,30 +251,44 @@ pub fn minmax_primitive(comptime op: Op, comptime T: type, array: *const arr.Pri
     }
 
     if (array.null_count > 0) {
-        const validity = (array.validity orelse unreachable);
-
-        var m: T = undefined;
-        var idx: u32 = array.offset;
-
-        // find the first value
-        while (idx < array.offset + array.len) : (idx += 1) {
-            if (bitmap.get(validity, idx)) {
-                m = array.values[idx];
-                idx += 1;
-                break;
-            }
-        } else {
+        if (array.len == array.null_count) {
             return null;
         }
 
-        while (idx < array.offset + array.len) : (idx += 1) {
-            if (bitmap.get(validity, idx)) {
-                switch (op) {
-                    .min => m = @min(m, array.values[idx]),
-                    .max => m = @max(m, array.values[idx]),
-                }
+        const validity = (array.validity orelse unreachable);
+
+        var m: T = switch (@typeInfo(T)) {
+            .int => switch (op) {
+                .max => std.math.minInt(T),
+                .min => std.math.maxInt(T),
+            },
+            .float => switch (op) {
+                .max => std.math.floatMin(T),
+                .min => std.math.floatMax(T),
+            },
+            else => @compileError("unsupported type"),
+        };
+
+        const Closure = struct {
+            v: *T,
+            array: *const arr.PrimitiveArray(T),
+
+            fn process(self: @This(), idx: u32) void {
+                self.v.* = switch (op) {
+                    .min => @min(self.v.*, self.array.values[idx]),
+                    .max => @max(self.v.*, self.array.values[idx]),
+                };
             }
-        }
+        };
+
+        bitmap.for_each(
+            Closure,
+            Closure.process,
+            Closure{ .v = &m, .array = array },
+            validity,
+            array.offset,
+            array.len,
+        );
 
         return m;
     } else {
@@ -220,39 +312,36 @@ pub fn minmax_binary(comptime op: Op, comptime index_t: arr.IndexType, array: *c
     }
 
     if (array.null_count > 0) {
-        const validity = (array.validity orelse unreachable);
-
-        var m: []const u8 = undefined;
-        var idx: u32 = array.offset;
-
-        // find the first value
-        while (idx < array.offset + array.len) : (idx += 1) {
-            if (bitmap.get(validity, idx)) {
-                m = get.get_binary(index_t, array.data, array.offsets, idx);
-                idx += 1;
-                break;
-            }
-        } else {
+        if (array.len == array.null_count) {
             return null;
         }
+        const validity = (array.validity orelse unreachable);
 
-        while (idx < array.offset + array.len) : (idx += 1) {
-            if (bitmap.get(validity, idx)) {
-                const s = get.get_binary(index_t, array.data, array.offsets, idx);
-                switch (op) {
-                    .min => {
-                        if (std.mem.order(u8, m, s) == .gt) {
-                            m = s;
-                        }
-                    },
-                    .max => {
-                        if (std.mem.order(u8, m, s) == .lt) {
-                            m = s;
-                        }
-                    },
+        var m: ?[]const u8 = null;
+
+        const Closure = struct {
+            v: *?[]const u8,
+            array: *const arr.GenericBinaryArray(index_t),
+
+            fn process(self: @This(), idx: u32) void {
+                const s = get.get_binary(index_t, self.array.data, self.array.offsets, idx);
+
+                if (self.v.*) |v| {
+                    self.v.* = binary_minmax_impl(op, v, s);
+                } else {
+                    self.v.* = s;
                 }
             }
-        }
+        };
+
+        bitmap.for_each(
+            Closure,
+            Closure.process,
+            Closure{ .v = &m, .array = array },
+            validity,
+            array.offset,
+            array.len,
+        );
 
         return m;
     } else {
@@ -285,39 +374,36 @@ pub fn minmax_binary_view(comptime op: Op, array: *const arr.BinaryViewArray) ?[
     }
 
     if (array.null_count > 0) {
-        const validity = (array.validity orelse unreachable);
-
-        var m: []const u8 = undefined;
-        var idx: u32 = array.offset;
-
-        // find the first value
-        while (idx < array.offset + array.len) : (idx += 1) {
-            if (bitmap.get(validity, idx)) {
-                m = get.get_binary_view(array.buffers, array.views, idx);
-                idx += 1;
-                break;
-            }
-        } else {
+        if (array.len == array.null_count) {
             return null;
         }
+        const validity = (array.validity orelse unreachable);
 
-        while (idx < array.offset + array.len) : (idx += 1) {
-            if (bitmap.get(validity, idx)) {
-                const s = get.get_binary_view(array.buffers, array.views, idx);
-                switch (op) {
-                    .min => {
-                        if (std.mem.order(u8, m, s) == .gt) {
-                            m = s;
-                        }
-                    },
-                    .max => {
-                        if (std.mem.order(u8, m, s) == .lt) {
-                            m = s;
-                        }
-                    },
+        var m: ?[]const u8 = null;
+
+        const Closure = struct {
+            v: *?[]const u8,
+            array: *const arr.BinaryViewArray,
+
+            fn process(self: @This(), idx: u32) void {
+                const s = get.get_binary_view(self.array.buffers, self.array.views, idx);
+
+                if (self.v.*) |v| {
+                    self.v.* = binary_minmax_impl(op, v, s);
+                } else {
+                    self.v.* = s;
                 }
             }
-        }
+        };
+
+        bitmap.for_each(
+            Closure,
+            Closure.process,
+            Closure{ .v = &m, .array = array },
+            validity,
+            array.offset,
+            array.len,
+        );
 
         return m;
     } else {
@@ -350,39 +436,36 @@ pub fn minmax_fixed_size_binary(comptime op: Op, array: *const arr.FixedSizeBina
     }
 
     if (array.null_count > 0) {
-        const validity = (array.validity orelse unreachable);
-
-        var m: []const u8 = undefined;
-        var idx: u32 = array.offset;
-
-        // find the first value
-        while (idx < array.offset + array.len) : (idx += 1) {
-            if (bitmap.get(validity, idx)) {
-                m = get.get_fixed_size_binary(array.data, array.byte_width, idx);
-                idx += 1;
-                break;
-            }
-        } else {
+        if (array.len == array.null_count) {
             return null;
         }
+        const validity = (array.validity orelse unreachable);
 
-        while (idx < array.offset + array.len) : (idx += 1) {
-            if (bitmap.get(validity, idx)) {
-                const s = get.get_fixed_size_binary(array.data, array.byte_width, idx);
-                switch (op) {
-                    .min => {
-                        if (std.mem.order(u8, m, s) == .gt) {
-                            m = s;
-                        }
-                    },
-                    .max => {
-                        if (std.mem.order(u8, m, s) == .lt) {
-                            m = s;
-                        }
-                    },
+        var m: ?[]const u8 = null;
+
+        const Closure = struct {
+            v: *?[]const u8,
+            array: *const arr.FixedSizeBinaryArray,
+
+            fn process(self: @This(), idx: u32) void {
+                const s = get.get_fixed_size_binary(self.array.data, self.array.byte_width, idx);
+
+                if (self.v.*) |v| {
+                    self.v.* = binary_minmax_impl(op, v, s);
+                } else {
+                    self.v.* = s;
                 }
             }
-        }
+        };
+
+        bitmap.for_each(
+            Closure,
+            Closure.process,
+            Closure{ .v = &m, .array = array },
+            validity,
+            array.offset,
+            array.len,
+        );
 
         return m;
     } else {

@@ -25,13 +25,7 @@ fn validate_validity(null_count: u32, offset: u32, len: u32, valid: ?[]const u8)
             return Error.Invalid;
         }
 
-        var count: u32 = 0;
-        var idx: u32 = offset;
-        while (idx < offset + len) : (idx += 1) {
-            if (!bitmap.get(v, idx)) {
-                count += 1;
-            }
-        }
+        const count = bitmap.count_unset_bits(v, offset, len);
 
         if (null_count != count) {
             return Error.Invalid;
@@ -467,13 +461,37 @@ pub fn validate_run_end_encoded_array(array: *const arr.RunEndArray) Error!void 
 fn validate_dict_keys_array(comptime T: type, keys: *const arr.PrimitiveArray(T), values_len: u32) Error!void {
     if (keys.null_count > 0) {
         const v = (keys.validity orelse unreachable);
-        var idx: u32 = keys.offset;
-        while (idx < keys.offset + keys.len) : (idx += 1) {
-            if (get.get_primitive_opt(T, keys.values, v, idx)) |key| {
-                if (key >= values_len) {
-                    return Error.Invalid;
+
+        const Closure = struct {
+            keys: *const arr.PrimitiveArray(T),
+            found_err: *bool,
+            vals_len: u32,
+
+            fn process(self: @This(), idx: u32) void {
+                const key = self.keys.values[idx];
+                if (key >= self.vals_len) {
+                    self.found_err.* = true;
                 }
             }
+        };
+
+        var f_err = false;
+
+        bitmap.for_each(
+            Closure,
+            Closure.process,
+            Closure{
+                .keys = keys,
+                .found_err = &f_err,
+                .vals_len = values_len,
+            },
+            v,
+            keys.offset,
+            keys.len,
+        );
+
+        if (f_err) {
+            return Error.Invalid;
         }
     } else {
         var idx: u32 = keys.offset;

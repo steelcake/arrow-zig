@@ -7,7 +7,6 @@ const arr = @import("./array.zig");
 const slice = @import("./slice.zig");
 const bitmap = @import("./bitmap.zig");
 const equals = @import("./equals.zig");
-const get = @import("./get.zig");
 const data_type = @import("./data_type.zig");
 const length = @import("./length.zig");
 
@@ -254,17 +253,7 @@ pub fn concat_map(map_t: data_type.MapType, arrays: []const arr.MapArray, alloc:
 
         if (array.null_count > 0) {
             const v = (array.validity orelse unreachable);
-
-            var idx: u32 = array.offset;
-            var w_idx: u32 = write_offset;
-            while (idx < array.offset + array.len) : ({
-                idx += 1;
-                w_idx += 1;
-            }) {
-                if (!bitmap.get(v, idx)) {
-                    bitmap.unset(validity, w_idx);
-                }
-            }
+            bitmap.copy(array.len, validity, write_offset, v, array.offset);
         }
 
         write_offset += array.len;
@@ -483,16 +472,7 @@ pub fn concat_list_view(comptime index_t: arr.IndexType, dt: data_type.DataType,
             if (array.null_count > 0) {
                 const v = (array.validity orelse unreachable);
 
-                var idx: u32 = array.offset;
-                var w_idx: u32 = write_offset;
-                while (idx < array.offset + array.len) : ({
-                    idx += 1;
-                    w_idx += 1;
-                }) {
-                    if (!bitmap.get(v, idx)) {
-                        bitmap.unset(validity, w_idx);
-                    }
-                }
+                bitmap.copy(array.len, validity, write_offset, v, array.offset);
             }
 
             write_offset += array.len;
@@ -709,17 +689,7 @@ pub fn concat_struct(dt: data_type.StructType, arrays: []const arr.StructArray, 
         for (arrays) |array| {
             if (array.null_count > 0) {
                 const v = (array.validity orelse unreachable);
-
-                var idx: u32 = array.offset;
-                var w_idx: u32 = write_offset;
-                while (idx < array.offset + array.len) : ({
-                    idx += 1;
-                    w_idx += 1;
-                }) {
-                    if (!bitmap.get(v, idx)) {
-                        bitmap.unset(validity, w_idx);
-                    }
-                }
+                bitmap.copy(array.len, validity, write_offset, v, array.offset);
             }
 
             write_offset += array.len;
@@ -763,16 +733,7 @@ pub fn concat_fixed_size_list(fsl_t: data_type.FixedSizeListType, arrays: []cons
         if (array.null_count > 0) {
             const v = (array.validity orelse unreachable);
 
-            var idx: u32 = array.offset;
-            var w_idx: u32 = write_offset;
-            while (idx < array.offset + array.len) : ({
-                idx += 1;
-                w_idx += 1;
-            }) {
-                if (!bitmap.get(v, idx)) {
-                    bitmap.unset(validity, w_idx);
-                }
-            }
+            bitmap.copy(array.len, validity, write_offset, v, array.offset);
         }
 
         write_offset += array.len;
@@ -848,16 +809,7 @@ pub fn concat_list(comptime index_t: arr.IndexType, inner_dt: data_type.DataType
         if (array.null_count > 0) {
             const v = (array.validity orelse unreachable);
 
-            var idx: u32 = array.offset;
-            var w_idx: u32 = write_offset;
-            while (idx < array.offset + array.len) : ({
-                idx += 1;
-                w_idx += 1;
-            }) {
-                if (!bitmap.get(v, idx)) {
-                    bitmap.unset(validity, w_idx);
-                }
-            }
+            bitmap.copy(array.len, validity, write_offset, v, array.offset);
         }
 
         write_offset += array.len;
@@ -1090,16 +1042,7 @@ pub fn concat_primitive(comptime T: type, arrays: []const arr.PrimitiveArray(T),
         if (array.null_count > 0) {
             const v = (array.validity orelse unreachable);
 
-            var idx: u32 = array.offset;
-            var w_idx: u32 = write_offset;
-            while (idx < array.offset + array.len) : ({
-                idx += 1;
-                w_idx += 1;
-            }) {
-                if (!bitmap.get(v, idx)) {
-                    bitmap.unset(validity, w_idx);
-                }
-            }
+            bitmap.copy(array.len, validity, write_offset, v, array.offset);
         }
 
         write_offset += array.len;
@@ -1166,16 +1109,7 @@ pub fn concat_binary(comptime index_t: arr.IndexType, arrays: []const arr.Generi
         if (array.null_count > 0) {
             const v = (array.validity orelse unreachable);
 
-            var idx: u32 = array.offset;
-            var w_idx: u32 = write_offset;
-            while (idx < array.offset + array.len) : ({
-                idx += 1;
-                w_idx += 1;
-            }) {
-                if (!bitmap.get(v, idx)) {
-                    bitmap.unset(validity, w_idx);
-                }
-            }
+            bitmap.copy(array.len, validity, write_offset, v, array.offset);
         }
 
         write_offset += array.len;
@@ -1269,17 +1203,7 @@ pub fn concat_binary_view(arrays: []const arr.BinaryViewArray, alloc: Allocator)
 
         if (array.null_count > 0) {
             const v = (array.validity orelse unreachable);
-
-            var idx: u32 = array.offset;
-            var w_idx: u32 = write_offset;
-            while (idx < array.offset + array.len) : ({
-                idx += 1;
-                w_idx += 1;
-            }) {
-                if (!bitmap.get(v, idx)) {
-                    bitmap.unset(validity, w_idx);
-                }
-            }
+            bitmap.copy(array.len, validity, write_offset, v, array.offset);
         }
 
         write_offset += array.len;
@@ -1323,32 +1247,11 @@ pub fn concat_bool(arrays: []const arr.BoolArray, alloc: Allocator) Error!arr.Bo
 
     var write_offset: u32 = 0;
     for (arrays) |array| {
-        {
-            var idx: u32 = array.offset;
-            var w_idx: u32 = write_offset;
-            while (idx < array.offset + array.len) : ({
-                idx += 1;
-                w_idx += 1;
-            }) {
-                if (bitmap.get(array.values, idx)) {
-                    bitmap.set(values, w_idx);
-                }
-            }
-        }
+        bitmap.copy(array.len, values, write_offset, array.values, array.offset);
 
         if (array.null_count > 0) {
             const v = (array.validity orelse unreachable);
-
-            var idx: u32 = array.offset;
-            var w_idx: u32 = write_offset;
-            while (idx < array.offset + array.len) : ({
-                idx += 1;
-                w_idx += 1;
-            }) {
-                if (!bitmap.get(v, idx)) {
-                    bitmap.unset(validity, w_idx);
-                }
-            }
+            bitmap.copy(array.len, validity, write_offset, v, array.offset);
         }
 
         write_offset += array.len;
@@ -1396,17 +1299,7 @@ pub fn concat_fixed_size_binary(byte_width: i32, arrays: []const arr.FixedSizeBi
 
         if (array.null_count > 0) {
             const v = (array.validity orelse unreachable);
-
-            var idx: u32 = array.offset;
-            var w_idx: u32 = write_offset;
-            while (idx < array.offset + array.len) : ({
-                idx += 1;
-                w_idx += 1;
-            }) {
-                if (!bitmap.get(v, idx)) {
-                    bitmap.unset(validity, w_idx);
-                }
-            }
+            bitmap.copy(array.len, validity, write_offset, v, array.offset);
         }
 
         write_offset += array.len;
