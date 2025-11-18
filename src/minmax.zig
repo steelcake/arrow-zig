@@ -68,6 +68,10 @@ pub fn check_minmax_primitive(comptime op: Op, comptime T: type, minmax_result: 
         }
     }
 
+    if (@typeInfo(T) == .float and std.math.isNan(minmax_val)) {
+        return;
+    }
+
     std.debug.assert(found);
 }
 
