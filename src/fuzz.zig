@@ -20,14 +20,6 @@ const bitmap = @import("./bitmap.zig");
 
 const fuzz_input = @import("./fuzz_input.zig");
 
-fn assert_slice_eq(left: []const u8, right: []const u8) void {
-    for (left, right) |l, r| {
-        if (l != r) {
-            std.debug.panic("{any} != {any}", .{ left, right });
-        }
-    }
-}
-
 fn fuzz_bitmap_for_each(out: []u8, input: []const u8) anyerror!void {
     if (input.len < 2) {
         return;
@@ -41,7 +33,7 @@ fn fuzz_bitmap_for_each(out: []u8, input: []const u8) anyerror!void {
     if (input.len < 2 + num_bytes) return;
 
     const o = out[0..num_bytes];
-    const i = input[2..2+num_bytes];
+    const i = input[2 .. 2 + num_bytes];
 
     // o_O
     @memset(o, 0);
@@ -50,7 +42,9 @@ fn fuzz_bitmap_for_each(out: []u8, input: []const u8) anyerror!void {
 
     var idx: u32 = offset;
     while (idx < offset + len) : (idx += 1) {
-        std.debug.assert(bitmap.get(i, idx) == bitmap.get(o, idx));
+        if (bitmap.get(i, idx) != bitmap.get(o, idx)) {
+            std.debug.panic("{} {} {} {any} {any}", .{ idx, offset, len, i, o });
+        }
     }
 }
 

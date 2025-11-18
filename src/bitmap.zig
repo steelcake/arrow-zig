@@ -48,11 +48,10 @@ pub fn for_each(
 ) void {
     if (len == 0) return;
 
-    const start_bits = @min(len, 8 - (offset % 8));
-    if (start_bits > 0) {
-        var start_byte = std.math.shl(u8, validity[offset / 8], offset % 8);
+    if (offset % 8 != 0) {
+        var start_byte = std.math.shr(u8, validity[offset / 8], offset % 8);
         while (start_byte != 0) {
-            const t = start_byte & @as(u8, @bitCast(-@as(i8, @bitCast(start_byte))));
+            const t = start_byte & negate(start_byte);
             const r: u8 = @ctz(start_byte);
             process(ctx, offset + r);
             start_byte ^= t;
@@ -66,15 +65,15 @@ pub fn for_each(
         const n_bytes = bytes_end - bytes_start;
 
         const num_words = n_bytes / 64;
-        const words: []const align(1)u64 = @ptrCast(validity[bytes_start..bytes_start+num_words*64]);
+        const words: []align(1) const u64 = @ptrCast(validity[bytes_start .. bytes_start + num_words * 64]);
         var word_idx: u32 = 0;
+        const base_offset = bytes_start * 8;
         while (word_idx < words.len) : (word_idx += 1) {
             var word = words[word_idx];
             while (word != 0) {
-                const t = word & @as(u64, @bitCast(-@as(i64, @bitCast(word))));
+                const t = word & negate(word);
                 const r: u8 = @ctz(word);
-                const byte_idx = word_idx * 8;
-                process(ctx, byte_idx * 8 + r);
+                process(ctx, base_offset + word_idx * 64 + r);
                 word ^= t;
             }
         }
@@ -83,7 +82,7 @@ pub fn for_each(
         while (byte_idx < bytes_end) : (byte_idx += 1) {
             var byte = validity[byte_idx];
             while (byte != 0) {
-                const t = byte & @as(u8, @bitCast(-@as(i8, @bitCast(byte))));
+                const t = byte & negate(byte);
                 const r: u8 = @ctz(byte);
                 process(ctx, byte_idx * 8 + r);
                 byte ^= t;
@@ -92,15 +91,30 @@ pub fn for_each(
     }
 
     if (bytes_end * 8 < offset + len) {
-        // const end_bits = (offset + len) - (bytes_end * 8);
-        var end_byte = std.math.shr(u8, validity[bytes_end], 8 - ((offset + len) % 8));
+        const mask: [8]u8 = .{
+            0b00000000,
+            0b00000001,
+            0b00000011,
+            0b00000111,
+            0b00001111,
+            0b00011111,
+            0b00111111,
+            0b01111111,
+        };
+        const end_bits = (offset + len) % 8;
+        const base_offset = (offset + len) / 8 * 8;
+        var end_byte = validity[bytes_end] & mask[end_bits];
         while (end_byte != 0) {
-            const t = end_byte & @as(u8, @bitCast(-@as(i8, @bitCast(end_byte))));
+            const t = end_byte & negate(end_byte);
             const r: u8 = @ctz(end_byte);
-            process(ctx, offset + r);
+            process(ctx, base_offset + r);
             end_byte ^= t;
         }
     }
+}
+
+fn negate(x: anytype) @TypeOf(x) {
+    return ~x +% 1;
 }
 
 test "bitmap get set unset" {
