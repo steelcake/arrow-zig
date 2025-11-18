@@ -20,7 +20,40 @@ const bitmap = @import("./bitmap.zig");
 
 const fuzz_input = @import("./fuzz_input.zig");
 
-fn fuzz_bitmap_count_nulls(ctx: void, input: []const u8) anyerror!void {
+fn fuzz_bitmap_copy(out: []u8, input: []const u8) anyerror!void {
+    if (input.len < 3) {
+        return;
+    }
+
+    const len: u32 = input[0];
+    const input_offset: u32 = input[1];
+    const output_offset: u32 = input[2];
+
+    const input_num_bytes: u32 = (len + input_offset + 7) / 8;
+    if (input.len < 3 + input_num_bytes) return;
+
+    const output_num_bytes: u32 = (len + output_offset + 7) / 8;
+    std.debug.assert(out.len >= output_num_bytes);
+
+    const o = out[0..output_num_bytes];
+    const i = input[3 .. 3 + input_num_bytes];
+
+    bitmap.copy(len, o, output_offset, i, input_offset);
+
+    var idx: u32 = 0;
+    while (idx < len) : (idx += 1) {
+        if (bitmap.get(i, input_offset + idx) != bitmap.get(o, output_offset + idx)) {
+            std.debug.panic("{} {} {} {} {any} {any}", .{ idx, input_offset, output_offset, len, i, o });
+        }
+    }
+}
+
+test fuzz_bitmap_copy {
+    const out = try std.heap.page_allocator.alloc(u8, 1 << 10);
+    try std.testing.fuzz(out, fuzz_bitmap_copy, .{});
+}
+
+fn fuzz_bitmap_count_unset_bits(ctx: void, input: []const u8) anyerror!void {
     _ = ctx;
 
     if (input.len < 2) {
@@ -28,7 +61,7 @@ fn fuzz_bitmap_count_nulls(ctx: void, input: []const u8) anyerror!void {
     }
 
     const len: u32 = input[0];
-    const offset: u32 = input[0];
+    const offset: u32 = input[1];
 
     const num_bytes: u32 = (len + offset + 7) / 8;
 
@@ -36,7 +69,7 @@ fn fuzz_bitmap_count_nulls(ctx: void, input: []const u8) anyerror!void {
 
     const i = input[2 .. 2 + num_bytes];
 
-    const n_nulls = bitmap.count_nulls(i, offset, len);
+    const n_nulls = bitmap.count_unset_bits(i, offset, len);
 
     var check: u32 = 0;
     var idx: u32 = offset;
@@ -49,8 +82,8 @@ fn fuzz_bitmap_count_nulls(ctx: void, input: []const u8) anyerror!void {
     std.debug.assert(check == n_nulls);
 }
 
-test fuzz_bitmap_count_nulls {
-    try std.testing.fuzz({}, fuzz_bitmap_count_nulls, .{});
+test fuzz_bitmap_count_unset_bits {
+    try std.testing.fuzz({}, fuzz_bitmap_count_unset_bits, .{});
 }
 
 fn fuzz_bitmap_for_each(out: []u8, input: []const u8) anyerror!void {
@@ -59,7 +92,7 @@ fn fuzz_bitmap_for_each(out: []u8, input: []const u8) anyerror!void {
     }
 
     const len: u32 = input[0];
-    const offset: u32 = input[0];
+    const offset: u32 = input[1];
 
     const num_bytes: u32 = (len + offset + 7) / 8;
 

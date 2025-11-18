@@ -1,6 +1,5 @@
 const std = @import("std");
 const testing = std.testing;
-const Allocator = std.mem.Allocator;
 
 pub fn get(buf: []const u8, bit_index: u32) bool {
     const byte_index = bit_index / 8;
@@ -27,20 +26,24 @@ pub fn num_bytes(num_bits: u32) u32 {
     return (num_bits +% 7) / 8;
 }
 
-pub fn count_nulls(validity: []const u8, offset: u32, len: u32) u32 {
+pub fn count_unset_bits(validity: []const u8, offset: u32, len: u32) u32 {
+    return len - count_set_bits(validity, offset, len);
+}
+
+pub fn count_set_bits(validity: []const u8, offset: u32, len: u32) u32 {
     std.debug.assert((offset + len + 7) / 8 <= validity.len);
 
     if (len == 0) return 0;
 
-    var null_count: u32 = 0;
+    var n_set: u32 = 0;
 
     const start_padding = offset % 8;
     if (start_padding > 0) {
         const start_bits = @min(len, 8 - start_padding);
         var start_byte = std.math.shr(u8, validity[offset / 8], start_padding);
         start_byte &= BYTE_MASK[start_bits];
-        null_count += (start_bits - @popCount(start_byte));
-        if (start_bits == len) return null_count;
+        n_set += @popCount(start_byte);
+        if (start_bits == len) return n_set;
     }
 
     const bytes_start = (offset + 7) / 8;
@@ -54,41 +57,58 @@ pub fn count_nulls(validity: []const u8, offset: u32, len: u32) u32 {
         var word_idx: u32 = 0;
         while (word_idx < words.len) : (word_idx += 1) {
             const word = words[word_idx];
-            null_count += (64 - @popCount(word));
+            n_set += @popCount(word);
         }
 
         var byte_idx = bytes_start + num_words * 64;
         while (byte_idx < bytes_end) : (byte_idx += 1) {
             const byte = validity[byte_idx];
-            null_count += (8 - @popCount(byte));
+            n_set += @popCount(byte);
         }
     }
 
     if (bytes_end * 8 < offset + len) {
         const end_bits = (offset + len) % 8;
         const end_byte = validity[bytes_end] & BYTE_MASK[end_bits];
-        null_count += (end_bits - @popCount(end_byte));
+        n_set += @popCount(end_byte);
     }
 
-    return null_count;
+    return n_set;
 }
 
-// pub fn copy(
-//     validity: []const u8,
-//     offset: u32,
-//     len: u32,
-//     alloc: Allocator,
-// ) error{OutOfMemory}![]u8 {
-//     const out = try alloc.alloc(u8, (len + 7) / 8);
+pub fn copy(
+    len: u32,
+    dst: []u8,
+    dst_offset: u32,
+    src: []const u8,
+    src_offset: u32,
+) void {
+    if (len == 0) return;
 
-//     if (offset % 8 == 0) {
-//         const start = offset / 8;
-//         const end = (offset + len + 7) / 8;
-//         @memcpy(out, validity[start..end]);
-//     } else {
+    var bits_copied: u32 = 0;
 
-//     }
-// }
+    while (bits_copied < len) {
+        const src_byte_idx = (src_offset + bits_copied) / 8;
+        const src_bit_pos = (src_offset + bits_copied) % 8;
+        const dst_byte_idx = (dst_offset + bits_copied) / 8;
+        const dst_bit_pos = (dst_offset + bits_copied) % 8;
+
+        const bits_in_src_byte = 8 - src_bit_pos;
+        const bits_in_dst_byte = 8 - dst_bit_pos;
+        const bits_left = len - bits_copied;
+        const bits_to_copy = @min(bits_in_src_byte, bits_in_dst_byte, bits_left);
+
+        const src_mask = std.math.shl(u8, std.math.shl(u8, 1, bits_to_copy) -% 1, src_bit_pos);
+        const src_bits = std.math.shr(u8, src[src_byte_idx] & src_mask, src_bit_pos);
+
+        const dst_mask = std.math.shl(u8, std.math.shl(u8, 1, bits_to_copy) -% 1, dst_bit_pos);
+        dst[dst_byte_idx] &= ~dst_mask;
+
+        dst[dst_byte_idx] |= std.math.shl(u8, src_bits, dst_bit_pos);
+
+        bits_copied += bits_to_copy;
+    }
+}
 
 const BYTE_MASK: [8]u8 = .{
     0b00000000,
@@ -101,11 +121,13 @@ const BYTE_MASK: [8]u8 = .{
     0b01111111,
 };
 
+/// Calls the given process function at every set bit index,
+///     passing the given context in.
 pub fn for_each(
     comptime Context: type,
     comptime process: fn (ctx: Context, idx: u32) void,
     ctx: Context,
-    validity: []const u8,
+    bitmap: []const u8,
     offset: u32,
     len: u32,
 ) void {
@@ -114,7 +136,7 @@ pub fn for_each(
     const start_padding = offset % 8;
     if (start_padding > 0) {
         const start_bits = @min(len, 8 - start_padding);
-        var start_byte = std.math.shr(u8, validity[offset / 8], start_padding);
+        var start_byte = std.math.shr(u8, bitmap[offset / 8], start_padding);
         start_byte &= BYTE_MASK[start_bits];
         while (start_byte != 0) {
             const t = start_byte & negate(start_byte);
@@ -133,7 +155,7 @@ pub fn for_each(
         const n_bytes = bytes_end - bytes_start;
 
         const num_words = n_bytes / 64;
-        const words: []align(1) const u64 = @ptrCast(validity[bytes_start .. bytes_start + num_words * 64]);
+        const words: []align(1) const u64 = @ptrCast(bitmap[bytes_start .. bytes_start + num_words * 64]);
         var word_idx: u32 = 0;
         const base_offset = bytes_start * 8;
         while (word_idx < words.len) : (word_idx += 1) {
@@ -148,7 +170,7 @@ pub fn for_each(
 
         var byte_idx = bytes_start + num_words * 64;
         while (byte_idx < bytes_end) : (byte_idx += 1) {
-            var byte = validity[byte_idx];
+            var byte = bitmap[byte_idx];
             while (byte != 0) {
                 const t = byte & negate(byte);
                 const r: u8 = @ctz(byte);
@@ -161,7 +183,7 @@ pub fn for_each(
     if (bytes_end * 8 < offset + len) {
         const end_bits = (offset + len) % 8;
         const base_offset = (offset + len) / 8 * 8;
-        var end_byte = validity[bytes_end] & BYTE_MASK[end_bits];
+        var end_byte = bitmap[bytes_end] & BYTE_MASK[end_bits];
         while (end_byte != 0) {
             const t = end_byte & negate(end_byte);
             const r: u8 = @ctz(end_byte);
@@ -214,13 +236,13 @@ test num_bytes {
     try testing.expectEqual(2, num_bytes(16));
 }
 
-test count_nulls {
+test count_unset_bits {
     const validity = &[_]u8{ 0b11110110, 0b00000001 };
 
-    try testing.expectEqual(0, count_nulls(validity, 1, 2));
-    try testing.expectEqual(1, count_nulls(validity, 0, 3));
-    try testing.expectEqual(1, count_nulls(validity, 8, 2));
-    try testing.expectEqual(4, count_nulls(validity, 8, 5));
-    try testing.expectEqual(6, count_nulls(validity, 8, 7));
-    try testing.expectEqual(2, count_nulls(validity, 1, 9));
+    try testing.expectEqual(0, count_unset_bits(validity, 1, 2));
+    try testing.expectEqual(1, count_unset_bits(validity, 0, 3));
+    try testing.expectEqual(1, count_unset_bits(validity, 8, 2));
+    try testing.expectEqual(4, count_unset_bits(validity, 8, 5));
+    try testing.expectEqual(6, count_unset_bits(validity, 8, 7));
+    try testing.expectEqual(2, count_unset_bits(validity, 1, 9));
 }

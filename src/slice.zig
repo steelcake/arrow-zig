@@ -21,7 +21,7 @@ fn slice_impl(validity: ?[]const u8, base: OffsetLen, offset: u32, len: u32) Off
     var out = OffsetLen{ .offset = base.offset + offset, .len = len, .null_count = 0 };
     if (base.null_count > 0) {
         const v = validity orelse unreachable;
-        out.null_count = bitmap.count_nulls(v, out.offset, out.len);
+        out.null_count = bitmap.count_unset_bits(v, out.offset, out.len);
     }
 
     return out;

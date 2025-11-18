@@ -857,7 +857,7 @@ pub fn validity(input: *FuzzInput, offset: u32, len: u32, alloc: Allocator) Erro
         }
     }
 
-    return .{ .validity = v, .null_count = bitmap.count_nulls(v, offset, len) };
+    return .{ .validity = v, .null_count = bitmap.count_unset_bits(v, offset, len) };
 }
 
 pub fn data_type(
