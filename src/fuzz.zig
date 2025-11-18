@@ -20,6 +20,39 @@ const bitmap = @import("./bitmap.zig");
 
 const fuzz_input = @import("./fuzz_input.zig");
 
+fn fuzz_bitmap_count_nulls(ctx: void, input: []const u8) anyerror!void {
+    _ = ctx;
+
+    if (input.len < 2) {
+        return;
+    }
+
+    const len: u32 = input[0];
+    const offset: u32 = input[0];
+
+    const num_bytes: u32 = (len + offset + 7) / 8;
+
+    if (input.len < 2 + num_bytes) return;
+
+    const i = input[2 .. 2 + num_bytes];
+
+    const n_nulls = bitmap.count_nulls(i, offset, len);
+
+    var check: u32 = 0;
+    var idx: u32 = offset;
+    while (idx < offset + len) : (idx += 1) {
+        if (!bitmap.get(i, idx)) {
+            check += 1;
+        }
+    }
+
+    std.debug.assert(check == n_nulls);
+}
+
+test fuzz_bitmap_count_nulls {
+    try std.testing.fuzz({}, fuzz_bitmap_count_nulls, .{});
+}
+
 fn fuzz_bitmap_for_each(out: []u8, input: []const u8) anyerror!void {
     if (input.len < 2) {
         return;
@@ -38,7 +71,14 @@ fn fuzz_bitmap_for_each(out: []u8, input: []const u8) anyerror!void {
     // o_O
     @memset(o, 0);
 
-    bitmap.for_each([]u8, bitmap.set, o, i, offset, len);
+    const Closure = struct {
+        fn process(outs: []u8, idx: u32) void {
+            std.debug.assert(!bitmap.get(outs, idx));
+            bitmap.set(outs, idx);
+        }
+    };
+
+    bitmap.for_each([]u8, Closure.process, o, i, offset, len);
 
     var idx: u32 = offset;
     while (idx < offset + len) : (idx += 1) {
