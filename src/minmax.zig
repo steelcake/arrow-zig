@@ -21,6 +21,10 @@ pub fn check_minmax_primitive(comptime op: Op, comptime T: type, minmax_result: 
         return;
     };
 
+    if (@typeInfo(T) == .float) {
+        std.debug.assert(!std.math.isNan(minmax_val));
+    }
+
     var found = false;
 
     if (array.null_count > 0) {
@@ -66,10 +70,6 @@ pub fn check_minmax_primitive(comptime op: Op, comptime T: type, minmax_result: 
                 .max => std.debug.assert(minmax_val >= v),
             }
         }
-    }
-
-    if (@typeInfo(T) == .float and std.math.isNan(minmax_val)) {
-        return;
     }
 
     std.debug.assert(found);
