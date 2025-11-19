@@ -768,3 +768,340 @@ pub fn check_data_type(array: *const arr.Array, expected: *const DataType) bool 
         },
     }
 }
+
+pub fn empty_primitive_array(comptime T: type) arr.PrimitiveArray(T) {
+    return arr.PrimitiveArray(T){
+        .len = 0,
+        .values = &.{},
+        .offset = 0,
+        .validity = null,
+        .null_count = 0,
+    };
+}
+
+pub fn empty_binary_array(
+    comptime index_t: arr.IndexType,
+    alloc: Allocator,
+) error{OutOfMemory}!arr.GenericBinaryArray(index_t) {
+    const offsets = try alloc.alloc(index_t.to_type(), 1);
+    offsets[0] = 0;
+
+    return arr.GenericBinaryArray(index_t){
+        .validity = null,
+        .offset = 0,
+        .len = 0,
+        .offsets = offsets,
+        .data = &.{},
+        .null_count = 0,
+    };
+}
+
+pub fn empty_null_array() arr.NullArray {
+    return arr.NullArray{
+        .len = 0,
+    };
+}
+
+pub fn empty_bool_array() arr.BoolArray {
+    return arr.BoolArray{
+        .null_count = 0,
+        .len = 0,
+        .offset = 0,
+        .validity = null,
+        .values = &.{},
+    };
+}
+
+pub fn empty_binary_view_array() arr.BinaryViewArray {
+    return arr.BinaryViewArray{
+        .validity = null,
+        .offset = 0,
+        .len = 0,
+        .null_count = 0,
+        .views = &.{},
+        .buffers = &.{},
+    };
+}
+
+pub fn empty_decimal_array(comptime dec_t: arr.DecimalInt, params: arr.DecimalParams) arr.DecimalArray(dec_t) {
+    return arr.DecimalArray(dec_t){
+        .inner = empty_primitive_array(dec_t.to_type()),
+        .params = params,
+    };
+}
+
+pub fn empty_fixed_size_binary_array(byte_width: i32) arr.FixedSizeBinaryArray {
+    return arr.FixedSizeBinaryArray{
+        .null_count = 0,
+        .len = 0,
+        .offset = 0,
+        .validity = null,
+        .data = &.{},
+        .byte_width = byte_width,
+    };
+}
+
+pub fn empty_date_array(comptime backing_t: arr.IndexType) arr.DateArray(backing_t) {
+    return arr.DateArray(backing_t){
+        .inner = empty_primitive_array(backing_t.to_type()),
+    };
+}
+
+pub fn empty_time_array(
+    comptime backing_t: arr.IndexType,
+    unit: arr.TimeArray(backing_t).Unit,
+) arr.TimeArray(backing_t) {
+    return arr.TimeArray(backing_t){
+        .inner = empty_primitive_array(backing_t.to_type()),
+        .unit = unit,
+    };
+}
+
+pub fn empty_timestamp_array(ts: arr.Timestamp) arr.TimestampArray {
+    return arr.TimestampArray{
+        .inner = empty_primitive_array(i64),
+        .ts = ts,
+    };
+}
+
+pub fn empty_duration_array(unit: arr.TimestampUnit) arr.DurationArray {
+    return arr.DurationArray{
+        .unit = unit,
+        .inner = empty_primitive_array(i64),
+    };
+}
+
+pub fn empty_interval_array(comptime interval_t: arr.IntervalType) arr.IntervalArray(interval_t) {
+    return arr.IntervalArray(interval_t){
+        .inner = empty_primitive_array(interval_t.to_type()),
+    };
+}
+
+pub fn empty_list_array(
+    comptime index_t: arr.IndexType,
+    inner_t: *const DataType,
+    alloc: Allocator,
+) error{OutOfMemory}!arr.GenericListArray(index_t) {
+    const offsets = try alloc.alloc(index_t.to_type(), 1);
+    offsets[0] = 0;
+
+    const inner = try alloc.create(arr.Array);
+    inner.* = try empty_array(inner_t, alloc);
+
+    return arr.GenericListArray(index_t){
+        .inner = inner,
+        .validity = null,
+        .offset = 0,
+        .len = 0,
+        .null_count = 0,
+        .offsets = offsets,
+    };
+}
+
+pub fn empty_list_view_array(
+    comptime index_t: arr.IndexType,
+    inner_t: *const DataType,
+    alloc: Allocator,
+) error{OutOfMemory}!arr.GenericListViewArray(index_t) {
+    const inner = try alloc.create(arr.Array);
+    inner.* = try empty_array(inner_t, alloc);
+
+    return arr.GenericListViewArray(index_t){
+        .inner = inner,
+        .null_count = 0,
+        .len = 0,
+        .offset = 0,
+        .validity = null,
+        .offsets = &.{},
+        .sizes = &.{},
+    };
+}
+
+pub fn empty_fixed_size_list_array(
+    dt: *const FixedSizeListType,
+    alloc: Allocator,
+) error{OutOfMemory}!arr.FixedSizeListArray {
+    const inner = try alloc.create(arr.Array);
+    inner.* = try empty_array(&dt.inner, alloc);
+
+    return arr.FixedSizeListArray{
+        .validity = null,
+        .offset = 0,
+        .len = 0,
+        .null_count = 0,
+        .inner = inner,
+        .item_width = dt.item_width,
+    };
+}
+
+pub fn empty_struct_array(
+    dt: *const StructType,
+    alloc: Allocator,
+) error{OutOfMemory}!arr.StructArray {
+    const field_names = try alloc.alloc([:0]const u8, dt.field_names.len);
+    for (0..field_names.len) |fn_idx| {
+        field_names[fn_idx] = try alloc.dupeZ(u8, dt.field_names[fn_idx]);
+    }
+
+    const field_values = try alloc.alloc(arr.Array, dt.field_types.len);
+    for (0..field_values.len) |fv_idx| {
+        field_values[fv_idx] = try empty_array(&dt.field_types[fv_idx], alloc);
+    }
+
+    return arr.StructArray{
+        .null_count = 0,
+        .len = 0,
+        .offset = 0,
+        .validity = null,
+        .field_names = field_names,
+        .field_values = field_values,
+    };
+}
+
+pub fn empty_map_array(
+    dt: *const MapType,
+    alloc: Allocator,
+) error{OutOfMemory}!arr.MapArray {
+    const offsets = try alloc.alloc(i32, 1);
+    offsets[0] = 0;
+
+    const entries = try empty_struct_array(
+        &StructType{
+            .field_types = &.{ dt.key.to_data_type(), dt.value },
+            .field_names = &.{ "keys", "values" },
+        },
+        alloc,
+    );
+
+    return arr.MapArray{
+        .keys_are_sorted = false,
+        .offset = 0,
+        .len = 0,
+        .null_count = 0,
+        .validity = null,
+        .offsets = offsets,
+        .entries = entries,
+    };
+}
+
+pub fn empty_union_array(dt: *const UnionType, alloc: Allocator) error{OutOfMemory}!arr.UnionArray {
+    const field_names = try alloc.alloc([:0]const u8, dt.field_names.len);
+    for (0..field_names.len) |fn_idx| {
+        field_names[fn_idx] = try alloc.dupeZ(u8, dt.field_names[fn_idx]);
+    }
+
+    const children = try alloc.alloc(arr.Array, dt.field_types.len);
+    for (0..children.len) |c_idx| {
+        children[c_idx] = try empty_array(&dt.field_types[c_idx], alloc);
+    }
+
+    const type_id_set = try alloc.dupe(i8, dt.type_id_set);
+
+    return arr.UnionArray{
+        .len = 0,
+        .offset = 0,
+        .field_names = field_names,
+        .children = children,
+        .type_id_set = type_id_set,
+        .type_ids = &.{},
+    };
+}
+
+pub fn empty_run_end_encoded_array(
+    dt: *const RunEndEncodedType,
+    alloc: Allocator,
+) error{OutOfMemory}!arr.RunEndArray {
+    const run_ends = try alloc.create(arr.Array);
+    run_ends.* = try empty_array(&dt.run_end.to_data_type(), alloc);
+
+    const values = try alloc.create(arr.Array);
+    values.* = try empty_array(&dt.value, alloc);
+
+    return arr.RunEndArray{
+        .run_ends = run_ends,
+        .values = values,
+        .offset = 0,
+        .len = 0,
+    };
+}
+
+pub fn empty_dict_array(
+    dt: *const DictType,
+    alloc: Allocator,
+) error{OutOfMemory}!arr.DictArray {
+    const keys = try alloc.create(arr.Array);
+    keys.* = try empty_array(&dt.key.to_data_type(), alloc);
+
+    const values = try alloc.create(arr.Array);
+    values.* = try empty_array(&dt.value, alloc);
+
+    return arr.DictArray{
+        .is_ordered = false,
+        .offset = 0,
+        .len = 0,
+        .keys = keys,
+        .values = values,
+    };
+}
+
+pub fn empty_array(dt: *const DataType, alloc: Allocator) error{OutOfMemory}!arr.Array {
+    return switch (dt.*) {
+        .null => .{ .null = empty_null_array() },
+        .i8 => .{ .i8 = empty_primitive_array(i8) },
+        .i16 => .{ .i16 = empty_primitive_array(i16) },
+        .i32 => .{ .i32 = empty_primitive_array(i32) },
+        .i64 => .{ .i64 = empty_primitive_array(i64) },
+        .u8 => .{ .u8 = empty_primitive_array(u8) },
+        .u16 => .{ .u16 = empty_primitive_array(u16) },
+        .u32 => .{ .u32 = empty_primitive_array(u32) },
+        .u64 => .{ .u64 = empty_primitive_array(u64) },
+        .f16 => .{ .f16 = empty_primitive_array(f16) },
+        .f32 => .{ .f32 = empty_primitive_array(f32) },
+        .f64 => .{ .f64 = empty_primitive_array(f64) },
+        .binary => .{ .binary = empty_binary_array(.i32) },
+        .large_binary => .{ .large_binary = empty_binary_array(.i64) },
+        .utf8 => .{ .utf8 = .{ .inner = empty_binary_array(.i32) } },
+        .large_utf8 => .{ .large_utf8 = .{ .inner = empty_binary_array(.i64) } },
+        .bool => .{ .bool = empty_bool_array() },
+        .binary_view => .{ .binary_view = empty_binary_view_array() },
+        .utf8_view => .{ .utf8_view = .{ .inner = empty_binary_view_array() } },
+        .decimal32 => |a| .{ .decimal32 = empty_decimal_array(.i32, a) },
+        .decimal64 => |a| .{ .decimal64 = empty_decimal_array(.i64, a) },
+        .decimal128 => |a| .{ .decimal128 = empty_decimal_array(.i128, a) },
+        .decimal256 => |a| .{ .decimal256 = empty_decimal_array(.i256, a) },
+        .fixed_size_binary => |a| .{ .fixed_size_binary = empty_fixed_size_binary_array(a) },
+        .date32 => .{ .date32 = empty_date_array(.i32) },
+        .date64 => .{ .date64 = empty_date_array(.i64) },
+        .time32 => |a| .{ .time32 = empty_time_array(.i32, a) },
+        .time64 => |a| .{ .time64 = empty_time_array(.i64, a) },
+        .timestamp => |a| .{ .timestamp = empty_timestamp_array(a) },
+        .duration => |a| .{ .duration = empty_duration_array(a) },
+        .interval_year_month => .{ .interval_year_month = empty_interval_array(.year_month) },
+        .interval_day_time => .{
+            .interval_day_time = empty_interval_array(.day_time),
+        },
+        .interval_month_day_nano => .{
+            .interval_month_day_nano = empty_interval_array(.month_day_nano),
+        },
+        .list => |a| .{ .list = try empty_list_array(.i32, a) },
+        .large_list => |a| .{ .large_list = try empty_list_array(.i64, a) },
+        .list_view => |a| .{ .list_view = try empty_list_view_array(.i32, a) },
+        .large_list_view => |a| .{ .large_list_view = try empty_list_view_array(.i64, a) },
+        .fixed_size_list => |a| .{ .fixed_size_list = try empty_fixed_size_list_array(a, alloc) },
+        .struct_ => |a| .{ .struct_ = try empty_struct_array(a, alloc) },
+        .map => |a| .{ .map = try empty_map_array(a, alloc) },
+        .dense_union => |a| .{
+            .dense_union = arr.DenseUnionArray{
+                .offsets = &.{},
+                .inner = try empty_union_array(a, alloc),
+            },
+        },
+        .sparse_union => |a| .{
+            .sparse_union = arr.SparseUnionArray{
+                .inner = try empty_union_array(a, alloc),
+            },
+        },
+        .run_end_encoded => |a| .{ .run_end_encoded = try empty_run_end_encoded_array(a, alloc) },
+        .dict => |a| .{ .dict = try empty_dict_array(a, alloc) },
+    };
+}
