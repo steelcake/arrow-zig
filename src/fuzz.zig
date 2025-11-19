@@ -32,6 +32,8 @@ fn fuzz_empty_array(ctx: void, input: *FuzzInput, dbg_alloc: Allocator) fuzzin.E
     const array = data_type.empty_array(&dt, arena.allocator()) catch unreachable;
     validate.validate_array(&array) catch unreachable;
     data_type.check_data_type(&array, &dt) catch unreachable;
+
+    std.debug.assert(length.length(&array) == 0);
 }
 
 test fuzz_empty_array {
