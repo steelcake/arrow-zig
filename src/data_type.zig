@@ -1183,164 +1183,212 @@ pub fn all_null_primitive_array(
     };
 }
 
-pub fn empty_binary_array(
+pub fn all_null_binary_array(
     comptime index_t: arr.IndexType,
     len: u32,
     alloc: Allocator,
 ) error{OutOfMemory}!arr.GenericBinaryArray(index_t) {
-    const offsets = try alloc.alloc(index_t.to_type(), 1);
-    offsets[0] = 0;
+    const offsets = try alloc.alloc(index_t.to_type(), len + 1);
+    @memset(offsets, 0);
 
     return arr.GenericBinaryArray(index_t){
-        .validity = null,
+        .validity = try all_null_validity(len, alloc),
         .offset = 0,
-        .len = 0,
+        .len = len,
         .offsets = offsets,
         .data = &.{},
-        .null_count = 0,
+        .null_count = len,
     };
 }
 
-pub fn empty_null_array() arr.NullArray {
+pub fn all_null_null_array(len: u32) arr.NullArray {
     return arr.NullArray{
-        .len = 0,
+        .len = len,
     };
 }
 
-pub fn empty_bool_array() arr.BoolArray {
+pub fn all_null_bool_array(len: u32, alloc: Allocator) error{OutOfMemory}!arr.BoolArray {
     return arr.BoolArray{
-        .null_count = 0,
-        .len = 0,
+        .null_count = len,
+        .len = len,
         .offset = 0,
-        .validity = null,
-        .values = &.{},
+        .validity = try all_null_validity(len, alloc),
+        .values = try all_null_validity(len, alloc),
     };
 }
 
-pub fn empty_binary_view_array() arr.BinaryViewArray {
+pub fn all_null_binary_view_array(len: u32, alloc: Allocator) error{OutOfMemory}!arr.BinaryViewArray {
+    const views = try alloc.alloc(arr.BinaryView, len);
+    @memset(@as([]u8, @ptrCast(views)), 0);
+
     return arr.BinaryViewArray{
-        .validity = null,
+        .validity = try all_null_validity(len, alloc),
         .offset = 0,
-        .len = 0,
-        .null_count = 0,
-        .views = &.{},
+        .len = len,
+        .null_count = len,
+        .views = views,
         .buffers = &.{},
     };
 }
 
-pub fn empty_decimal_array(comptime dec_t: arr.DecimalInt, params: arr.DecimalParams) arr.DecimalArray(dec_t) {
+pub fn all_null_decimal_array(
+    comptime dec_t: arr.DecimalInt,
+    params: arr.DecimalParams,
+    len: u32,
+    alloc: Allocator,
+) error{OutOfMemory}!arr.DecimalArray(dec_t) {
     return arr.DecimalArray(dec_t){
-        .inner = empty_primitive_array(dec_t.to_type()),
+        .inner = all_null_primitive_array(dec_t.to_type(), len, alloc),
         .params = params,
     };
 }
 
-pub fn empty_fixed_size_binary_array(byte_width: i32) arr.FixedSizeBinaryArray {
+pub fn all_null_fixed_size_binary_array(
+    byte_width: i32,
+    len: u32,
+    alloc: Allocator,
+) error{OutOfMemory}!arr.FixedSizeBinaryArray {
+    const bw: u32 = @intCast(byte_width);
+    const data = try alloc.alloc(u8, bw * len);
+    @memset(data, 0);
+
     return arr.FixedSizeBinaryArray{
-        .null_count = 0,
-        .len = 0,
+        .null_count = len,
+        .len = len,
         .offset = 0,
-        .validity = null,
-        .data = &.{},
+        .validity = try all_null_validity(len, alloc),
+        .data = data,
         .byte_width = byte_width,
     };
 }
 
-pub fn empty_date_array(comptime backing_t: arr.IndexType) arr.DateArray(backing_t) {
+pub fn all_null_date_array(
+    comptime backing_t: arr.IndexType,
+    len: u32,
+    alloc: Allocator,
+) error{OutOfMemory}!arr.DateArray(backing_t) {
     return arr.DateArray(backing_t){
-        .inner = empty_primitive_array(backing_t.to_type()),
+        .inner = try empty_primitive_array(backing_t.to_type(), len, alloc),
     };
 }
 
-pub fn empty_time_array(
+pub fn all_null_time_array(
     comptime backing_t: arr.IndexType,
     unit: arr.TimeArray(backing_t).Unit,
-) arr.TimeArray(backing_t) {
+    len: u32,
+    alloc: Allocator,
+) error{OutOfMemory}!arr.TimeArray(backing_t) {
     return arr.TimeArray(backing_t){
-        .inner = empty_primitive_array(backing_t.to_type()),
+        .inner = try empty_primitive_array(backing_t.to_type(), len, alloc),
         .unit = unit,
     };
 }
 
-pub fn empty_timestamp_array(ts: arr.Timestamp) arr.TimestampArray {
+pub fn all_null_timestamp_array(
+    ts: arr.Timestamp,
+    len: u32,
+    alloc: Allocator,
+) error{OutOfMemory}!arr.TimestampArray {
     return arr.TimestampArray{
-        .inner = empty_primitive_array(i64),
+        .inner = try empty_primitive_array(i64, len, alloc),
         .ts = ts,
     };
 }
 
-pub fn empty_duration_array(unit: arr.TimestampUnit) arr.DurationArray {
+pub fn all_null_duration_array(
+    unit: arr.TimestampUnit,
+    len: u32,
+    alloc: Allocator,
+) error{OutOfMemory}!arr.DurationArray {
     return arr.DurationArray{
         .unit = unit,
-        .inner = empty_primitive_array(i64),
+        .inner = try empty_primitive_array(i64, len, alloc),
     };
 }
 
-pub fn empty_interval_array(comptime interval_t: arr.IntervalType) arr.IntervalArray(interval_t) {
+pub fn all_null_interval_array(
+    comptime interval_t: arr.IntervalType,
+    len: u32,
+    alloc: Allocator,
+) error{OutOfMemory}!arr.IntervalArray(interval_t) {
     return arr.IntervalArray(interval_t){
-        .inner = empty_primitive_array(interval_t.to_type()),
+        .inner = try empty_primitive_array(interval_t.to_type(), len, alloc),
     };
 }
 
-pub fn empty_list_array(
+pub fn all_null_list_array(
     comptime index_t: arr.IndexType,
     inner_t: *const DataType,
+    len: u32,
     alloc: Allocator,
 ) error{OutOfMemory}!arr.GenericListArray(index_t) {
-    const offsets = try alloc.alloc(index_t.to_type(), 1);
-    offsets[0] = 0;
+    const offsets = try alloc.alloc(index_t.to_type(), len + 1);
+    @memset(offsets, 0);
 
     const inner = try alloc.create(arr.Array);
     inner.* = try empty_array(inner_t, alloc);
 
     return arr.GenericListArray(index_t){
         .inner = inner,
-        .validity = null,
+        .validity = try all_null_validity(len, alloc),
         .offset = 0,
-        .len = 0,
-        .null_count = 0,
+        .len = len,
+        .null_count = len,
         .offsets = offsets,
     };
 }
 
-pub fn empty_list_view_array(
+pub fn all_null_list_view_array(
     comptime index_t: arr.IndexType,
     inner_t: *const DataType,
+    len: u32,
     alloc: Allocator,
 ) error{OutOfMemory}!arr.GenericListViewArray(index_t) {
+    const I = index_t.to_type();
+
     const inner = try alloc.create(arr.Array);
     inner.* = try empty_array(inner_t, alloc);
 
+    const offsets = try alloc.alloc(I, len);
+    @memset(offsets, 0);
+
+    const sizes = try alloc.alloc(I, len);
+    @memset(offsets, 0);
+
     return arr.GenericListViewArray(index_t){
         .inner = inner,
-        .null_count = 0,
-        .len = 0,
+        .null_count = len,
+        .len = len,
         .offset = 0,
-        .validity = null,
-        .offsets = &.{},
-        .sizes = &.{},
+        .validity = try all_null_validity(len, alloc),
+        .offsets = offsets,
+        .sizes = sizes,
     };
 }
 
-pub fn empty_fixed_size_list_array(
+pub fn all_null_fixed_size_list_array(
     dt: *const FixedSizeListType,
+    len: u32,
     alloc: Allocator,
 ) error{OutOfMemory}!arr.FixedSizeListArray {
+    const iw: u32 = @intCast(dt.item_width);
+
     const inner = try alloc.create(arr.Array);
-    inner.* = try empty_array(&dt.inner, alloc);
+    inner.* = try all_null_array(&dt.inner, len * iw, alloc);
 
     return arr.FixedSizeListArray{
-        .validity = null,
+        .validity = try all_null_validity(len, alloc),
         .offset = 0,
-        .len = 0,
-        .null_count = 0,
+        .len = len,
+        .null_count = len,
         .inner = inner,
         .item_width = dt.item_width,
     };
 }
 
-pub fn empty_struct_array(
+pub fn all_null_struct_array(
     dt: *const StructType,
+    len: u32,
     alloc: Allocator,
 ) error{OutOfMemory}!arr.StructArray {
     const field_names = try alloc.alloc([:0]const u8, dt.field_names.len);
@@ -1350,25 +1398,26 @@ pub fn empty_struct_array(
 
     const field_values = try alloc.alloc(arr.Array, dt.field_types.len);
     for (0..field_values.len) |fv_idx| {
-        field_values[fv_idx] = try empty_array(&dt.field_types[fv_idx], alloc);
+        field_values[fv_idx] = try all_null_array(&dt.field_types[fv_idx], len, alloc);
     }
 
     return arr.StructArray{
-        .null_count = 0,
-        .len = 0,
+        .null_count = len,
+        .len = len,
         .offset = 0,
-        .validity = null,
+        .validity = try all_null_validity(len, alloc),
         .field_names = field_names,
         .field_values = field_values,
     };
 }
 
-pub fn empty_map_array(
+pub fn all_null_map_array(
     dt: *const MapType,
+    len: u32,
     alloc: Allocator,
 ) error{OutOfMemory}!arr.MapArray {
-    const offsets = try alloc.alloc(i32, 1);
-    offsets[0] = 0;
+    const offsets = try alloc.alloc(i32, len + 1);
+    @memset(offsets, 0);
 
     const entries = try alloc.create(arr.StructArray);
     entries.* = try empty_struct_array(
@@ -1382,15 +1431,19 @@ pub fn empty_map_array(
     return arr.MapArray{
         .keys_are_sorted = false,
         .offset = 0,
-        .len = 0,
-        .null_count = 0,
-        .validity = null,
+        .len = len,
+        .null_count = len,
+        .validity = try all_null_validity(len, alloc),
         .offsets = offsets,
         .entries = entries,
     };
 }
 
-pub fn empty_union_array(dt: *const UnionType, alloc: Allocator) error{OutOfMemory}!arr.UnionArray {
+pub fn all_null_sparse_union_array(
+    dt: *const UnionType,
+    len: u32,
+    alloc: Allocator,
+) error{OutOfMemory}!arr.SparseUnionArray {
     const field_names = try alloc.alloc([:0]const u8, dt.field_names.len);
     for (0..field_names.len) |fn_idx| {
         field_names[fn_idx] = try alloc.dupeZ(u8, dt.field_names[fn_idx]);
@@ -1398,45 +1451,120 @@ pub fn empty_union_array(dt: *const UnionType, alloc: Allocator) error{OutOfMemo
 
     const children = try alloc.alloc(arr.Array, dt.field_types.len);
     for (0..children.len) |c_idx| {
+        children[c_idx] = try all_null_array(&dt.field_types[c_idx], len, alloc);
+    }
+
+    const type_id_set = try alloc.dupe(i8, dt.type_id_set);
+
+    const type_ids = try alloc.alloc(i8, len);
+    @memset(type_ids, type_id_set[0]);
+
+    const inner = arr.UnionArray{
+        .len = len,
+        .offset = 0,
+        .field_names = field_names,
+        .children = children,
+        .type_id_set = type_id_set,
+        .type_ids = type_ids,
+    };
+
+    return arr.SparseUnionArray{
+        .inner = inner,
+    };
+}
+
+pub fn all_null_dense_union_array(
+    dt: *const UnionType,
+    len: u32,
+    alloc: Allocator,
+) error{OutOfMemory}!arr.DenseUnionArray {
+    const field_names = try alloc.alloc([:0]const u8, dt.field_names.len);
+    for (0..field_names.len) |fn_idx| {
+        field_names[fn_idx] = try alloc.dupeZ(u8, dt.field_names[fn_idx]);
+    }
+
+    const children = try alloc.alloc(arr.Array, dt.field_types.len);
+    children[0] = try all_null_array(&dt.field_types[0], 1, alloc);
+    for (1..children.len) |c_idx| {
         children[c_idx] = try empty_array(&dt.field_types[c_idx], alloc);
     }
 
     const type_id_set = try alloc.dupe(i8, dt.type_id_set);
 
-    return arr.UnionArray{
-        .len = 0,
+    const type_ids = try alloc.alloc(i8, len);
+    @memset(type_ids, type_id_set[0]);
+
+    const inner = arr.UnionArray{
+        .len = len,
         .offset = 0,
         .field_names = field_names,
         .children = children,
         .type_id_set = type_id_set,
-        .type_ids = &.{},
+        .type_ids = type_ids,
+    };
+
+    const offsets = try alloc.alloc(i32, len);
+    @memset(offsets, 0);
+
+    return arr.DenseUnionArray{
+        .inner = inner,
+        .offsets = offsets,
     };
 }
 
-pub fn empty_run_end_encoded_array(
+pub fn all_null_run_end_encoded_array(
     dt: *const RunEndEncodedType,
+    len: u32,
     alloc: Allocator,
 ) error{OutOfMemory}!arr.RunEndArray {
+    const MakeRunEnds = struct {
+        fn make_run_ends(
+            comptime T: type,
+            len_i: u32,
+            alloc_i: Allocator,
+        ) error{OutOfMemory}!arr.PrimitiveArray(T) {
+            const re = try alloc_i.alloc(T, len_i);
+            var v: T = 1;
+            for (0..re.len) |idx| {
+                re[idx] = v;
+                v += 1;
+            }
+
+            return arr.PrimitiveArray(T){
+                .len = len_i,
+                .values = re,
+                .offset = 0,
+                .validity = null,
+                .null_count = 0,
+            };
+        }
+    };
+
     const run_ends = try alloc.create(arr.Array);
-    run_ends.* = try empty_array(&dt.run_end.to_data_type(), alloc);
+    run_ends.* = switch (dt.run_end) {
+        .i16 => try MakeRunEnds.make_run_ends(i16, len, alloc),
+        .i32 => try MakeRunEnds.make_run_ends(i32, len, alloc),
+        .i64 => try MakeRunEnds.make_run_ends(i64, len, alloc),
+    };
 
     const values = try alloc.create(arr.Array);
-    values.* = try empty_array(&dt.value, alloc);
+    values.* = try all_null_array(&dt.value, alloc);
 
     return arr.RunEndArray{
         .run_ends = run_ends,
         .values = values,
         .offset = 0,
-        .len = 0,
+        .len = len,
     };
 }
 
-pub fn empty_dict_array(
+pub fn all_null_dict_array(
     dt: *const DictType,
+    len: u32,
     alloc: Allocator,
 ) error{OutOfMemory}!arr.DictArray {
     const keys = try alloc.create(arr.Array);
-    keys.* = try empty_array(&dt.key.to_data_type(), alloc);
+    keys.* = try all_null_array(&dt.key.to_data_type(), alloc);
 
     const values = try alloc.create(arr.Array);
     values.* = try empty_array(&dt.value, alloc);
@@ -1444,7 +1572,7 @@ pub fn empty_dict_array(
     return arr.DictArray{
         .is_ordered = false,
         .offset = 0,
-        .len = 0,
+        .len = len,
         .keys = keys,
         .values = values,
     };
@@ -1499,15 +1627,10 @@ pub fn all_null_array(dt: *const DataType, len: u32, alloc: Allocator) error{Out
         .struct_ => |a| .{ .struct_ = try all_null_struct_array(a, len, alloc) },
         .map => |a| .{ .map = try all_null_map_array(a, len, alloc) },
         .dense_union => |a| .{
-            .dense_union = arr.DenseUnionArray{
-                .offsets = &.{},
-                .inner = try all_null_union_array(a, len, alloc),
-            },
+            .dense_union = try all_null_dense_union_array(a, len, alloc),
         },
         .sparse_union => |a| .{
-            .sparse_union = arr.SparseUnionArray{
-                .inner = try all_null_union_array(a, len, alloc),
-            },
+            .sparse_union = try all_null_sparse_union_array(a, len, alloc),
         },
         .run_end_encoded => |a| .{ .run_end_encoded = try all_null_run_end_encoded_array(a, len, alloc) },
         .dict => |a| .{ .dict = try all_null_dict_array(a, len, alloc) },
