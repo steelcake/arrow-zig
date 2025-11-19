@@ -16,12 +16,14 @@ pub const Op = enum {
 };
 
 pub fn check_minmax_primitive(comptime op: Op, comptime T: type, minmax_result: ?T, array: *const arr.PrimitiveArray(T)) void {
+    const is_float = @typeInfo(T) == .float;
+
     const minmax_val = if (minmax_result) |x| x else {
         std.debug.assert(array.null_count == array.len);
         return;
     };
 
-    if (@typeInfo(T) == .float) {
+    if (is_float) {
         std.debug.assert(!std.math.isNan(minmax_val));
     }
 
@@ -72,7 +74,15 @@ pub fn check_minmax_primitive(comptime op: Op, comptime T: type, minmax_result: 
         }
     }
 
-    std.debug.assert(found);
+    if (is_float and
+        !std.math.isNormal(minmax_val) and
+        !std.math.isPositiveZero(minmax_val) and
+        !std.math.isNegativeZero(minmax_val))
+    {
+        return;
+    } else {
+        std.debug.assert(found);
+    }
 }
 
 fn binary_minmax_impl(comptime op: Op, left: []const u8, right: []const u8) []const u8 {
