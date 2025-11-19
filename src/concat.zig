@@ -330,7 +330,7 @@ pub fn concat_dict(dt: data_type.DictType, arrays: []const arr.DictArray, alloc:
             else => unreachable,
         };
         std.debug.assert(keytype == dt.key);
-        std.debug.assert(data_type.check_data_type(array.values, &dt.value));
+        data_type.check_data_type(array.values, &dt.value) catch unreachable;
     }
 
     const values_list = try scratch_alloc.alloc(arr.Array, arrays.len);
@@ -378,7 +378,7 @@ pub fn concat_run_end_encoded(reet: data_type.RunEndEncodedType, arrays: []const
             else => unreachable,
         };
         std.debug.assert(retype == reet.run_end);
-        std.debug.assert(data_type.check_data_type(array.values, &reet.value));
+        data_type.check_data_type(array.values, &reet.value) catch unreachable;
     }
 
     var total_len: u32 = 0;
@@ -418,7 +418,7 @@ pub fn concat_list_view(comptime index_t: arr.IndexType, dt: data_type.DataType,
     const I = index_t.to_type();
 
     for (arrays) |array| {
-        std.debug.assert(data_type.check_data_type(array.inner, &dt));
+        data_type.check_data_type(array.inner, &dt) catch unreachable;
     }
 
     const inners = try scratch_alloc.alloc(arr.Array, arrays.len);
@@ -494,7 +494,7 @@ pub fn concat_list_view(comptime index_t: arr.IndexType, dt: data_type.DataType,
 /// Scratch alloc will be used to allocate intermediary slices, it can be deallocated after this function returns.
 pub fn concat_sparse_union(dt: data_type.UnionType, arrays: []const arr.SparseUnionArray, alloc: Allocator, scratch_alloc: Allocator) Error!arr.SparseUnionArray {
     for (arrays) |array| {
-        std.debug.assert(dt.check(&array.inner));
+        dt.check(&array.inner) catch unreachable;
     }
 
     const field_arrays = try scratch_alloc.alloc(arr.Array, arrays.len);
@@ -557,7 +557,7 @@ pub fn concat_sparse_union(dt: data_type.UnionType, arrays: []const arr.SparseUn
 /// Scratch alloc will be used to allocate intermediary slices, it can be deallocated after this function returns.
 pub fn concat_dense_union(dt: data_type.UnionType, arrays: []const arr.DenseUnionArray, alloc: Allocator, scratch_alloc: Allocator) Error!arr.DenseUnionArray {
     for (arrays) |array| {
-        std.debug.assert(dt.check(&array.inner));
+        dt.check(&array.inner) catch unreachable;
     }
 
     const field_arrays = try scratch_alloc.alloc(arr.Array, arrays.len);
@@ -644,7 +644,7 @@ pub fn concat_struct(dt: data_type.StructType, arrays: []const arr.StructArray, 
 
         std.debug.assert(array.field_values.len == dt.field_types.len);
         for (array.field_values, dt.field_types) |*afv, *dft| {
-            std.debug.assert(data_type.check_data_type(afv, dft));
+            data_type.check_data_type(afv, dft) catch unreachable;
         }
     }
 

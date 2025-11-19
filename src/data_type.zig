@@ -7,25 +7,21 @@ pub const StructType = struct {
     field_names: []const [:0]const u8,
     field_types: []const DataType,
 
-    pub fn eql(self: *const StructType, other: *const StructType) bool {
+    pub fn eql(self: *const StructType, other: *const StructType) Mismatch!void {
         std.debug.assert(self.field_names.len == self.field_types.len);
         if (self.field_names.len != other.field_names.len or self.field_types.len != other.field_types.len) {
-            return false;
+            return Mismatch.Mismatch;
         }
 
         for (self.field_names, other.field_names) |sfn, ofn| {
             if (!std.mem.eql(u8, sfn, ofn)) {
-                return false;
+                return Mismatch.Mismatch;
             }
         }
 
         for (self.field_types, other.field_types) |*sft, *oft| {
-            if (!sft.eql(oft)) {
-                return false;
-            }
+            try sft.eql(oft);
         }
-
-        return true;
     }
 };
 
@@ -34,30 +30,30 @@ pub const UnionType = struct {
     field_names: []const [:0]const u8,
     field_types: []const DataType,
 
-    pub fn eql(self: *const UnionType, other: *const UnionType) bool {
+    pub fn eql(self: *const UnionType, other: *const UnionType) Mismatch!void {
         std.debug.assert(self.field_names.len == self.field_types.len);
 
         if (self.field_names.len != other.field_names.len or self.field_types.len != other.field_types.len) {
-            return false;
+            return Mismatch.Mismatch;
         }
 
         for (self.field_names, other.field_names) |sfn, ofn| {
             if (!std.mem.eql(u8, sfn, ofn)) {
-                return false;
+                return Mismatch.Mismatch;
             }
         }
 
         for (self.field_types, other.field_types) |*sft, *oft| {
-            if (!sft.eql(oft)) {
-                return false;
-            }
+            try sft.eql(oft);
         }
 
-        return std.mem.eql(i8, self.type_id_set, other.type_id_set);
+        if (!std.mem.eql(i8, self.type_id_set, other.type_id_set)) {
+            return Mismatch.Mismatch;
+        }
     }
 
-    pub fn check(self: *const UnionType, array: *const arr.UnionArray) bool {
-        return check_union_data_type(array, self);
+    pub fn check(self: *const UnionType, array: *const arr.UnionArray) Mismatch!void {
+        try check_union_data_type(array, self);
     }
 };
 
@@ -99,21 +95,19 @@ pub const MapKeyType = union(enum) {
         };
     }
 
-    pub fn eql(self: *const MapKeyType, other: *const MapKeyType) bool {
+    pub fn eql(self: *const MapKeyType, other: *const MapKeyType) Mismatch!void {
         if (@intFromEnum(self.*) != @intFromEnum(other.*)) {
-            return false;
+            return Mismatch.Mismatch;
         }
 
         switch (self.*) {
             .fixed_size_binary => |sbw| {
                 if (sbw != other.fixed_size_binary) {
-                    return false;
+                    return Mismatch.Mismatch;
                 }
             },
             else => {},
         }
-
-        return true;
     }
 };
 
@@ -121,8 +115,9 @@ pub const MapType = struct {
     key: MapKeyType,
     value: DataType,
 
-    pub fn eql(self: *const MapType, other: *const MapType) bool {
-        return self.key.eql(&other.key) and self.value.eql(&other.value);
+    pub fn eql(self: *const MapType, other: *const MapType) Mismatch!void {
+        try self.key.eql(&other.key);
+        try self.value.eql(&other.value);
     }
 };
 
@@ -144,8 +139,11 @@ pub const RunEndEncodedType = struct {
     run_end: RunEndType,
     value: DataType,
 
-    pub fn eql(self: *const RunEndEncodedType, other: *const RunEndEncodedType) bool {
-        return self.run_end == other.run_end and self.value.eql(&other.value);
+    pub fn eql(self: *const RunEndEncodedType, other: *const RunEndEncodedType) Mismatch!void {
+        if (self.run_end != other.run_end) {
+            return Mismatch.Mismatch;
+        }
+        try self.value.eql(&other.value);
     }
 };
 
@@ -177,8 +175,12 @@ pub const DictType = struct {
     key: DictKeyType,
     value: DataType,
 
-    pub fn eql(self: *const DictType, other: *const DictType) bool {
-        return self.key == other.key and self.value.eql(&other.value);
+    pub fn eql(self: *const DictType, other: *const DictType) Mismatch!void {
+        if (self.key != other.key) {
+            return Mismatch.Mismatch;
+        }
+
+        try self.value.eql(&other.value);
     }
 };
 
@@ -186,8 +188,12 @@ pub const FixedSizeListType = struct {
     inner: DataType,
     item_width: i32,
 
-    pub fn eql(self: *const FixedSizeListType, other: *const FixedSizeListType) bool {
-        return self.item_width == other.item_width and self.inner.eql(&other.inner);
+    pub fn eql(self: *const FixedSizeListType, other: *const FixedSizeListType) Mismatch!void {
+        if (self.item_width != other.item_width) {
+            return Mismatch.Mismatch;
+        }
+
+        try self.inner.eql(&other.inner);
     }
 };
 
@@ -238,87 +244,130 @@ pub const DataType = union(enum) {
     large_list_view: *const DataType,
     dict: *const DictType,
 
-    pub fn eql(self: *const DataType, other: *const DataType) bool {
+    pub fn eql(self: *const DataType, other: *const DataType) Mismatch!void {
         if (@intFromEnum(self.*) != @intFromEnum(other.*)) {
-            return false;
+            return Mismatch.Mismatch;
         }
 
         switch (self.*) {
-            .null, .i8, .i16, .i32, .i64, .u8, .u16, .u32, .u64, .f16, .f32, .f64, .binary, .utf8, .bool, .date32, .date64, .interval_year_month, .interval_day_time, .interval_month_day_nano, .fixed_size_binary, .large_binary, .large_utf8, .binary_view, .utf8_view => return true,
+            .null,
+            .i8,
+            .i16,
+            .i32,
+            .i64,
+            .u8,
+            .u16,
+            .u32,
+            .u64,
+            .f16,
+            .f32,
+            .f64,
+            .binary,
+            .utf8,
+            .bool,
+            .date32,
+            .date64,
+            .interval_year_month,
+            .interval_day_time,
+            .interval_month_day_nano,
+            .fixed_size_binary,
+            .large_binary,
+            .large_utf8,
+            .binary_view,
+            .utf8_view,
+            => {},
             .decimal32 => |params| {
                 const o_params = other.decimal32;
-                return params.scale == o_params.scale and params.precision == o_params.precision;
+                if (params.scale != o_params.scale or params.precision != o_params.precision) {
+                    return Mismatch.Mismatch;
+                }
             },
             .decimal64 => |params| {
                 const o_params = other.decimal64;
-                return params.scale == o_params.scale and params.precision == o_params.precision;
+                if (params.scale != o_params.scale or params.precision != o_params.precision) {
+                    return Mismatch.Mismatch;
+                }
             },
             .decimal128 => |params| {
                 const o_params = other.decimal128;
-                return params.scale == o_params.scale and params.precision == o_params.precision;
+                if (params.scale != o_params.scale or params.precision != o_params.precision) {
+                    return Mismatch.Mismatch;
+                }
             },
             .decimal256 => |params| {
                 const o_params = other.decimal256;
-                return params.scale == o_params.scale and params.precision == o_params.precision;
+                if (params.scale != o_params.scale or params.precision != o_params.precision) {
+                    return Mismatch.Mismatch;
+                }
             },
-            .time32 => |self_unit| return self_unit == other.time32,
-            .time64 => |self_unit| return self_unit == other.time64,
+            .time32 => |self_unit| {
+                if (self_unit != other.time32) {
+                    return Mismatch.Mismatch;
+                }
+            },
+            .time64 => |self_unit| {
+                if (self_unit != other.time64) {
+                    return Mismatch.Mismatch;
+                }
+            },
             .timestamp => |self_ts| {
                 const o_ts = other.timestamp;
 
                 if (self_ts.timezone) |stz| {
                     if (o_ts.timezone) |otz| {
                         if (!std.mem.eql(u8, stz, otz)) {
-                            return false;
+                            return Mismatch.Mismatch;
                         }
                     } else {
-                        return false;
+                        return Mismatch.Mismatch;
                     }
                 } else if (o_ts.timezone != null) {
-                    return false;
+                    return Mismatch.Mismatch;
                 }
 
-                return self_ts.unit == o_ts.unit;
+                if (self_ts.unit != o_ts.unit) {
+                    return Mismatch.Mismatch;
+                }
             },
-            .duration => |self_unit| return self_unit == other.duration,
-            .list => |self_dt| return self_dt.eql(other.list),
-            .fixed_size_list => |self_dt| return self_dt.eql(other.fixed_size_list),
-            .large_list => |self_dt| return self_dt.eql(other.large_list),
-            .list_view => |self_dt| return self_dt.eql(other.list_view),
-            .large_list_view => |self_dt| return self_dt.eql(other.large_list_view),
-            .struct_ => |self_struct| return self_struct.eql(other.struct_),
-            .dense_union => |self_union| return self_union.eql(other.dense_union),
-            .sparse_union => |self_union| return self_union.eql(other.sparse_union),
-            .map => |self_map| return self_map.eql(other.map),
-            .run_end_encoded => |self_ree| return self_ree.eql(other.run_end_encoded),
-            .dict => |self_dict| return self_dict.eql(other.dict),
+            .duration => |self_unit| {
+                if (self_unit != other.duration) {
+                    return Mismatch.Mismatch;
+                }
+            },
+            .list => |self_dt| try self_dt.eql(other.list),
+            .fixed_size_list => |self_dt| try self_dt.eql(other.fixed_size_list),
+            .large_list => |self_dt| try self_dt.eql(other.large_list),
+            .list_view => |self_dt| try self_dt.eql(other.list_view),
+            .large_list_view => |self_dt| try self_dt.eql(other.large_list_view),
+            .struct_ => |self_struct| try self_struct.eql(other.struct_),
+            .dense_union => |self_union| try self_union.eql(other.dense_union),
+            .sparse_union => |self_union| try self_union.eql(other.sparse_union),
+            .map => |self_map| try self_map.eql(other.map),
+            .run_end_encoded => |self_ree| try self_ree.eql(other.run_end_encoded),
+            .dict => |self_dict| try self_dict.eql(other.dict),
         }
     }
 };
 
-fn check_union_data_type(array: *const arr.UnionArray, dt: *const UnionType) bool {
+fn check_union_data_type(array: *const arr.UnionArray, dt: *const UnionType) Mismatch!void {
     if (!std.mem.eql(i8, dt.type_id_set, array.type_id_set)) {
-        return false;
+        return Mismatch.Mismatch;
     }
 
     std.debug.assert(dt.field_names.len == dt.field_types.len);
     if (dt.field_names.len != array.field_names.len or dt.field_types.len != array.children.len) {
-        return false;
+        return Mismatch.Mismatch;
     }
 
     for (dt.field_names, array.field_names) |dtfn, afn| {
         if (!std.mem.eql(u8, dtfn, afn)) {
-            return false;
+            return Mismatch.Mismatch;
         }
     }
 
     for (dt.field_types, array.children) |*dtft, *afv| {
-        if (!check_data_type(afv, dtft)) {
-            return false;
-        }
+        try check_data_type(afv, dtft);
     }
-
-    return true;
 }
 
 fn get_union_type(array: *const arr.UnionArray, alloc: Allocator) Error!*const UnionType {
@@ -560,145 +609,150 @@ pub fn get_data_type(array: *const arr.Array, alloc: Allocator) Error!DataType {
     }
 }
 
-pub fn check_data_type(array: *const arr.Array, expected: *const DataType) bool {
+pub const Mismatch = error{Mismatch};
+
+pub fn check_data_type(array: *const arr.Array, expected: *const DataType) Mismatch!void {
     switch (array.*) {
         .null => {
-            return expected.eql(&.{ .null = {} });
+            try expected.eql(&.{ .null = {} });
         },
         .i8 => {
-            return expected.eql(&.{ .i8 = {} });
+            try expected.eql(&.{ .i8 = {} });
         },
         .i16 => {
-            return expected.eql(&.{ .i16 = {} });
+            try expected.eql(&.{ .i16 = {} });
         },
         .i32 => {
-            return expected.eql(&.{ .i32 = {} });
+            try expected.eql(&.{ .i32 = {} });
         },
         .i64 => {
-            return expected.eql(&.{ .i64 = {} });
+            try expected.eql(&.{ .i64 = {} });
         },
         .u8 => {
-            return expected.eql(&.{ .u8 = {} });
+            try expected.eql(&.{ .u8 = {} });
         },
         .u16 => {
-            return expected.eql(&.{ .u16 = {} });
+            try expected.eql(&.{ .u16 = {} });
         },
         .u32 => {
-            return expected.eql(&.{ .u32 = {} });
+            try expected.eql(&.{ .u32 = {} });
         },
         .u64 => {
-            return expected.eql(&.{ .u64 = {} });
+            try expected.eql(&.{ .u64 = {} });
         },
         .f16 => {
-            return expected.eql(&.{ .f16 = {} });
+            try expected.eql(&.{ .f16 = {} });
         },
         .f32 => {
-            return expected.eql(&.{ .f32 = {} });
+            try expected.eql(&.{ .f32 = {} });
         },
         .f64 => {
-            return expected.eql(&.{ .f64 = {} });
+            try expected.eql(&.{ .f64 = {} });
         },
         .binary => {
-            return expected.eql(&.{ .binary = {} });
+            try expected.eql(&.{ .binary = {} });
         },
         .large_binary => {
-            return expected.eql(&.{ .large_binary = {} });
+            try expected.eql(&.{ .large_binary = {} });
         },
         .utf8 => {
-            return expected.eql(&.{ .utf8 = {} });
+            try expected.eql(&.{ .utf8 = {} });
         },
         .large_utf8 => {
-            return expected.eql(&.{ .large_utf8 = {} });
+            try expected.eql(&.{ .large_utf8 = {} });
         },
         .bool => {
-            return expected.eql(&.{ .bool = {} });
+            try expected.eql(&.{ .bool = {} });
         },
         .binary_view => {
-            return expected.eql(&.{ .binary_view = {} });
+            try expected.eql(&.{ .binary_view = {} });
         },
         .utf8_view => {
-            return expected.eql(&.{ .utf8_view = {} });
+            try expected.eql(&.{ .utf8_view = {} });
         },
         .decimal32 => |*a| {
-            return expected.eql(&.{ .decimal32 = a.params });
+            try expected.eql(&.{ .decimal32 = a.params });
         },
         .decimal64 => |*a| {
-            return expected.eql(&.{ .decimal64 = a.params });
+            try expected.eql(&.{ .decimal64 = a.params });
         },
         .decimal128 => |*a| {
-            return expected.eql(&.{ .decimal128 = a.params });
+            try expected.eql(&.{ .decimal128 = a.params });
         },
         .decimal256 => |*a| {
-            return expected.eql(&.{ .decimal256 = a.params });
+            try expected.eql(&.{ .decimal256 = a.params });
         },
         .fixed_size_binary => |*a| {
-            return expected.eql(&.{ .fixed_size_binary = a.byte_width });
+            try expected.eql(&.{ .fixed_size_binary = a.byte_width });
         },
         .date32 => {
-            return expected.eql(&.{ .date32 = {} });
+            try expected.eql(&.{ .date32 = {} });
         },
         .date64 => {
-            return expected.eql(&.{ .date64 = {} });
+            try expected.eql(&.{ .date64 = {} });
         },
         .time32 => |*a| {
-            return expected.eql(&.{ .time32 = a.unit });
+            try expected.eql(&.{ .time32 = a.unit });
         },
         .time64 => |*a| {
-            return expected.eql(&.{ .time64 = a.unit });
+            try expected.eql(&.{ .time64 = a.unit });
         },
         .timestamp => |*a| {
-            return expected.eql(&.{ .timestamp = a.ts });
+            try expected.eql(&.{ .timestamp = a.ts });
         },
         .duration => |*a| {
-            return expected.eql(&.{ .duration = a.unit });
+            try expected.eql(&.{ .duration = a.unit });
         },
         .interval_year_month => {
-            return expected.eql(&.{ .interval_year_month = {} });
+            try expected.eql(&.{ .interval_year_month = {} });
         },
         .interval_day_time => {
-            return expected.eql(&.{ .interval_day_time = {} });
+            try expected.eql(&.{ .interval_day_time = {} });
         },
         .interval_month_day_nano => {
-            return expected.eql(&.{ .interval_month_day_nano = {} });
+            try expected.eql(&.{ .interval_month_day_nano = {} });
         },
         .list => |*a| {
             switch (expected.*) {
                 .list => |dt| {
-                    return check_data_type(a.inner, dt);
+                    try check_data_type(a.inner, dt);
                 },
-                else => return false,
+                else => return Mismatch.Mismatch,
             }
         },
         .large_list => |*a| {
             switch (expected.*) {
                 .large_list => |dt| {
-                    return check_data_type(a.inner, dt);
+                    try check_data_type(a.inner, dt);
                 },
-                else => return false,
+                else => return Mismatch.Mismatch,
             }
         },
         .list_view => |*a| {
             switch (expected.*) {
                 .list_view => |dt| {
-                    return check_data_type(a.inner, dt);
+                    try check_data_type(a.inner, dt);
                 },
-                else => return false,
+                else => return Mismatch.Mismatch,
             }
         },
         .large_list_view => |*a| {
             switch (expected.*) {
                 .large_list_view => |dt| {
-                    return check_data_type(a.inner, dt);
+                    try check_data_type(a.inner, dt);
                 },
-                else => return false,
+                else => return Mismatch.Mismatch,
             }
         },
         .fixed_size_list => |*a| {
             switch (expected.*) {
                 .fixed_size_list => |dt| {
-                    return dt.item_width == a.item_width and check_data_type(a.inner, &dt.inner);
+                    if (dt.item_width != a.item_width) {
+                        return Mismatch.Mismatch;
+                    }
+                    try check_data_type(a.inner, &dt.inner);
                 },
-                else => return false,
+                else => return Mismatch.Mismatch,
             }
         },
         .struct_ => |*a| {
@@ -706,64 +760,63 @@ pub fn check_data_type(array: *const arr.Array, expected: *const DataType) bool 
                 .struct_ => |dt| {
                     std.debug.assert(dt.field_names.len == dt.field_types.len);
                     if (dt.field_names.len != a.field_names.len or dt.field_types.len != a.field_values.len) {
-                        return false;
+                        return Mismatch.Mismatch;
                     }
 
                     for (dt.field_names, a.field_names) |dtfn, afn| {
                         if (!std.mem.eql(u8, dtfn, afn)) {
-                            return false;
+                            return Mismatch.Mismatch;
                         }
                     }
 
                     for (dt.field_types, a.field_values) |*dtft, *afv| {
-                        if (!check_data_type(afv, dtft)) {
-                            return false;
-                        }
+                        try check_data_type(afv, dtft);
                     }
-
-                    return true;
                 },
-                else => return false,
+                else => return Mismatch.Mismatch,
             }
         },
         .map => |*a| {
             switch (expected.*) {
                 .map => |dt| {
-                    return check_data_type(&a.entries.field_values[0], &dt.key.to_data_type()) and check_data_type(&a.entries.field_values[1], &dt.value);
+                    try check_data_type(&a.entries.field_values[0], &dt.key.to_data_type());
+                    try check_data_type(&a.entries.field_values[1], &dt.value);
                 },
-                else => return false,
+                else => return Mismatch.Mismatch,
             }
         },
         .dense_union => |*a| {
             switch (expected.*) {
                 .dense_union => |dt| {
-                    return check_union_data_type(&a.inner, dt);
+                    try check_union_data_type(&a.inner, dt);
                 },
-                else => return false,
+                else => return Mismatch.Mismatch,
             }
         },
         .sparse_union => |*a| {
             switch (expected.*) {
                 .sparse_union => |dt| {
-                    return check_union_data_type(&a.inner, dt);
+                    try check_union_data_type(&a.inner, dt);
                 },
-                else => return false,
+                else => return Mismatch.Mismatch,
             }
         },
         .run_end_encoded => |*a| {
             switch (expected.*) {
                 .run_end_encoded => |dt| {
-                    return check_data_type(a.run_ends, &dt.run_end.to_data_type()) and check_data_type(a.values, &dt.value);
+                    try check_data_type(a.run_ends, &dt.run_end.to_data_type());
+                    try check_data_type(a.values, &dt.value);
                 },
-                else => return false,
+                else => return Mismatch.Mismatch,
             }
         },
         .dict => |*a| {
             switch (expected.*) {
                 .dict => |dt| {
-                    return check_data_type(a.keys, &dt.key.to_data_type()) and check_data_type(a.values, &dt.value);
+                    try check_data_type(a.keys, &dt.key.to_data_type());
+                    try check_data_type(a.values, &dt.value);
                 },
-                else => return false,
+                else => return Mismatch.Mismatch,
             }
         },
     }
@@ -965,7 +1018,8 @@ pub fn empty_map_array(
     const offsets = try alloc.alloc(i32, 1);
     offsets[0] = 0;
 
-    const entries = try empty_struct_array(
+    const entries = try alloc.create(arr.StructArray);
+    entries.* = try empty_struct_array(
         &StructType{
             .field_types = &.{ dt.key.to_data_type(), dt.value },
             .field_names = &.{ "keys", "values" },
@@ -1058,10 +1112,10 @@ pub fn empty_array(dt: *const DataType, alloc: Allocator) error{OutOfMemory}!arr
         .f16 => .{ .f16 = empty_primitive_array(f16) },
         .f32 => .{ .f32 = empty_primitive_array(f32) },
         .f64 => .{ .f64 = empty_primitive_array(f64) },
-        .binary => .{ .binary = empty_binary_array(.i32) },
-        .large_binary => .{ .large_binary = empty_binary_array(.i64) },
-        .utf8 => .{ .utf8 = .{ .inner = empty_binary_array(.i32) } },
-        .large_utf8 => .{ .large_utf8 = .{ .inner = empty_binary_array(.i64) } },
+        .binary => .{ .binary = try empty_binary_array(.i32, alloc) },
+        .large_binary => .{ .large_binary = try empty_binary_array(.i64, alloc) },
+        .utf8 => .{ .utf8 = .{ .inner = try empty_binary_array(.i32, alloc) } },
+        .large_utf8 => .{ .large_utf8 = .{ .inner = try empty_binary_array(.i64, alloc) } },
         .bool => .{ .bool = empty_bool_array() },
         .binary_view => .{ .binary_view = empty_binary_view_array() },
         .utf8_view => .{ .utf8_view = .{ .inner = empty_binary_view_array() } },
@@ -1083,10 +1137,10 @@ pub fn empty_array(dt: *const DataType, alloc: Allocator) error{OutOfMemory}!arr
         .interval_month_day_nano => .{
             .interval_month_day_nano = empty_interval_array(.month_day_nano),
         },
-        .list => |a| .{ .list = try empty_list_array(.i32, a) },
-        .large_list => |a| .{ .large_list = try empty_list_array(.i64, a) },
-        .list_view => |a| .{ .list_view = try empty_list_view_array(.i32, a) },
-        .large_list_view => |a| .{ .large_list_view = try empty_list_view_array(.i64, a) },
+        .list => |a| .{ .list = try empty_list_array(.i32, a, alloc) },
+        .large_list => |a| .{ .large_list = try empty_list_array(.i64, a, alloc) },
+        .list_view => |a| .{ .list_view = try empty_list_view_array(.i32, a, alloc) },
+        .large_list_view => |a| .{ .large_list_view = try empty_list_view_array(.i64, a, alloc) },
         .fixed_size_list => |a| .{ .fixed_size_list = try empty_fixed_size_list_array(a, alloc) },
         .struct_ => |a| .{ .struct_ = try empty_struct_array(a, alloc) },
         .map => |a| .{ .map = try empty_map_array(a, alloc) },

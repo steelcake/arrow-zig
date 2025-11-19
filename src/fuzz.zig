@@ -20,6 +20,29 @@ const bitmap = @import("./bitmap.zig");
 
 const fuzz_input = @import("./fuzz_input.zig");
 
+fn fuzz_empty_array(ctx: void, input: *FuzzInput, dbg_alloc: Allocator) fuzzin.Error!void {
+    _ = ctx;
+
+    var arena = ArenaAllocator.init(dbg_alloc);
+    defer arena.deinit();
+    var limited_alloc = LimitedAllocator.init(arena.allocator(), 1 << 15);
+
+    const dt = try fuzz_input.data_type(input, limited_alloc.allocator(), 5);
+
+    const array = data_type.empty_array(&dt, arena.allocator()) catch unreachable;
+    validate.validate_array(&array) catch unreachable;
+    data_type.check_data_type(&array, &dt) catch unreachable;
+}
+
+test fuzz_empty_array {
+    fuzzin.fuzz_test(
+        void,
+        {},
+        fuzz_empty_array,
+        1 << 20,
+    );
+}
+
 fn fuzz_bitmap_copy(out: []u8, input: []const u8) anyerror!void {
     if (input.len < 3) {
         return;
@@ -291,13 +314,12 @@ fn fuzz_check_dt(arr_buf: []u8, input: *FuzzInput, dbg_alloc: Allocator) fuzzin.
     const dt = try fuzz_input.data_type(input, alloc, 16);
     const array = try fuzz_input.array(input, &dt, array_len, alloc);
 
-    std.debug.assert(data_type.check_data_type(&array, &dt));
+    data_type.check_data_type(&array, &dt) catch unreachable;
 
     const other_dt = try fuzz_input.data_type(input, alloc, 16);
 
-    if (data_type.check_data_type(&array, &other_dt)) {
-        std.debug.assert(dt.eql(&other_dt));
-    }
+    data_type.check_data_type(&array, &other_dt) catch return;
+    dt.eql(&other_dt) catch unreachable;
 }
 
 test fuzz_check_dt {

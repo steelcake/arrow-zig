@@ -97,8 +97,8 @@ pub fn dict_array(
     }
 
     const keys = try fuzzin.create(arr.Array, alloc);
-    keys.* = .{ .i32 = .{
-        .values = @ptrCast(keys_data),
+    keys.* = .{ .u32 = .{
+        .values = keys_data,
         .len = total_len,
         .offset = keys_offset,
         .validity = null,
@@ -874,7 +874,7 @@ fn data_type_impl(
     max_depth: u8,
     depth: u8,
 ) Error!dt_mod.DataType {
-    if (max_depth >= depth + 1) {
+    if (max_depth <= depth + 1) {
         return try data_type_flat(input);
     }
 
@@ -1229,7 +1229,7 @@ pub fn dict_type(input: *FuzzInput, alloc: Allocator, max_depth: u8, depth: u8) 
     const value = try data_type_impl(input, alloc, max_depth, depth + 1);
 
     return .{
-        .key = .i32,
+        .key = .u32,
         .value = value,
     };
 }
