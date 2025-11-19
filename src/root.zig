@@ -11,6 +11,7 @@ pub const minmax = @import("./minmax.zig");
 pub const concat = @import("./concat.zig");
 pub const fuzz_input = @import("./fuzz_input.zig");
 pub const validate = @import("./validate.zig");
+pub const null_count = @import("./null_count.zig");
 
 test {
     _ = validate;
@@ -26,4 +27,5 @@ test {
     _ = bitmap;
     _ = ffi;
     _ = array;
+    _ = null_count;
 }

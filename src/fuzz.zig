@@ -17,8 +17,37 @@ const validate = @import("./validate.zig");
 const ffi = @import("./ffi.zig");
 const minmax = @import("./minmax.zig");
 const bitmap = @import("./bitmap.zig");
+const null_count = @import("./null_count.zig");
 
 const fuzz_input = @import("./fuzz_input.zig");
+
+fn fuzz_null_count(arr_buf: []u8, input: *FuzzInput, dbg_alloc: Allocator) fuzzin.Error!void {
+    _ = dbg_alloc;
+
+    var fb_alloc = FixedBufferAllocator.init(arr_buf);
+    var arena = ArenaAllocator.init(fb_alloc.allocator());
+    const alloc = arena.allocator();
+
+    const dt = try fuzz_input.data_type(input, alloc, 5);
+    const len = try input.int(u8);
+
+    const array = data_type.all_null_array(&dt, len, alloc) catch {
+        // just go to the next cycle if we run out of memory
+        return;
+    };
+
+    _ = null_count.null_count(&array);
+}
+
+test fuzz_null_count {
+    const arr_buf = try std.heap.page_allocator.alloc(u8, 1 << 20);
+    fuzzin.fuzz_test(
+        []u8,
+        arr_buf,
+        fuzz_null_count,
+        0,
+    );
+}
 
 fn fuzz_all_null_array(ctx: void, input: *FuzzInput, dbg_alloc: Allocator) fuzzin.Error!void {
     _ = ctx;
@@ -39,6 +68,10 @@ fn fuzz_all_null_array(ctx: void, input: *FuzzInput, dbg_alloc: Allocator) fuzzi
     data_type.check_data_type(&array, &dt) catch unreachable;
 
     std.debug.assert(length.length(&array) == len);
+    const nc = null_count.null_count(&array);
+    if (nc != len) {
+        std.debug.panic("null_count mismatch. {} {} {any}", .{nc, len, dt});
+    }
 }
 
 test fuzz_all_null_array {
