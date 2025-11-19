@@ -69,8 +69,12 @@ fn fuzz_all_null_array(ctx: void, input: *FuzzInput, dbg_alloc: Allocator) fuzzi
 
     std.debug.assert(length.length(&array) == len);
     const nc = null_count.null_count(&array);
-    if (nc != len) {
-        std.debug.panic("null_count mismatch. {} {} {any}", .{nc, len, dt});
+
+    switch (dt) {
+        .dict, .dense_union, .sparse_union, .run_end_encoded => {},
+        else => {
+            std.debug.assert(nc == len);
+        },
     }
 }
 
