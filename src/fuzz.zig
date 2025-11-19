@@ -20,6 +20,36 @@ const bitmap = @import("./bitmap.zig");
 
 const fuzz_input = @import("./fuzz_input.zig");
 
+fn fuzz_all_null_array(ctx: void, input: *FuzzInput, dbg_alloc: Allocator) fuzzin.Error!void {
+    _ = ctx;
+
+    var arena = ArenaAllocator.init(dbg_alloc);
+    defer arena.deinit();
+    var limited_alloc = LimitedAllocator.init(arena.allocator(), 1 << 12);
+
+    const dt = try fuzz_input.data_type(input, limited_alloc.allocator(), 5);
+    const len = try input.int(u8);
+
+    const array = data_type.all_null_array(&dt, len, arena.allocator()) catch {
+        // just go to the next cycle if we run out of memory
+        return;
+    };
+
+    validate.validate_array(&array) catch unreachable;
+    data_type.check_data_type(&array, &dt) catch unreachable;
+
+    std.debug.assert(length.length(&array) == len);
+}
+
+test fuzz_all_null_array {
+    fuzzin.fuzz_test(
+        void,
+        {},
+        fuzz_all_null_array,
+        1 << 24,
+    );
+}
+
 fn fuzz_empty_array(ctx: void, input: *FuzzInput, dbg_alloc: Allocator) fuzzin.Error!void {
     _ = ctx;
 

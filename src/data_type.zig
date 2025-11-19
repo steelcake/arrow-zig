@@ -1238,7 +1238,7 @@ pub fn all_null_decimal_array(
     alloc: Allocator,
 ) error{OutOfMemory}!arr.DecimalArray(dec_t) {
     return arr.DecimalArray(dec_t){
-        .inner = all_null_primitive_array(dec_t.to_type(), len, alloc),
+        .inner = try all_null_primitive_array(dec_t.to_type(), len, alloc),
         .params = params,
     };
 }
@@ -1268,7 +1268,7 @@ pub fn all_null_date_array(
     alloc: Allocator,
 ) error{OutOfMemory}!arr.DateArray(backing_t) {
     return arr.DateArray(backing_t){
-        .inner = try empty_primitive_array(backing_t.to_type(), len, alloc),
+        .inner = try all_null_primitive_array(backing_t.to_type(), len, alloc),
     };
 }
 
@@ -1279,7 +1279,7 @@ pub fn all_null_time_array(
     alloc: Allocator,
 ) error{OutOfMemory}!arr.TimeArray(backing_t) {
     return arr.TimeArray(backing_t){
-        .inner = try empty_primitive_array(backing_t.to_type(), len, alloc),
+        .inner = try all_null_primitive_array(backing_t.to_type(), len, alloc),
         .unit = unit,
     };
 }
@@ -1290,7 +1290,7 @@ pub fn all_null_timestamp_array(
     alloc: Allocator,
 ) error{OutOfMemory}!arr.TimestampArray {
     return arr.TimestampArray{
-        .inner = try empty_primitive_array(i64, len, alloc),
+        .inner = try all_null_primitive_array(i64, len, alloc),
         .ts = ts,
     };
 }
@@ -1302,7 +1302,7 @@ pub fn all_null_duration_array(
 ) error{OutOfMemory}!arr.DurationArray {
     return arr.DurationArray{
         .unit = unit,
-        .inner = try empty_primitive_array(i64, len, alloc),
+        .inner = try all_null_primitive_array(i64, len, alloc),
     };
 }
 
@@ -1312,7 +1312,7 @@ pub fn all_null_interval_array(
     alloc: Allocator,
 ) error{OutOfMemory}!arr.IntervalArray(interval_t) {
     return arr.IntervalArray(interval_t){
-        .inner = try empty_primitive_array(interval_t.to_type(), len, alloc),
+        .inner = try all_null_primitive_array(interval_t.to_type(), len, alloc),
     };
 }
 
@@ -1353,7 +1353,7 @@ pub fn all_null_list_view_array(
     @memset(offsets, 0);
 
     const sizes = try alloc.alloc(I, len);
-    @memset(offsets, 0);
+    @memset(sizes, 0);
 
     return arr.GenericListViewArray(index_t){
         .inner = inner,
@@ -1542,13 +1542,13 @@ pub fn all_null_run_end_encoded_array(
 
     const run_ends = try alloc.create(arr.Array);
     run_ends.* = switch (dt.run_end) {
-        .i16 => try MakeRunEnds.make_run_ends(i16, len, alloc),
-        .i32 => try MakeRunEnds.make_run_ends(i32, len, alloc),
-        .i64 => try MakeRunEnds.make_run_ends(i64, len, alloc),
+        .i16 => .{ .i16 = try MakeRunEnds.make_run_ends(i16, len, alloc) },
+        .i32 => .{ .i32 = try MakeRunEnds.make_run_ends(i32, len, alloc) },
+        .i64 => .{ .i64 = try MakeRunEnds.make_run_ends(i64, len, alloc) },
     };
 
     const values = try alloc.create(arr.Array);
-    values.* = try all_null_array(&dt.value, alloc);
+    values.* = try all_null_array(&dt.value, len, alloc);
 
     return arr.RunEndArray{
         .run_ends = run_ends,
@@ -1564,7 +1564,7 @@ pub fn all_null_dict_array(
     alloc: Allocator,
 ) error{OutOfMemory}!arr.DictArray {
     const keys = try alloc.create(arr.Array);
-    keys.* = try all_null_array(&dt.key.to_data_type(), alloc);
+    keys.* = try all_null_array(&dt.key.to_data_type(), len, alloc);
 
     const values = try alloc.create(arr.Array);
     values.* = try empty_array(&dt.value, alloc);
