@@ -293,7 +293,7 @@ fn fuzz_concat(ctx: void, input: *FuzzInput, dbg_alloc: Allocator) fuzzin.Error!
 
     var concat_arena = ArenaAllocator.init(dbg_alloc);
     defer concat_arena.deinit();
-    var concat_limited_alloc = LimitedAllocator.init(concat_arena.allocator(), 1 << 14);
+    var concat_limited_alloc = LimitedAllocator.init(concat_arena.allocator(), 1 << 16);
     const concat_alloc = concat_limited_alloc.allocator();
 
     const slice0 = try fuzz_input.slice(input, &array);
@@ -331,7 +331,7 @@ test fuzz_concat {
         void,
         {},
         fuzz_concat,
-        1 << 20,
+        1 << 22,
     );
 }
 
