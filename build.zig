@@ -4,6 +4,11 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
+    const nanoarrow = b.dependency("nanoarrow", .{
+        .target = target,
+        .optimize = optimize,
+    });
+
     const fuzzin = b.dependency("fuzzin", .{
         .target = target,
         .optimize = optimize,
@@ -35,6 +40,7 @@ pub fn build(b: *std.Build) void {
     });
     fuzz.root_module.addImport("fuzzin", fuzzin.module("fuzzin"));
     fuzz.root_module.addImport("arrow", lib_mod);
+    fuzz.root_module.addImport("nanoarrow_validate", nanoarrow.module("validate"));
 
     const run_fuzz = b.addRunArtifact(fuzz);
 

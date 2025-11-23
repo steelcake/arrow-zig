@@ -896,10 +896,10 @@ fn data_type_impl(
         12 => .{ .binary = {} },
         13 => .{ .utf8 = {} },
         14 => .{ .bool = {} },
-        15 => .{ .decimal32 = try decimal_params(.i32, input) },
-        16 => .{ .decimal64 = try decimal_params(.i64, input) },
-        17 => .{ .decimal128 = try decimal_params(.i128, input) },
-        18 => .{ .decimal256 = try decimal_params(.i256, input) },
+        // 15 => .{ .decimal32 = try decimal_params(.i32, input) },
+        // 16 => .{ .decimal64 = try decimal_params(.i64, input) },
+        15, 17 => .{ .decimal128 = try decimal_params(.i128, input) },
+        16, 18 => .{ .decimal256 = try decimal_params(.i256, input) },
         19 => .{ .date32 = {} },
         20 => .{ .date64 = {} },
         21 => .{ .time32 = try time_unit(.i32, input) },
@@ -969,21 +969,21 @@ fn data_type_impl(
             ),
         },
         39 => .{ .binary_view = {} },
-        40 => .{ .utf8_view = {} },
-        41 => .{
-            .list_view = try make_ptr(
-                dt_mod.DataType,
-                try data_type_impl(input, alloc, max_depth, depth + 1),
-                alloc,
-            ),
-        },
-        42 => .{
-            .large_list_view = try make_ptr(
-                dt_mod.DataType,
-                try data_type_impl(input, alloc, max_depth, depth + 1),
-                alloc,
-            ),
-        },
+        40, 41, 42 => .{ .utf8_view = {} },
+        // 41 => .{
+        //     .list_view = try make_ptr(
+        //         dt_mod.DataType,
+        //         try data_type_impl(input, alloc, max_depth, depth + 1),
+        //         alloc,
+        //     ),
+        // },
+        // 42 => .{
+        //     .large_list_view = try make_ptr(
+        //         dt_mod.DataType,
+        //         try data_type_impl(input, alloc, max_depth, depth + 1),
+        //         alloc,
+        //     ),
+        // },
         43 => .{
             .dict = try make_ptr(
                 dt_mod.DictType,

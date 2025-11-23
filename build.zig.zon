@@ -8,6 +8,10 @@
             .url = "https://github.com/steelcake/fuzzin/archive/refs/tags/v0.0.10.tar.gz",
             .hash = "fuzzin-0.0.10-CogiHtlmAAAzacaFUz25mzeykxUoNVruKu0G8gzgfgN0",
         },
+        .nanoarrow = .{
+            .url = "git+https://github.com/steelcake/nanoarrow-zig#16517c46d01aafbfcc4d7917fad21fb3484a6bfa",
+            .hash = "nanoarrow-0.0.0-1Bv_R-Y6AABTH9DywjrXDuLtJooHW48gjj2s-cRfLlVg",
+        },
     },
     .paths = .{
         "build.zig",

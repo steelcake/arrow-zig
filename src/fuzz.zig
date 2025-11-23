@@ -7,6 +7,8 @@ const fuzzin = @import("fuzzin");
 const FuzzInput = fuzzin.FuzzInput;
 const LimitedAllocator = fuzzin.LimitedAllocator;
 
+const nanoarrow_validate = @import("nanoarrow_validate").nanoarrowzig_validate;
+
 const arr = @import("./array.zig");
 const length = @import("./length.zig");
 const slice_array_impl = @import("./slice.zig").slice;
@@ -277,6 +279,14 @@ fn fuzz_ffi(ctx: void, input: *FuzzInput, dbg_alloc: Allocator) !void {
     var ffi_array = ffi.export_array(.{ .array = &array, .arena = arena }) catch unreachable;
     defer ffi_array.release();
 
+    const ValidateFail = struct {
+        fn validate_fail() callconv(.c) void {
+            unreachable;
+        }
+    };
+
+    nanoarrow_validate(&ffi_array.array, &ffi_array.schema, ValidateFail.validate_fail);
+
     var import_arena = ArenaAllocator.init(dbg_alloc);
     // don't free like this since we will ffi a second time
     // defer import_arena.deinit();
@@ -293,6 +303,8 @@ fn fuzz_ffi(ctx: void, input: *FuzzInput, dbg_alloc: Allocator) !void {
         .ffi_arr = ffi_array,
     }) catch unreachable;
     defer ffi_array2.release();
+
+    nanoarrow_validate(&ffi_array2.array, &ffi_array2.schema, ValidateFail.validate_fail);
 
     var import_arena2 = ArenaAllocator.init(dbg_alloc);
     defer import_arena2.deinit();
