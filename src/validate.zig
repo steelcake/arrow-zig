@@ -418,7 +418,8 @@ fn validate_run_ends_array(comptime T: type, array: *const arr.RunEndArray, run_
         return Error.Invalid;
     }
 
-    var idx: u32 = run_ends.offset + 1;
+    var prev: T = 0;
+    var idx: u32 = run_ends.offset;
     while (idx < run_ends.offset + run_ends.len) : (idx += 1) {
         const re = run_ends.values[idx];
 
@@ -426,10 +427,11 @@ fn validate_run_ends_array(comptime T: type, array: *const arr.RunEndArray, run_
             return Error.Invalid;
         }
 
-        const prev = run_ends.values[idx - 1];
-        if (re < prev) {
+        if (re <= prev) {
             return Error.Invalid;
         }
+
+        prev = re;
     }
 }
 
