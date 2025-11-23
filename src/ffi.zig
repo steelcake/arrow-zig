@@ -101,7 +101,9 @@ fn import_binary(comptime index_type: arr.IndexType, array: *const FFI_Array) ar
 fn import_binary_view(array: *const FFI_Array, alloc: Allocator) Error!arr.BinaryViewArray {
     const buffers = array.array.buffers orelse unreachable;
 
-    std.debug.assert(array.array.n_buffers > 2);
+    const n_fixed_buffers = 3;
+
+    std.debug.assert(array.array.n_buffers >= n_fixed_buffers);
 
     const len: u32 = @intCast(array.array.length);
     const offset: u32 = @intCast(array.array.offset);
@@ -110,27 +112,16 @@ fn import_binary_view(array: *const FFI_Array, alloc: Allocator) Error!arr.Binar
 
     const validity = import_validity(null_count, buffers[0], size);
 
-    const num_data_buffers: u32 = @intCast(array.array.n_buffers - 2);
+    const num_data_buffers: u32 = @intCast(array.array.n_buffers - n_fixed_buffers);
 
-    const data_buffers_raw = @as([*]const [*]const u8, @ptrCast(&buffers[2]))[0..num_data_buffers];
+    const data_buffer_sizes = import_buffer(i64, buffers[num_data_buffers + 2], num_data_buffers);
+
     const data_buffers = try alloc.alloc([]const u8, num_data_buffers);
-    @memset(data_buffers, &.{});
+    for (0..num_data_buffers) |idx| {
+        data_buffers[idx] = import_buffer(u8, buffers[idx + 2], @intCast(data_buffer_sizes[idx]));
+    }
 
     const views = import_buffer(arr.BinaryView, buffers[1], size);
-
-    var idx: u32 = 0;
-    while (idx < offset + len) : (idx += 1) {
-        const view = views.ptr[idx];
-        if (view.length > 12) {
-            const buffer_idx = @as(u32, @intCast(view.buffer_idx));
-            const buffer_offset = @as(u32, @intCast(view.offset));
-            const view_len = @as(u32, @intCast(view.length));
-
-            if (data_buffers[buffer_idx].len < buffer_offset + view_len) {
-                data_buffers[buffer_idx] = data_buffers_raw[buffer_idx][0 .. buffer_offset + view_len];
-            }
-        }
-    }
 
     return .{
         .views = views,
@@ -1503,7 +1494,7 @@ fn decimal_format(params: arr.DecimalParams, width: []const u8, allocator: Alloc
 }
 
 fn export_binary_view(array: *const arr.BinaryViewArray, format: [:0]const u8, private_data: *PrivateData) Error!FFI_Array {
-    const n_buffers = array.buffers.len + 2;
+    const n_buffers = array.buffers.len + 3;
 
     const allocator = private_data.arena.allocator();
     const buffers = try allocator.alloc(?*const anyopaque, n_buffers);
@@ -1513,6 +1504,12 @@ fn export_binary_view(array: *const arr.BinaryViewArray, format: [:0]const u8, p
     for (array.buffers, 0..) |b, i| {
         buffers[i + 2] = b.ptr;
     }
+
+    const buf_lengths = try allocator.alloc(i64, array.buffers.len);
+    for (array.buffers, 0..) |buf, idx| {
+        buf_lengths[idx] = @intCast(buf.len);
+    }
+    buffers[n_buffers - 1] = buf_lengths.ptr;
 
     return .{
         .schema = .{

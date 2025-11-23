@@ -99,7 +99,11 @@ pub fn validate_binary_array(
         }
     }
 
-    if (array.data.len < array.offsets[array.offset + array.len]) {
+    const last_offset = array.offsets[array.offset + array.len];
+    if (last_offset < 0) {
+        return Error.Invalid;
+    }
+    if (array.data.len < last_offset) {
         return Error.Invalid;
     }
 }
@@ -158,7 +162,11 @@ pub fn validate_list_array(
         }
     }
 
-    if (length.length(array.inner) < array.offsets[array.offset + array.len]) {
+    const last_offset = array.offsets[array.offset + array.len];
+    if (last_offset < 0) {
+        return Error.Invalid;
+    }
+    if (length.length(array.inner) < last_offset) {
         return Error.Invalid;
     }
 
@@ -366,7 +374,11 @@ pub fn validate_map_array(array: *const arr.MapArray) Error!void {
         }
     }
 
-    if (array.offsets[array.offset + array.len] > array.entries.len) {
+    const last_offset = array.offsets[array.offset + array.len];
+    if (last_offset < 0) {
+        return Error.Invalid;
+    }
+    if (array.entries.len < last_offset) {
         return Error.Invalid;
     }
 
@@ -411,10 +423,14 @@ fn validate_run_ends_array(comptime T: type, array: *const arr.RunEndArray, run_
         return Error.Invalid;
     }
 
+    if (array.len + array.offset >= std.math.maxInt(T)) {
+        return Error.Invalid;
+    }
+
     if (run_ends.len == 0) return;
 
-    const last_end: u64 = @intCast(run_ends.values[run_ends.offset + run_ends.len - 1]);
-    if (@as(u64, array.len + array.offset) > last_end) {
+    const last_end: T = run_ends.values[run_ends.offset + run_ends.len - 1];
+    if (@as(T, @intCast(array.len + array.offset)) > last_end) {
         return Error.Invalid;
     }
 

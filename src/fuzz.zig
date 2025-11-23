@@ -7,7 +7,7 @@ const fuzzin = @import("fuzzin");
 const FuzzInput = fuzzin.FuzzInput;
 const LimitedAllocator = fuzzin.LimitedAllocator;
 
-const nanoarrow_validate = @import("nanoarrow_validate").nanoarrowzig_validate;
+const nanoarrow_validate = @import("nanoarrow_validate").validate;
 
 const arr = @import("./array.zig");
 const length = @import("./length.zig");
@@ -279,13 +279,7 @@ fn fuzz_ffi(ctx: void, input: *FuzzInput, dbg_alloc: Allocator) !void {
     var ffi_array = ffi.export_array(.{ .array = &array, .arena = arena }) catch unreachable;
     defer ffi_array.release();
 
-    const ValidateFail = struct {
-        fn validate_fail() callconv(.c) void {
-            unreachable;
-        }
-    };
-
-    nanoarrow_validate(&ffi_array.array, &ffi_array.schema, ValidateFail.validate_fail);
+    nanoarrow_validate(&ffi_array.array, &ffi_array.schema);
 
     var import_arena = ArenaAllocator.init(dbg_alloc);
     // don't free like this since we will ffi a second time
@@ -304,7 +298,7 @@ fn fuzz_ffi(ctx: void, input: *FuzzInput, dbg_alloc: Allocator) !void {
     }) catch unreachable;
     defer ffi_array2.release();
 
-    nanoarrow_validate(&ffi_array2.array, &ffi_array2.schema, ValidateFail.validate_fail);
+    nanoarrow_validate(&ffi_array2.array, &ffi_array2.schema);
 
     var import_arena2 = ArenaAllocator.init(dbg_alloc);
     defer import_arena2.deinit();
@@ -422,11 +416,16 @@ fn fuzz_validate_array_auto(arr_buf: []u8, input: *FuzzInput, dbg_alloc: Allocat
 
     const array = try input.auto(arr.Array, alloc, 20);
 
-    validate.validate_array(&array) catch {};
+    validate.validate_array(&array) catch return;
+
+    var ffi_array = ffi.export_array(.{ .array = &array, .arena = arena }) catch return;
+    defer ffi_array.release();
+
+    nanoarrow_validate(&ffi_array.array, &ffi_array.schema);
 }
 
 test fuzz_validate_array_auto {
-    const arr_buf = try std.heap.page_allocator.alloc(u8, 1 << 12);
+    const arr_buf = try std.heap.page_allocator.alloc(u8, 1 << 20);
     fuzzin.fuzz_test(
         []u8,
         arr_buf,

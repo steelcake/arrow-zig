@@ -126,30 +126,32 @@ pub fn run_end_encoded_array(
     const offset: u32 = try input.int(u8);
     const total_len: u32 = len + offset;
 
-    const run_ends_len = @as(u32, try input.int(u8)) + 1;
     const run_ends_offset: u32 = try input.int(u8);
-    const run_ends_total_len: u32 = run_ends_len + run_ends_offset;
+
+    const run_ends = try fuzzin.allocate(i32, run_ends_offset + total_len, alloc);
+
+    var prng = Prng.init(try input.int(u64));
+    const rand = prng.random();
+    var run_end: i32 = 0;
+    for (0..run_ends_offset) |idx| {
+        run_end += @max(rand.int(u8), 1);
+        run_ends[idx] = run_end;
+    }
+
+    for (run_ends_offset..run_ends_offset + total_len) |idx| {
+        run_end += @max(rand.int(u8), 1);
+        run_ends[idx] = run_end;
+    }
 
     std.debug.assert(dt.run_end == .i32);
 
-    const run_ends_values = try input.int_slice(i32, run_ends_total_len, alloc);
-    var run_end: i32 = 0;
-    const tl: i32 = @intCast(total_len);
-    for (run_ends_values) |*x| {
-        run_end += @as(i32, @bitCast(@as(u32, @bitCast(x.*)) % 512));
-        run_end = @min(tl, run_end);
-        x.* = run_end;
-    }
-    const last_re = &run_ends_values[run_ends_values.len - 1];
-    last_re.* = @max(last_re.*, @as(i32, @intCast(total_len)));
-
     const values = try fuzzin.create(arr.Array, alloc);
-    values.* = try array(input, &dt.value, run_ends_len, alloc);
-    const run_ends = try fuzzin.create(arr.Array, alloc);
-    run_ends.* = .{
+    values.* = try array(input, &dt.value, total_len, alloc);
+    const run_ends_p = try fuzzin.create(arr.Array, alloc);
+    run_ends_p.* = .{
         .i32 = .{
-            .values = run_ends_values,
-            .len = run_ends_len,
+            .values = run_ends,
+            .len = total_len,
             .offset = run_ends_offset,
             .validity = null,
             .null_count = 0,
@@ -159,7 +161,7 @@ pub fn run_end_encoded_array(
     return .{
         .len = len,
         .offset = offset,
-        .run_ends = run_ends,
+        .run_ends = run_ends_p,
         .values = values,
     };
 }
@@ -896,10 +898,10 @@ fn data_type_impl(
         12 => .{ .binary = {} },
         13 => .{ .utf8 = {} },
         14 => .{ .bool = {} },
-        // 15 => .{ .decimal32 = try decimal_params(.i32, input) },
-        // 16 => .{ .decimal64 = try decimal_params(.i64, input) },
-        15, 17 => .{ .decimal128 = try decimal_params(.i128, input) },
-        16, 18 => .{ .decimal256 = try decimal_params(.i256, input) },
+        15 => .{ .decimal32 = try decimal_params(.i32, input) },
+        16 => .{ .decimal64 = try decimal_params(.i64, input) },
+        17 => .{ .decimal128 = try decimal_params(.i128, input) },
+        18 => .{ .decimal256 = try decimal_params(.i256, input) },
         19 => .{ .date32 = {} },
         20 => .{ .date64 = {} },
         21 => .{ .time32 = try time_unit(.i32, input) },
@@ -969,21 +971,21 @@ fn data_type_impl(
             ),
         },
         39 => .{ .binary_view = {} },
-        40, 41, 42 => .{ .utf8_view = {} },
-        // 41 => .{
-        //     .list_view = try make_ptr(
-        //         dt_mod.DataType,
-        //         try data_type_impl(input, alloc, max_depth, depth + 1),
-        //         alloc,
-        //     ),
-        // },
-        // 42 => .{
-        //     .large_list_view = try make_ptr(
-        //         dt_mod.DataType,
-        //         try data_type_impl(input, alloc, max_depth, depth + 1),
-        //         alloc,
-        //     ),
-        // },
+        40 => .{ .utf8_view = {} },
+        41 => .{
+            .list_view = try make_ptr(
+                dt_mod.DataType,
+                try data_type_impl(input, alloc, max_depth, depth + 1),
+                alloc,
+            ),
+        },
+        42 => .{
+            .large_list_view = try make_ptr(
+                dt_mod.DataType,
+                try data_type_impl(input, alloc, max_depth, depth + 1),
+                alloc,
+            ),
+        },
         43 => .{
             .dict = try make_ptr(
                 dt_mod.DictType,

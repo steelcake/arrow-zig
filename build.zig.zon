@@ -9,8 +9,8 @@
             .hash = "fuzzin-0.0.10-CogiHtlmAAAzacaFUz25mzeykxUoNVruKu0G8gzgfgN0",
         },
         .nanoarrow = .{
-            .url = "git+https://github.com/steelcake/nanoarrow-zig#16517c46d01aafbfcc4d7917fad21fb3484a6bfa",
-            .hash = "nanoarrow-0.0.0-1Bv_R-Y6AABTH9DywjrXDuLtJooHW48gjj2s-cRfLlVg",
+            .url = "git+https://github.com/steelcake/nanoarrow-zig#25293ec75a4fd93e75e4132019a18b602991c7d2",
+            .hash = "nanoarrow-0.0.0-1Bv_R8Y7AAApeAJDJUdboeM0TzVE191NWWL_U2UjsVHq",
         },
     },
     .paths = .{
