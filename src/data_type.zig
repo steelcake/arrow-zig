@@ -1249,6 +1249,11 @@ pub fn all_null_fixed_size_binary_array(
     alloc: Allocator,
 ) error{OutOfMemory}!arr.FixedSizeBinaryArray {
     const bw: u32 = @intCast(byte_width);
+
+    if (@as(u64, bw) * @as(u64, len) > std.math.maxInt(u32) / 2) {
+        return error.OutOfMemory;
+    }
+
     const data = try alloc.alloc(u8, bw * len);
     @memset(data, 0);
 

@@ -30,7 +30,7 @@ fn fuzz_null_count(arr_buf: []u8, input: *FuzzInput, dbg_alloc: Allocator) fuzzi
     var arena = ArenaAllocator.init(fb_alloc.allocator());
     const alloc = arena.allocator();
 
-    const dt = try fuzz_input.data_type(input, alloc, 5);
+    const dt = try fuzz_input.data_type(input, alloc, 8);
     const len = try input.int(u8);
 
     const array = data_type.all_null_array(&dt, len, alloc) catch {
@@ -58,7 +58,7 @@ fn fuzz_all_null_array(ctx: void, input: *FuzzInput, dbg_alloc: Allocator) fuzzi
     defer arena.deinit();
     var limited_alloc = LimitedAllocator.init(arena.allocator(), 1 << 12);
 
-    const dt = try fuzz_input.data_type(input, limited_alloc.allocator(), 5);
+    const dt = try fuzz_input.data_type(input, limited_alloc.allocator(), 8);
     const len = try input.int(u8);
 
     const array = data_type.all_null_array(&dt, len, arena.allocator()) catch {
@@ -96,7 +96,7 @@ fn fuzz_empty_array(ctx: void, input: *FuzzInput, dbg_alloc: Allocator) fuzzin.E
     defer arena.deinit();
     var limited_alloc = LimitedAllocator.init(arena.allocator(), 1 << 15);
 
-    const dt = try fuzz_input.data_type(input, limited_alloc.allocator(), 5);
+    const dt = try fuzz_input.data_type(input, limited_alloc.allocator(), 8);
 
     const array = data_type.empty_array(&dt, arena.allocator()) catch unreachable;
     validate.validate_array(&array) catch unreachable;
@@ -264,7 +264,7 @@ fn fuzz_ffi(ctx: void, input: *FuzzInput, dbg_alloc: Allocator) !void {
         arena.deinit();
         return e;
     };
-    const dt = fuzz_input.data_type(input, alloc, 16) catch |e| {
+    const dt = fuzz_input.data_type(input, alloc, 8) catch |e| {
         arena.deinit();
         return e;
     };
@@ -286,7 +286,9 @@ fn fuzz_ffi(ctx: void, input: *FuzzInput, dbg_alloc: Allocator) !void {
     // defer import_arena.deinit();
     const import_alloc = import_arena.allocator();
 
-    const imported = ffi.import_array(&ffi_array, import_alloc) catch unreachable;
+    const imported = ffi.import_array(&ffi_array, import_alloc) catch {
+        std.debug.panic("failed to import array. ffi_array = {any}", .{ffi_array});
+    };
     validate.validate_array(&imported) catch unreachable;
 
     equals.equals(&imported, &array);
@@ -329,7 +331,7 @@ fn fuzz_concat(ctx: void, input: *FuzzInput, dbg_alloc: Allocator) fuzzin.Error!
     const alloc = limited_alloc.allocator();
 
     const array_len = try input.int(u8);
-    const dt = try fuzz_input.data_type(input, alloc, 16);
+    const dt = try fuzz_input.data_type(input, alloc, 8);
     const array = try fuzz_input.array(input, &dt, array_len, alloc);
 
     validate.validate_array(&array) catch unreachable;
@@ -386,12 +388,12 @@ fn fuzz_check_dt(arr_buf: []u8, input: *FuzzInput, dbg_alloc: Allocator) fuzzin.
     const alloc = arena.allocator();
 
     const array_len = try input.int(u8);
-    const dt = try fuzz_input.data_type(input, alloc, 16);
+    const dt = try fuzz_input.data_type(input, alloc, 8);
     const array = try fuzz_input.array(input, &dt, array_len, alloc);
 
     data_type.check_data_type(&array, &dt) catch unreachable;
 
-    const other_dt = try fuzz_input.data_type(input, alloc, 16);
+    const other_dt = try fuzz_input.data_type(input, alloc, 8);
 
     data_type.check_data_type(&array, &other_dt) catch return;
     dt.eql(&other_dt) catch unreachable;
