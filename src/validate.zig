@@ -244,6 +244,10 @@ fn validate_union_array(array: *const arr.UnionArray) Error!void {
     try validate_field_names(array.field_names);
 
     for (array.type_id_set, 0..) |tid, idx| {
+        if (tid < 0) {
+            return Error.Invalid;
+        }
+
         for (array.type_id_set[idx + 1 ..]) |other_tid| {
             if (tid == other_tid) {
                 return Error.Invalid;
@@ -568,7 +572,10 @@ pub fn validate_binary_view_array(array: *const arr.BinaryViewArray) Error!void 
         return Error.Invalid;
     }
 
-    for (array.views) |view| {
+    var idx: u32 = array.offset;
+    while (idx < array.offset + array.len) : (idx += 1) {
+        const view = array.views[idx];
+
         if (view.length < 0) {
             return Error.Invalid;
         }
@@ -802,6 +809,12 @@ pub fn validate_union_type(dt: *const dt_mod.UnionType) Error!void {
     }
 
     try validate_field_names(dt.field_names);
+
+    for (dt.type_id_set) |tid| {
+        if (tid < 0) {
+            return Error.Invalid;
+        }
+    }
 
     for (dt.field_types) |*t| {
         try validate_data_type(t);
